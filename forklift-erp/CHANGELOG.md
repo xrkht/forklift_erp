@@ -2,23 +2,66 @@
 
 本项目遵循 [语义化版本](https://semver.org/lang/zh-CN/) 和 [Keep a Changelog](https://keepachangelog.com/zh-CN/) 规范。
 
-## [Unreleased] - YYYY-MM-DD
+## [0.1.2] - 2026-05-04 - xrkht
 
-### Added（新增）
-- 
+### 新增
+- **配置替换业务模块**
+  - 新增 `ConfigReplaceService` 接口及 `ConfigReplaceServiceImpl` 实现，完成配置替换核心逻辑（更新车辆配置、配件库存变动、记录替换日志）
+  - 新增 `ConfigReplaceRequestDTO`，封装替换请求参数（车辆、配置项、新旧值、替换类型、配件处理等）
 
-### Changed（变更）
-- 
+- **配件库存业务模块**
+  - 新增 `PartInventoryService` 接口及 `PartInventoryServiceImpl` 实现，支持配件 CRUD、按分类/来源/库存查询、出入库操作
+  - 配件出入库时进行库存校验，库存不足抛出 `BusinessException`
 
-### Fixed（修复）
-- 
+- **维修记录业务模块**
+  - 新增 `RepairRecordService` 接口及 `RepairRecordServiceImpl` 实现，支持维修记录 CRUD、按车辆/人员/状态/日期查询
+
+- **Controller 层统一响应格式改造**
+  - `ConfigItemController` 全部接口返回 `Result<T>`，添加 `@Valid` 校验，异常通过全局处理器统一处理
+  - `ConfigReplaceController` 新增 `performReplace` 接口，调用替换业务并返回统一格式
+  - `RepairRecordController` 完成基础 CRUD 及条件查询，返回统一 `Result`
+
+- **MachineInventory 实体**
+  - 新增 `annualInspectionDate` 字段（年审日期）
+
+### 修改
+- `ConfigItemServiceImpl`
+  - 删除配置项/配置值时增加车辆引用检查，存在引用则抛出 `CONFIG_IN_USE` 业务异常，防止误删
+- `PartInventoryServiceImpl`
+  - 新增配件编码唯一性校验，保存时自动检查重复编码
+## [0.1.1] - 2026-05-03 - xrkht
+
+### 新增
+- **统一响应格式**
+  - 新增 `Result<T>` 通用响应类（`common/Result.java`）
+  - 新增 `ResultCode` 状态码枚举（`common/ResultCode.java`）
+  - 统一封装 code/message/data/timestamp 四个字段
+  - @JsonInclude 过滤 null 值
+
+- **全局异常处理**
+  - 新增 `BusinessException` 业务异常类（`exception/BusinessException.java`）
+  - 新增 `GlobalExceptionHandler` 全局异常处理器（`handler/GlobalExceptionHandler.java`）
+  - 支持统一的异常拦截与响应格式
+
+### 修改
+- `MachineInventoryController.java`
+  - 返回类型从 ResponseEntity 统一改为 Result<T>
+  - 使用 BusinessException 替代硬编码的 notFound 响应
+  - 添加 @Valid 参数校验注解
+  - 添加 @Slf4j 操作日志记录
+  - 保留原有业务注释
+
+- `application.yml`
+  - 修复注释乱码
+  - 新增 spring.mvc.throw-exception-if-no-handler-found: true
+  - 新增 spring.web.resources.add-mappings: false
+  - 优化日志级别配置
 
 ---
 
 ## [0.1.0] - 2026-05-02 - xrkht
 
-### Added（新增）
-
+### 新增
 #### 整车配置管理模块
 - 创建车辆实际配置实体类 `MachineConfig`，记录每台车具体装了什么配置
 - 创建 `MachineConfigRepository` 数据访问层，支持按车辆ID查询、按配置项ID/配置值ID反查、按车辆ID删除
@@ -61,30 +104,16 @@
 - 创建维修记录实体类 `RepairRecord`，支持维修日期、关联车辆、客户信息、故障描述、维修内容、维修人员、使用配件、工时/费用明细、状态（待维修/维修中/已完成）
 - 创建 `RepairRecordRepository`，支持按车辆查询、按维修人员查询、按状态查询、按日期区间查询
 
-### Changed（变更）
+### 变更
 - `MachineInventoryController` 由 `@Controller` 改为 `@RestController`，确保返回 JSON 格式
 - 车辆删除接口新增级联删除配置明细的逻辑
 - `MachineInventory` 实体新增 `machineType` 字段（所属车辆类型），支持内燃叉车、电动叉车、托盘搬运车等多种类型
-
-### Tech（技术栈）
-- Spring Boot 3.5.14
-- Java 25
-- MySQL 8.0
-- Spring Data JPA
-- Lombok
-- Maven 构建工具
-
-### Config（配置）
-- 服务器端口：8080
-- 数据库时区：Asia/Shanghai
-- 字符编码：UTF-8
-- 日志级别：debug（com.example.forklift_erp 包）
 
 ---
 
 ## [0.0.1] - 2026-05-01 - xrkht
 
-### Added（新增）
+### 新增
 - 初始化叉车进销存ERP系统项目
 - 创建整机库存实体类 `MachineInventory`，包含入库、出库、销售等完整字段
 - 创建配置项实体类 `ConfigItem`，用于系统字典数据管理
@@ -99,7 +128,7 @@
 - 添加车号/产品编号唯一性约束
 - 实现根据车号查询的自定义方法
 
-### Tech（技术栈）
+### 技术栈
 - Spring Boot 3.5.14
 - Java 25
 - MySQL 8.0
@@ -107,7 +136,7 @@
 - Lombok
 - Maven 构建工具
 
-### Config（配置）
+### 配置
 - 服务器端口：8080
 - 数据库时区：Asia/Shanghai
 - 字符编码：UTF-8

@@ -1,24 +1,32 @@
 server:
-  port: 8080 # ???????
+  port: 8080 # 服务器端口号
 
 spring:
   application:
-    name: forklift-erp # ????????Initializr??????
+    name: forklift-erp # 应用名称，与Spring Initializr创建时保持一致
   datasource:
     url: jdbc:mysql://localhost:3306/forklift_erp?useUnicode=true&characterEncoding=utf-8&serverTimezone=Asia/Shanghai&useSSL=false
-    username: root # ???????????
-    password: ChH060118 # ??????????
+    username: root # 数据库用户名，请根据实际情况修改
+    password: ChH060118 # 数据库密码，请根据实际情况修改
     driver-class-name: com.mysql.cj.jdbc.Driver
   jpa:
     hibernate:
-      ddl-auto: update # ??: ????Entity????????????????????????none?validate
-    show-sql: true # ??????SQL???????
+      ddl-auto: update # 启动时自动更新表结构：none=不处理, validate=验证, update=更新, create=创建, create-drop=创建后删除
+    show-sql: true # 控制台显示SQL语句，开发环境建议开启
     properties:
       hibernate:
-        format_sql: true # ??????SQL
-    database-platform: org.hibernate.dialect.MySQL8Dialect # ???????
+        format_sql: true # 格式化输出SQL语句，便于阅读
+    database-platform: org.hibernate.dialect.MySQL8Dialect # MySQL8数据库方言
+  mvc:
+    throw-exception-if-no-handler-found: true # 当没有找到对应的请求处理器时抛出异常（配合全局异常处理）
+  web:
+    resources:
+      add-mappings: false # 禁用静态资源的自动映射，让404请求可以被全局异常处理器捕获
 
-# ????
+# 日志配置
 logging:
   level:
-    com.example.forklift_erp: debug # ???????????debug?????
+    com.example.forklift_erp: debug # 项目包路径下的日志级别设置为debug，便于开发调试
+    org.springframework.web: info # Spring Web模块日志级别
+    org.hibernate.SQL: debug # Hibernate SQL日志级别
+    org.hibernate.type.descriptor.sql.BasicBinder: trace # 显示SQL参数绑定值

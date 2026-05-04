@@ -28,6 +28,9 @@ public class MachineInventory {
     @Column(name = "inbound_date")
     private LocalDateTime inboundDate; // 入库日期
 
+    @Column(name = "annual_inspection_date")
+    private LocalDate annualInspectionDate; // 年审日期
+
     @Column(name = "sales_date", length = 10)
     private String salesDate; // 销售日期 (格式如 20221101)
 

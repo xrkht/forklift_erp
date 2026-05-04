@@ -1,28 +1,13 @@
-POST http://localhost:8080/api/inventory/inbound
+POST http://localhost:8080/api/replace
 Content-Type: application/json
 
 {
-  "machineInventory": {
-    "name": "测试叉车1号",
-    "specificationModel": "FD35E",
-    "machineType": "内燃叉车",
-    "supplier": "龙工叉车",
-    "vehicleProductNumber": "TEST-001",
-    "engineNumber": "Q220971779V",
-    "frameNumber": "JN90553",
-    "warehouseName": "中山天力",
-    "settlementPrice": 64560
-  },
-  "configs": [
-    { "configItemId": 1, "configValueId": 1, "itemName": "发动机型号", "selectedValue": "全柴 V29-50V42", "isStandard": true },
-    { "configItemId": 2, "configValueId": 1, "itemName": "电池类型", "selectedValue": "不适用(内燃车)", "isStandard": true },
-    { "configItemId": 3, "configValueId": 1, "itemName": "电池容量", "selectedValue": "不适用", "isStandard": true },
-    { "configItemId": 4, "configValueId": 2, "itemName": "轮胎类型", "selectedValue": "实心胎", "isStandard": true },
-    { "configItemId": 5, "configValueId": 1, "itemName": "轮胎品牌", "selectedValue": "龙工", "isStandard": true },
-    { "configItemId": 6, "configValueId": 1, "itemName": "门架级数", "selectedValue": "二级", "isStandard": true },
-    { "configItemId": 7, "configValueId": 1, "itemName": "起升高度", "selectedValue": "3000", "isStandard": true },
-    { "configItemId": 8, "configValueId": 1, "itemName": "侧移器", "selectedValue": "无", "isStandard": true },
-    { "configItemId": 9, "configValueId": 1, "itemName": "货叉长度", "selectedValue": "1220", "isStandard": true },
-    { "configItemId": 10, "configValueId": 1, "itemName": "车身颜色", "selectedValue": "红色", "isStandard": true }
-  ]
+  "machineId": 1,
+  "configItemId": 4,
+  "newConfigValueId": 10,
+  "newValueLabel": "充气胎",
+  "replaceType": "SWAP",
+  "newPartId": 3,
+  "operator": "测试员",
+  "remark": "测试替换：实心胎 → 充气胎"
 }
