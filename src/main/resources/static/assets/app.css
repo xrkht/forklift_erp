@@ -716,6 +716,14 @@ tbody tr:hover {
   gap: 10px 14px;
 }
 
+.detail-grid-compact {
+  margin-bottom: 14px;
+}
+
+.detail-action-row {
+  margin-bottom: 14px;
+}
+
 .detail-item {
   padding: 10px 12px;
   border: 1px solid var(--line);
@@ -731,6 +739,40 @@ tbody tr:hover {
 .detail-item .value {
   margin-top: 4px;
   word-break: break-word;
+}
+
+.vehicle-unit-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 10px;
+}
+
+.vehicle-unit-card {
+  display: grid;
+  gap: 6px;
+  width: 100%;
+  min-height: 92px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  text-align: left;
+}
+
+.vehicle-unit-card:hover,
+.vehicle-unit-card.is-active {
+  border-color: var(--primary);
+  background: #f8fbff;
+}
+
+.vehicle-unit-title {
+  font-weight: 700;
+  color: var(--text);
+}
+
+.vehicle-unit-meta {
+  color: var(--muted);
+  font-size: 12px;
 }
 
 .config-layout {

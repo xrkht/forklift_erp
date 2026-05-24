@@ -64,7 +64,7 @@ const icons = {
 
 const fields = {
   vehicle: [
-    { name: "vehicleProductNumber", label: "车辆产品号", required: true },
+    { name: "vehicleProductNumber", label: "车号", required: true },
     { name: "name", label: "车辆名称", required: true },
     { name: "specificationModel", label: "规格型号", required: true },
     { name: "machineType", label: "车辆类型" },
@@ -75,6 +75,7 @@ const fields = {
     { name: "purchasePrice", label: "采购价", type: "number", coerce: "decimal", step: "0.01" },
     { name: "salePrice", label: "销售价", type: "number", coerce: "decimal", step: "0.01" },
     { name: "settlementPrice", label: "结算价", type: "number", coerce: "decimal", step: "0.01" },
+    { name: "engineNumber", label: "发动机号" },
     { name: "frameNumber", label: "车架号" },
     { name: "warrantyCardNumber", label: "保修卡号" },
     { name: "manufacturingDate", label: "生产日期", type: "date", coerce: "date" },
@@ -154,10 +155,11 @@ const fields = {
     { name: "remark", label: "备注", type: "textarea", span: 2 }
   ],
   modificationOrder: [
-    { name: "machineId", label: "整车", type: "select", coerce: "int", required: true, options: vehicleOptions },
+    { name: "vehicleModelKey", label: "车型", type: "select", required: true, options: vehicleModelOptions },
+    { name: "machineId", label: "车号", type: "select", coerce: "int", required: true, options: vehicleNumberOptions },
     { name: "machineConfigId", label: "原配置", type: "select", coerce: "int", required: true, options: machineConfigOptions },
     { name: "newPartId", label: "新配件", type: "select", coerce: "int", required: true, options: compatiblePartOptions },
-    { name: "quantity", label: "数量", type: "number", coerce: "int", step: "1", required: true, defaultValue: 1 },
+    { name: "quantity", label: "数量", type: "number", coerce: "int", step: "1", required: true, placeholderValue: 1 },
     { name: "oldPartAction", label: "旧件处理", type: "select", options: oldPartActionOptions, placeholderValue: "STOCK_IN" },
     { name: "customerName", label: "客户名称" },
     { name: "salesOrderNo", label: "销售单号" },
@@ -399,6 +401,31 @@ async function loadVehicleDetail(id, shouldRender = true) {
   if (shouldRender) renderCurrentTab();
 }
 
+async function loadVehicleModelDetail(modelKey, selectedMachineId = null, shouldRender = true) {
+  const vehicles = vehiclesForModelKey(modelKey);
+  const selectedId = Number(selectedMachineId || state.selectedVehicleId || vehicles[0]?.id || 0);
+  const selected = vehicles.find(vehicle => Number(vehicle.id) === selectedId) || vehicles[0];
+  if (!selected) {
+    state.vehicleDetail = null;
+    if (shouldRender) renderCurrentTab();
+    return;
+  }
+  state.selectedVehicleId = Number(selected.id);
+  const [detail, logs, workOrders] = await Promise.all([
+    api(`/api/inventory/${selected.id}/detail`),
+    api(`/api/replace/machine/${selected.id}`),
+    hasPermission("replace:write") ? api(`/api/modification-work-orders/machine/${selected.id}`) : Promise.resolve([])
+  ]);
+  state.vehicleDetail = {
+    modelKey,
+    model: vehicleModelGroups().find(group => group.modelKey === modelKey) || { ...decodeVehicleModelKey(modelKey), modelKey, vehicles },
+    vehicles,
+    selectedMachineId: Number(selected.id),
+    selectedDetail: { ...detail, logs: sortById(logs), workOrders: sortById(workOrders) }
+  };
+  if (shouldRender) renderCurrentTab();
+}
+
 function handleNav(event) {
   const button = event.target.closest("[data-tab]");
   if (!button) return;
@@ -430,6 +457,11 @@ async function handleContentClick(event) {
     }
     if (action === "create") {
       await openEntityModal(kind, defaultEntity(kind));
+      return;
+    }
+    if (action === "model-inbound") {
+      const group = vehicleModelGroups().find(item => item.modelKey === button.dataset.modelKey);
+      await openEntityModal("vehicle", vehicleDefaultsForModel(group));
       return;
     }
     if (action === "vehicle-stock") {
@@ -469,7 +501,15 @@ async function handleContentClick(event) {
       return;
     }
     if (action === "detail-vehicle") {
-      await loadVehicleDetail(id);
+      if (button.dataset.modelKey) {
+        await loadVehicleModelDetail(button.dataset.modelKey);
+      } else {
+        await loadVehicleDetail(id);
+      }
+      return;
+    }
+    if (action === "select-model-vehicle") {
+      await loadVehicleModelDetail(button.dataset.modelKey, Number(button.dataset.machineId || 0));
       return;
     }
     if (action === "select-config-item") {
@@ -489,11 +529,9 @@ async function handleContentClick(event) {
     if (action === "create-modification-order") {
       const machineId = Number(button.dataset.machineId || state.selectedVehicleId || "");
       const machine = findEntity("vehicle", machineId);
+      const configId = button.dataset.machineConfigId ? Number(button.dataset.machineConfigId) : null;
       await openEntityModal("modificationOrder", {
-        machineId,
-        machineVersion: machine.version,
-        machineConfigId: button.dataset.machineConfigId ? Number(button.dataset.machineConfigId) : null,
-        quantity: 1
+        __placeholders: modificationOrderPlaceholders(machine, configId)
       });
       return;
     }
@@ -613,9 +651,21 @@ async function handleModalChange(event) {
     syncPartDictionaryFields(form, event.target.name);
   }
 
+  if (kind === "modificationOrder" && event.target.name === "vehicleModelKey") {
+    state.modal.item.machineId = null;
+    state.modal.item.machineConfigId = null;
+    state.modal.item.newPartId = null;
+    state.modal.item.__placeholders = {};
+    state.modal.context.machine = null;
+    state.modal.context.machineConfigs = [];
+    state.modal.context.compatibleParts = [];
+    renderModal();
+    return;
+  }
+
   if (kind === "partReplace" || kind === "modificationOrder") {
     if (event.target.name === "machineId") {
-      await preparePartReplaceContext(Number(event.target.value || 0), null);
+      await preparePartReplaceContext(Number(event.target.value || 0), null, { placeholderConfig: kind === "modificationOrder" });
       renderModal();
       return;
     }
@@ -635,6 +685,7 @@ async function handleModalSubmit(event) {
   const kind = form.dataset.kind;
   if (!validateCombos(form)) return;
   const item = state.modal?.item || {};
+  const activeModelKey = state.vehicleDetail?.modelKey;
   const payload = serializeForm(kind, form);
   attachVersion(payload, item);
 
@@ -697,8 +748,14 @@ async function handleModalSubmit(event) {
     }
     closeModal();
     await loadAllData();
-    if ((kind === "partReplace" || kind === "modificationOrder") && payload.machineId) {
-      await loadVehicleDetail(payload.machineId, false);
+    if (kind === "vehicle" && activeModelKey) {
+      await loadVehicleModelDetail(activeModelKey, state.selectedVehicleId, false);
+    } else if ((kind === "partReplace" || kind === "modificationOrder") && payload.machineId) {
+      if (activeModelKey) {
+        await loadVehicleModelDetail(activeModelKey, payload.machineId, false);
+      } else {
+        await loadVehicleDetail(payload.machineId, false);
+      }
     }
     renderCurrentTab();
   } catch (error) {
@@ -725,6 +782,7 @@ async function completeModificationOrder(id) {
   const order = findEntity("modificationOrder", id);
   if (!order.id) return;
   if (!confirm("确认完成这张改装工单？完成后会扣减新配件库存、旧件入库，并更新车辆配置。")) return;
+  const activeModelKey = state.vehicleDetail?.modelKey;
   await api(endpoints.modificationOrder.complete(id), {
     method: "PUT",
     body: { version: order.version }
@@ -732,7 +790,11 @@ async function completeModificationOrder(id) {
   showToast("改装工单已完成", "success");
   await loadAllData();
   if (state.selectedVehicleId) {
-    await loadVehicleDetail(state.selectedVehicleId, false);
+    if (activeModelKey) {
+      await loadVehicleModelDetail(activeModelKey, state.selectedVehicleId, false);
+    } else {
+      await loadVehicleDetail(state.selectedVehicleId, false);
+    }
   }
   renderCurrentTab();
 }
@@ -741,6 +803,7 @@ async function cancelModificationOrder(id) {
   const order = findEntity("modificationOrder", id);
   if (!order.id) return;
   if (!confirm("确认取消这张改装工单？")) return;
+  const activeModelKey = state.vehicleDetail?.modelKey;
   await api(endpoints.modificationOrder.cancel(id), {
     method: "PUT",
     body: { version: order.version }
@@ -748,7 +811,11 @@ async function cancelModificationOrder(id) {
   showToast("改装工单已取消", "success");
   await loadAllData();
   if (state.selectedVehicleId) {
-    await loadVehicleDetail(state.selectedVehicleId, false);
+    if (activeModelKey) {
+      await loadVehicleModelDetail(activeModelKey, state.selectedVehicleId, false);
+    } else {
+      await loadVehicleDetail(state.selectedVehicleId, false);
+    }
   }
   renderCurrentTab();
 }
@@ -820,7 +887,7 @@ async function openEntityModal(kind, item = {}) {
 
   state.modal = { kind, item: { ...item }, context: {} };
   if (kind === "partReplace" || kind === "modificationOrder") {
-    await preparePartReplaceContext(item.machineId || state.selectedVehicleId, item.machineConfigId);
+    await preparePartReplaceContext(item.machineId || state.selectedVehicleId, item.machineConfigId, { placeholderConfig: kind === "modificationOrder" });
   }
   renderModal();
 }
@@ -832,7 +899,7 @@ function closeModal() {
   els.modalCard.innerHTML = "";
 }
 
-async function preparePartReplaceContext(machineId, machineConfigId) {
+async function preparePartReplaceContext(machineId, machineConfigId, options = {}) {
   const numericMachineId = Number(machineId || 0);
   if (!numericMachineId) {
     state.modal.context.machine = null;
@@ -845,8 +912,22 @@ async function preparePartReplaceContext(machineId, machineConfigId) {
   state.modal.context.machine = detail.machine || findEntity("vehicle", numericMachineId);
   state.modal.context.machineConfigs = detail.configs || [];
   const selectedConfigId = machineConfigId || state.modal.context.machineConfigs[0]?.id || null;
-  state.modal.item.machineConfigId = selectedConfigId;
+  if (options.placeholderConfig) {
+    const placeholderConfig = state.modal.context.machineConfigs
+      .find(item => String(item.id) === String(selectedConfigId));
+    state.modal.item.machineConfigId = null;
+    state.modal.item.newPartId = null;
+    state.modal.item.__placeholders = {
+      ...(state.modal.item.__placeholders || {}),
+      machineConfigId: placeholderConfig ? `预填：${machineConfigOptionLabel(placeholderConfig)}` : undefined
+    };
+  } else {
+    state.modal.item.machineConfigId = selectedConfigId;
+  }
   updateCompatibleParts(selectedConfigId);
+  if (options.placeholderConfig) {
+    state.modal.item.machineConfigId = null;
+  }
 }
 
 function updateCompatibleParts(machineConfigId) {
@@ -955,6 +1036,7 @@ function syncShell() {
 
 function renderOverview() {
   const vehicles = state.data.vehicles;
+  const vehicleModels = vehicleModelGroups();
   const parts = state.data.parts;
   const repairs = state.data.repairs;
   const pendingRepairs = repairs.filter(item => item.status !== "COMPLETED").length;
@@ -971,10 +1053,10 @@ function renderOverview() {
 
       <section class="grid-three">
         ${renderSurface("最近车辆", compactTable([
-          { label: "产品号", key: "vehicleProductNumber" },
-          { label: "名称", key: "name" },
+          { label: "车型", render: row => vehicleModelLabel(row) },
+          { label: "车辆数", key: "unitCount" },
           { label: "库存", key: "inventoryCount", formatter: stockText }
-        ], vehicles.slice(0, 6)))}
+        ], vehicleModels.slice(0, 6)))}
         ${renderSurface("最近配件", compactTable([
           { label: "编码", key: "partCode" },
           { label: "名称", key: "partName" },
@@ -1005,31 +1087,29 @@ function renderOverview() {
 }
 
 function renderVehicles() {
-  const rows = filterRows(state.data.vehicles, state.search.vehicles, [
-    "vehicleProductNumber", "name", "specificationModel", "supplier", "warehouseName", "frameNumber"
+  const rows = filterRows(vehicleModelGroups(), state.search.vehicles, [
+    "name", "specificationModel", "machineType", "supplier", "warehouseName", "vehicleNumbers"
   ]);
 
   return `
     <div class="page">
       <div class="toolbar">
-        ${searchBox("vehicles", "搜索产品号、名称、供应商")}
+        ${searchBox("vehicles", "搜索车型、型号、供应商或车号")}
         <div class="toolbar-actions">
-          ${hasPermission("vehicle:write") ? `<button class="btn btn-primary" type="button" data-action="create" data-kind="vehicle">${icon("plus")}新增车辆</button>` : ""}
-          ${hasPermission("stock:adjust") ? `<button class="btn" type="button" data-action="vehicle-stock" data-direction="inbound">${icon("plus")}整车入库</button>` : ""}
-          ${hasPermission("stock:adjust") ? `<button class="btn" type="button" data-action="vehicle-stock" data-direction="outbound">${icon("minus")}整车出库</button>` : ""}
+          ${hasPermission("vehicle:write") ? `<button class="btn btn-primary" type="button" data-action="create" data-kind="vehicle">${icon("plus")}新增车型/单车</button>` : ""}
           <button class="btn btn-ghost" type="button" data-action="refresh">${icon("refresh")}刷新</button>
         </div>
       </div>
-      ${renderSurface("车辆列表", renderTable([
-        { label: "产品号", key: "vehicleProductNumber" },
-        { label: "名称", key: "name" },
+      ${renderSurface("车型库存列表", renderTable([
+        { label: "车型", render: row => vehicleModelLabel(row) },
         { label: "规格型号", key: "specificationModel" },
+        { label: "车辆类型", key: "machineType" },
         { label: "供应商", key: "supplier" },
         { label: "仓库", key: "warehouseName" },
-        { label: "状态", html: true, render: row => stockStatusBadge(row.stockStatus) },
-        { label: "库存", html: true, render: row => stockBadge(row.inventoryCount) },
+        { label: "车辆数", key: "unitCount" },
+        { label: "库存", html: true, render: row => stockBadge(row.inventoryCount, "台") },
         { label: "销售价", key: "salePrice", formatter: money },
-        { label: "操作", html: true, render: row => rowActions("vehicle", row, ["detail", "stockIn", "stockOut", "edit", "delete"]) }
+        { label: "操作", html: true, render: row => vehicleModelActions(row) }
       ], rows))}
       ${renderVehicleDetail()}
     </div>
@@ -1313,6 +1393,9 @@ function renderUsers() {
 
 function renderVehicleDetail() {
   if (!state.vehicleDetail) return "";
+  if (state.vehicleDetail.modelKey) {
+    return renderVehicleModelDetail();
+  }
   const machine = state.vehicleDetail.machine || {};
   const configs = state.vehicleDetail.configs || [];
   const logs = state.vehicleDetail.logs || [];
@@ -1332,6 +1415,7 @@ function renderVehicleDetail() {
           ${detailItem("供应商", machine.supplier)}
           ${detailItem("仓库", machine.warehouseName)}
           ${detailItem("库存状态", stockStatusLabel(machine.stockStatus))}
+          ${detailItem("发动机号", machine.engineNumber)}
           ${detailItem("车架号", machine.frameNumber)}
           ${detailItem("入库时间", dateTime(machine.inboundDate))}
         </div>
@@ -1363,6 +1447,89 @@ function renderVehicleDetail() {
         </div>
       </div>
     </section>
+  `;
+}
+
+function renderVehicleModelDetail() {
+  const detail = state.vehicleDetail;
+  const model = detail.model || {};
+  const selected = detail.selectedDetail?.machine || {};
+  const configs = detail.selectedDetail?.configs || [];
+  const logs = detail.selectedDetail?.logs || [];
+  const workOrders = detail.selectedDetail?.workOrders || [];
+  return `
+    <section class="surface">
+      <div class="surface-head">
+        <h2 class="surface-title">车型详情 · ${escapeHtml(vehicleModelLabel(model))}</h2>
+        <div class="toolbar-actions">
+          ${hasPermission("vehicle:write") ? `<button class="btn btn-primary" type="button" data-action="model-inbound" data-model-key="${escapeAttr(detail.modelKey)}">${icon("plus")}此车型入库</button>` : ""}
+        </div>
+      </div>
+      <div class="surface-body split">
+        <div class="detail-grid">
+          ${detailItem("车型名称", model.name)}
+          ${detailItem("规格型号", model.specificationModel)}
+          ${detailItem("车辆类型", model.machineType)}
+          ${detailItem("供应商", model.supplier)}
+          ${detailItem("仓库", model.warehouseName)}
+          ${detailItem("库存台数", `${model.inventoryCount || 0} 台`)}
+        </div>
+        <div class="grid-two">
+          ${renderSurface("库存车号", `
+            <div class="vehicle-unit-grid">
+              ${detail.vehicles.map(vehicle => renderVehicleUnitCard(vehicle, detail.modelKey, vehicle.id === selected.id)).join("")}
+            </div>
+          `)}
+          ${renderSurface(`当前配置 · ${escapeHtml(selected.vehicleProductNumber || "请选择车号")}`, `
+            <div class="detail-grid detail-grid-compact">
+              ${detailItem("车号", selected.vehicleProductNumber)}
+              ${detailItem("发动机号", selected.engineNumber)}
+              ${detailItem("车架号", selected.frameNumber)}
+              ${detailItem("保修卡号", selected.warrantyCardNumber)}
+              ${detailItem("结算价", money(selected.settlementPrice))}
+              ${detailItem("库存状态", stockStatusLabel(selected.stockStatus))}
+            </div>
+            <div class="toolbar-actions detail-action-row">
+              ${hasPermission("replace:write") ? `<button class="btn btn-primary" type="button" data-action="create-modification-order" data-machine-id="${escapeAttr(selected.id || "")}">${icon("swap")}新建改装工单</button>` : ""}
+            </div>
+            ${renderTable([
+              { label: "配置项", key: "itemName" },
+              { label: "当前值", key: "selectedValue" },
+              { label: "来源", key: "configSource" },
+              { label: "操作", html: true, render: row => `
+                <div class="action-row">
+                  ${hasPermission("replace:write") ? `<button class="btn btn-sm" type="button" data-action="create-modification-order" data-machine-id="${escapeAttr(selected.id)}" data-machine-config-id="${escapeAttr(row.id)}">${icon("swap")}生成工单</button>` : ""}
+                </div>
+              ` }
+            ], configs)}
+          `)}
+          ${renderSurface("改装工单", renderTable([
+            { label: "工单号", key: "workOrderNo" },
+            { label: "客户", key: "customerName" },
+            { label: "状态", html: true, render: row => modificationStatusBadge(row.status) },
+            { label: "替换明细", html: true, render: row => modificationLineSummary(row.lines) },
+            { label: "操作", html: true, render: row => modificationOrderActions(row) }
+          ], workOrders))}
+          ${renderSurface("替换记录", renderTable([
+            { label: "配置项", key: "itemName" },
+            { label: "旧值", key: "oldValue" },
+            { label: "新值", key: "newValue" },
+            { label: "类型", key: "replaceType" },
+            { label: "时间", key: "createdAt", formatter: dateTime }
+          ], logs))}
+        </div>
+      </div>
+    </section>
+  `;
+}
+
+function renderVehicleUnitCard(vehicle, modelKey, active) {
+  return `
+    <button class="vehicle-unit-card${active ? " is-active" : ""}" type="button" data-action="select-model-vehicle" data-model-key="${escapeAttr(modelKey)}" data-machine-id="${escapeAttr(vehicle.id)}">
+      <span class="vehicle-unit-title">${escapeHtml(vehicle.vehicleProductNumber || `ID ${vehicle.id}`)}</span>
+      <span class="vehicle-unit-meta">${escapeHtml(stockStatusLabel(vehicle.stockStatus))} · ${escapeHtml(vehicle.engineNumber || "未填发动机号")}</span>
+      <span class="vehicle-unit-meta">${escapeHtml(vehicle.frameNumber || "未填车架号")}</span>
+    </button>
   `;
 }
 
@@ -1517,6 +1684,15 @@ function rowActions(kind, row, actions) {
   `;
 }
 
+function vehicleModelActions(row) {
+  return `
+    <div class="action-row">
+      <button class="btn btn-sm" type="button" data-action="detail-vehicle" data-model-key="${escapeAttr(row.modelKey)}">${icon("eye")}详情</button>
+      ${hasPermission("vehicle:write") ? `<button class="btn btn-sm btn-primary" type="button" data-action="model-inbound" data-model-key="${escapeAttr(row.modelKey)}">${icon("plus")}入库</button>` : ""}
+    </div>
+  `;
+}
+
 function modificationOrderActions(row) {
   if (!hasPermission("replace:write")) return "";
   const closed = row.status === "COMPLETED" || row.status === "CANCELED";
@@ -1569,7 +1745,7 @@ function renderField(field, data) {
     const selected = findOptionByValue(options, value);
     const displayValue = selected ? selected.label : (field.allowCustom ? value : "");
     const hiddenValue = selected ? selected.value : (field.allowCustom ? value : "");
-    const placeholder = selectPlaceholder(field, options);
+    const placeholder = fieldPlaceholder(field, options, data);
     return `
       <label class="field"${span}>
         <span>${escapeHtml(field.label)}</span>
@@ -1596,7 +1772,7 @@ function renderField(field, data) {
   return `
     <label class="field"${span}>
       <span>${escapeHtml(field.label)}</span>
-      <input name="${escapeAttr(field.name)}" type="${escapeAttr(field.type || "text")}" data-coerce="${escapeAttr(coerce)}" value="${escapeAttr(value)}"${field.step ? ` step="${escapeAttr(field.step)}"` : ""}${required}>
+      <input name="${escapeAttr(field.name)}" type="${escapeAttr(field.type || "text")}" data-coerce="${escapeAttr(coerce)}" value="${escapeAttr(value)}" placeholder="${escapeAttr(fieldPlaceholder(field, [], data))}"${field.step ? ` step="${escapeAttr(field.step)}"` : ""}${required}>
     </label>
   `;
 }
@@ -1705,14 +1881,16 @@ function resolveOptions(field) {
   return field.options || [];
 }
 
-function selectPlaceholder(field, options) {
+function fieldPlaceholder(field, options = [], data = {}) {
+  const placeholder = data?.__placeholders?.[field.name];
+  if (placeholder) return placeholder;
   if (field.placeholder) return typeof field.placeholder === "function" ? field.placeholder() : field.placeholder;
   if (field.placeholderValue !== undefined) {
     const placeholderValue = typeof field.placeholderValue === "function" ? field.placeholderValue() : field.placeholderValue;
     const option = findOptionByValue(options, placeholderValue);
     return `默认：${option?.label ?? placeholderValue}`;
   }
-  return "请选择或输入筛选";
+  return field.type === "select" ? "请选择或输入筛选" : "";
 }
 
 function serializeForm(kind, form) {
@@ -1753,6 +1931,50 @@ function defaultEntity(kind) {
     entity.configItemId = state.selectedConfigItemId;
   }
   return entity;
+}
+
+function vehicleDefaultsForModel(group = {}) {
+  return {
+    name: group.name || "",
+    specificationModel: group.specificationModel || "",
+    machineType: group.machineType || "",
+    configuration: "",
+    supplier: group.supplier || "",
+    warehouseName: group.warehouseName || "",
+    stockStatus: "IN_STOCK",
+    purchasePrice: group.purchasePrice || "",
+    salePrice: group.salePrice || "",
+    settlementPrice: "",
+    inventoryCount: 1,
+    __placeholders: {
+      vehicleProductNumber: "请输入此辆整车唯一车号",
+      engineNumber: "请输入发动机号",
+      frameNumber: "请输入车架号",
+      warrantyCardNumber: "请输入保修卡号",
+      settlementPrice: "请输入此辆整车结算价"
+    }
+  };
+}
+
+function modificationOrderPlaceholders(machine = {}, configId = null) {
+  if (!machine?.id) return {};
+  const modelKey = vehicleModelKey(machine);
+  const detailConfigs = state.vehicleDetail?.selectedDetail?.machine?.id === machine.id
+    ? (state.vehicleDetail.selectedDetail.configs || [])
+    : (state.vehicleDetail?.machine?.id === machine.id ? (state.vehicleDetail.configs || []) : []);
+  const config = detailConfigs.find(item => String(item.id) === String(configId))
+    || detailConfigs[0]
+    || null;
+  const placeholders = {
+    vehicleModelKey: `预填：${vehicleModelLabel(machine)}`,
+    machineId: `预填：${machine.vehicleProductNumber || machine.id}`,
+    quantity: "默认：1",
+    oldPartAction: "默认：拆下件入库"
+  };
+  if (config) {
+    placeholders.machineConfigId = `预填：${machineConfigOptionLabel(config)}`;
+  }
+  return placeholders;
 }
 
 function syncConfigItemFields(form, changedName) {
@@ -1963,10 +2185,98 @@ function uniqueOptions(values) {
     .map(value => ({ value, label: value }));
 }
 
+function vehicleModelKey(item) {
+  return encodeURIComponent(JSON.stringify([
+    String(item?.name || "").trim(),
+    String(item?.specificationModel || "").trim()
+  ]));
+}
+
+function decodeVehicleModelKey(key) {
+  try {
+    const [name, specificationModel] = JSON.parse(decodeURIComponent(key || ""));
+    return { name, specificationModel };
+  } catch (error) {
+    return { name: "", specificationModel: "" };
+  }
+}
+
+function vehicleModelLabel(model) {
+  return `${model?.name || "-"} · ${model?.specificationModel || "-"}`;
+}
+
+function vehicleNumberLabel(item) {
+  return `${item?.vehicleProductNumber || item?.id || "-"} · ${item?.name || "-"} / ${item?.specificationModel || "-"}`;
+}
+
+function vehicleModelGroups() {
+  const groups = new Map();
+  for (const vehicle of state.data.vehicles) {
+    const modelKey = vehicleModelKey(vehicle);
+    if (!groups.has(modelKey)) {
+      groups.set(modelKey, {
+        id: modelKey,
+        modelKey,
+        name: vehicle.name,
+        specificationModel: vehicle.specificationModel,
+        machineType: vehicle.machineType,
+        supplier: vehicle.supplier,
+        warehouseName: vehicle.warehouseName,
+        purchasePrice: vehicle.purchasePrice,
+        salePrice: vehicle.salePrice,
+        settlementPrice: vehicle.settlementPrice,
+        vehicles: [],
+        vehicleNumbers: "",
+        unitCount: 0,
+        inventoryCount: 0
+      });
+    }
+    const group = groups.get(modelKey);
+    group.vehicles.push(vehicle);
+    group.unitCount += 1;
+    group.inventoryCount += Number(vehicle.inventoryCount || 0);
+  }
+  return [...groups.values()]
+    .map(group => ({
+      ...group,
+      vehicles: [...group.vehicles].sort((a, b) => String(a.vehicleProductNumber || "").localeCompare(String(b.vehicleProductNumber || ""), "zh-CN")),
+      vehicleNumbers: group.vehicles.map(vehicle => vehicle.vehicleProductNumber).filter(Boolean).join(" ")
+    }))
+    .sort((a, b) => vehicleModelLabel(a).localeCompare(vehicleModelLabel(b), "zh-CN"));
+}
+
+function vehiclesForModelKey(modelKey) {
+  if (!modelKey) return [];
+  return state.data.vehicles
+    .filter(vehicle => vehicleModelKey(vehicle) === modelKey)
+    .sort((a, b) => String(a.vehicleProductNumber || "").localeCompare(String(b.vehicleProductNumber || ""), "zh-CN"));
+}
+
+function vehicleModelOptions() {
+  return vehicleModelGroups().map(group => ({
+    value: group.modelKey,
+    label: `${vehicleModelLabel(group)}（${group.inventoryCount} 台库存）`
+  }));
+}
+
+function vehicleNumberOptions() {
+  const modelKey = state.modal?.item?.vehicleModelKey;
+  return vehiclesForModelKey(modelKey).map(item => ({
+    value: item.id,
+    label: `${item.vehicleProductNumber || item.id}（${stockStatusLabel(item.stockStatus)}）`,
+    meta: {
+      modelKey,
+      vehicleProductNumber: item.vehicleProductNumber,
+      frameNumber: item.frameNumber,
+      engineNumber: item.engineNumber
+    }
+  }));
+}
+
 function vehicleOptions() {
   return state.data.vehicles.map(item => ({
     value: item.id,
-    label: `${item.vehicleProductNumber || item.id} · ${item.name || "-"}`
+    label: vehicleNumberLabel(item)
   }));
 }
 
@@ -1980,8 +2290,12 @@ function partCodeOptions() {
 function machineConfigOptions() {
   return (state.modal?.context?.machineConfigs || []).map(item => ({
     value: item.id,
-    label: `${machineConfigDictionaryLabel(item)} · ${item.selectedValue || "-"}`
+    label: machineConfigOptionLabel(item)
   }));
+}
+
+function machineConfigOptionLabel(item) {
+  return `${machineConfigDictionaryLabel(item)} · ${item.selectedValue || "-"}`;
 }
 
 function machineConfigDictionaryLabel(config) {

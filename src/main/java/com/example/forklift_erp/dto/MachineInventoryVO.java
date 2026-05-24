@@ -23,6 +23,7 @@ public class MachineInventoryVO {
     private BigDecimal purchasePrice;
     private BigDecimal salePrice;
     private BigDecimal settlementPrice;
+    private String engineNumber;
     private String frameNumber;
     private String warrantyCardNumber;
     private LocalDate manufacturingDate;
@@ -46,6 +47,7 @@ public class MachineInventoryVO {
         vo.setPurchasePrice(entity.getPurchasePrice());
         vo.setSalePrice(entity.getSalePrice());
         vo.setSettlementPrice(entity.getSettlementPrice());
+        vo.setEngineNumber(entity.getEngineNumber());
         vo.setFrameNumber(entity.getFrameNumber());
         vo.setWarrantyCardNumber(entity.getWarrantyCardNumber());
         vo.setManufacturingDate(entity.getManufacturingDate());
