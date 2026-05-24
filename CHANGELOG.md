@@ -2,6 +2,22 @@
 
 本项目遵循 [语义化版本](https://semver.org/lang/zh-CN/) 和 [Keep a Changelog](https://keepachangelog.com/zh-CN/) 规范。
 
+## [0.1.17] - 2026-05-25 - xrkht
+
+### 修改
+- **改装工单旧件处理下拉**
+  - 新建改装工单时，旧件处理不再把“拆下件入库”真实写入下拉输入框，而是用灰色占位提示“默认：拆下件入库”
+  - 未手动选择旧件处理时，提交工单仍由前后端兜底按 `STOCK_IN` 处理；手动选择“不入库”时才写入 `DISCARD`
+  - Service Worker 缓存版本升级为 `forklift-erp-client-v9`，确保浏览器刷新后加载新的下拉逻辑
+
+### 验证
+- 内置 Node：`node --check src\main\resources\static\assets\app.js` 通过
+- 内置 Node：`node --check src\main\resources\static\sw.js` 通过
+- `.\mvnw.cmd test` 通过，累计 `11` 个测试通过
+- `.\mvnw.cmd package -DskipTests` 通过
+- Chromium 验证通过：旧件处理初始输入值和隐藏值为空，灰色提示显示“默认：拆下件入库”，下拉展开后“拆下件入库”和“不入库”均可直接选择
+- 通过接口写入测试配置、车辆、配件和两张改装工单：默认旧件处理工单完成后生成拆下件入库记录，`DISCARD` 工单完成后不生成拆下件入库记录
+
 ## [0.1.16] - 2026-05-24 - xrkht
 
 ### 新增
