@@ -63,7 +63,7 @@ if ($diffResult.ExitCode -gt 1) {
 if ($hasStagedChanges) {
     if (-not $Message) {
         $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
-        $Message = "auto: update $timestamp"
+        $Message = "backup: manual snapshot $timestamp"
     }
 
     Invoke-Git @("commit", "-m", $Message)
@@ -72,8 +72,13 @@ if ($hasStagedChanges) {
 }
 
 $upstreamResult = Invoke-GitQuiet @("rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}")
-if ($upstreamResult.ExitCode -eq 0 -and $upstreamResult.Output) {
-    Invoke-Git @("push", $Remote, $Branch)
-} else {
-    Invoke-Git @("push", "-u", $Remote, $Branch)
+try {
+    if ($upstreamResult.ExitCode -eq 0 -and $upstreamResult.Output) {
+        Invoke-Git @("push", $Remote, $Branch)
+    } else {
+        Invoke-Git @("push", "-u", $Remote, $Branch)
+    }
+} catch {
+    Write-Warning "Local Git backup is saved, but the GitHub push failed. Check network/authentication or pull the remote history before pushing again."
+    throw
 }
