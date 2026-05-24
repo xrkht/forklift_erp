@@ -164,6 +164,11 @@ button {
   padding-right: 34px !important;
 }
 
+.combo-input::placeholder {
+  color: var(--muted);
+  opacity: 0.75;
+}
+
 .combo::after {
   content: "";
   position: absolute;

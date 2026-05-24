@@ -158,7 +158,7 @@ const fields = {
     { name: "machineConfigId", label: "原配置", type: "select", coerce: "int", required: true, options: machineConfigOptions },
     { name: "newPartId", label: "新配件", type: "select", coerce: "int", required: true, options: compatiblePartOptions },
     { name: "quantity", label: "数量", type: "number", coerce: "int", step: "1", required: true, defaultValue: 1 },
-    { name: "oldPartAction", label: "旧件处理", type: "select", options: oldPartActionOptions, defaultValue: "STOCK_IN" },
+    { name: "oldPartAction", label: "旧件处理", type: "select", options: oldPartActionOptions, placeholderValue: "STOCK_IN" },
     { name: "customerName", label: "客户名称" },
     { name: "salesOrderNo", label: "销售单号" },
     { name: "operator", label: "操作人" },
@@ -493,8 +493,7 @@ async function handleContentClick(event) {
         machineId,
         machineVersion: machine.version,
         machineConfigId: button.dataset.machineConfigId ? Number(button.dataset.machineConfigId) : null,
-        quantity: 1,
-        oldPartAction: "STOCK_IN"
+        quantity: 1
       });
       return;
     }
@@ -1570,11 +1569,12 @@ function renderField(field, data) {
     const selected = findOptionByValue(options, value);
     const displayValue = selected ? selected.label : (field.allowCustom ? value : "");
     const hiddenValue = selected ? selected.value : (field.allowCustom ? value : "");
+    const placeholder = selectPlaceholder(field, options);
     return `
       <label class="field"${span}>
         <span>${escapeHtml(field.label)}</span>
         <div class="combo${options.length ? "" : " is-empty"}" data-combo data-name="${escapeAttr(field.name)}" data-allow-custom="${field.allowCustom ? "true" : "false"}" data-required="${field.required ? "true" : "false"}">
-          <input class="combo-input" data-combo-input type="text" value="${escapeAttr(displayValue)}" placeholder="请选择或输入筛选" autocomplete="off"${required}>
+          <input class="combo-input" data-combo-input type="text" value="${escapeAttr(displayValue)}" placeholder="${escapeAttr(placeholder)}" autocomplete="off"${required}>
           <input name="${escapeAttr(field.name)}" type="hidden" data-coerce="${escapeAttr(coerce)}" value="${escapeAttr(hiddenValue)}" data-selected-label="${escapeAttr(displayValue)}" data-selected-meta="${selected?.meta ? escapeAttr(JSON.stringify(selected.meta)) : ""}">
           <div class="combo-menu" data-combo-menu>
             ${renderComboOptions(options, hiddenValue)}
@@ -1703,6 +1703,16 @@ function validateCombos(form) {
 function resolveOptions(field) {
   if (typeof field.options === "function") return field.options();
   return field.options || [];
+}
+
+function selectPlaceholder(field, options) {
+  if (field.placeholder) return typeof field.placeholder === "function" ? field.placeholder() : field.placeholder;
+  if (field.placeholderValue !== undefined) {
+    const placeholderValue = typeof field.placeholderValue === "function" ? field.placeholderValue() : field.placeholderValue;
+    const option = findOptionByValue(options, placeholderValue);
+    return `默认：${option?.label ?? placeholderValue}`;
+  }
+  return "请选择或输入筛选";
 }
 
 function serializeForm(kind, form) {
