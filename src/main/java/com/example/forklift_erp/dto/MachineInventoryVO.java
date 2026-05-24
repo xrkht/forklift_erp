@@ -1,0 +1,56 @@
+// src/main/java/com/example/forklift_erp/dto/MachineInventoryVO.java
+package com.example.forklift_erp.dto;
+
+import com.example.forklift_erp.entity.MachineInventory;
+import lombok.Data;
+import java.math.BigDecimal;
+import java.time.LocalDate;
+import java.time.LocalDateTime;
+
+@Data
+public class MachineInventoryVO {
+    private Long id;
+    private Long version;
+    private String vehicleProductNumber;
+    private String name;
+    private String specificationModel;
+    private String machineType;
+    private String configuration;
+    private String supplier;
+    private String warehouseName;
+    private Long warehouseId;
+    private String stockStatus;
+    private BigDecimal purchasePrice;
+    private BigDecimal salePrice;
+    private BigDecimal settlementPrice;
+    private String frameNumber;
+    private String warrantyCardNumber;
+    private LocalDate manufacturingDate;
+    private LocalDateTime inboundDate;
+    private Integer inventoryCount;
+    // 排除审计字段
+
+    public static MachineInventoryVO fromEntity(MachineInventory entity) {
+        MachineInventoryVO vo = new MachineInventoryVO();
+        vo.setId(entity.getId());
+        vo.setVersion(entity.getVersion());
+        vo.setVehicleProductNumber(entity.getVehicleProductNumber());
+        vo.setName(entity.getName());
+        vo.setSpecificationModel(entity.getSpecificationModel());
+        vo.setMachineType(entity.getMachineType());
+        vo.setConfiguration(entity.getConfiguration());
+        vo.setSupplier(entity.getSupplier());
+        vo.setWarehouseName(entity.getWarehouseName());
+        vo.setWarehouseId(entity.getWarehouseId());
+        vo.setStockStatus(entity.getStockStatus());
+        vo.setPurchasePrice(entity.getPurchasePrice());
+        vo.setSalePrice(entity.getSalePrice());
+        vo.setSettlementPrice(entity.getSettlementPrice());
+        vo.setFrameNumber(entity.getFrameNumber());
+        vo.setWarrantyCardNumber(entity.getWarrantyCardNumber());
+        vo.setManufacturingDate(entity.getManufacturingDate());
+        vo.setInboundDate(entity.getInboundDate());
+        vo.setInventoryCount(entity.getInventoryCount());
+        return vo;
+    }
+}

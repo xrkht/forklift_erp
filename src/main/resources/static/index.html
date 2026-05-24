@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>叉车 ERP</title>
+  <meta name="theme-color" content="#1f6feb">
+  <link rel="manifest" href="/manifest.webmanifest">
+  <link rel="stylesheet" href="/assets/app.css">
+  <script type="module" src="/assets/app.js"></script>
+</head>
+<body>
+  <div id="loginScreen" class="login-screen">
+    <section class="login-panel">
+      <div class="brand-row">
+        <div class="brand-mark">F</div>
+        <div>
+          <div class="brand-name">叉车 ERP</div>
+          <div class="brand-subtitle">扁平化后台管理</div>
+        </div>
+      </div>
+
+      <h1 class="login-title">登录系统</h1>
+      <p class="login-copy">统一管理车辆、配件、维修和配置数据。</p>
+
+      <form id="loginForm" class="stack-form">
+        <label class="field">
+          <span>用户名</span>
+          <input name="username" type="text" placeholder="admin" autocomplete="username" required>
+        </label>
+        <label class="field">
+          <span>密码</span>
+          <input name="password" type="password" placeholder="admin123" autocomplete="current-password" required>
+        </label>
+        <button type="submit" class="btn btn-primary btn-block">
+          <span class="btn-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none"><path d="M10 17l5-5-5-5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><path d="M15 12H3" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+          </span>
+          登录
+        </button>
+      </form>
+    </section>
+  </div>
+
+  <div id="appScreen" class="app-screen is-hidden">
+    <aside class="sidebar">
+      <div class="sidebar-brand">
+        <div class="brand-mark">F</div>
+        <div>
+          <div class="brand-name">叉车 ERP</div>
+          <div class="brand-subtitle">Flat UI</div>
+        </div>
+      </div>
+
+      <nav class="nav-list" id="mainNav">
+        <button class="nav-item is-active" data-tab="overview">总览</button>
+        <button class="nav-item" data-tab="vehicles">车辆库存</button>
+        <button class="nav-item" data-tab="parts">配件库存</button>
+        <button class="nav-item" data-tab="modifications" data-permissions="replace:write">改装工单</button>
+        <button class="nav-item" data-tab="repairs">维修记录</button>
+        <button class="nav-item" data-tab="stats" data-permissions="log:read">统计财报</button>
+        <button class="nav-item" data-tab="logs" data-permissions="log:read">日志查看</button>
+        <button class="nav-item" data-tab="configs">配置字典</button>
+        <button class="nav-item" data-tab="users" data-permissions="user:read">用户管理</button>
+      </nav>
+    </aside>
+
+    <div class="workspace">
+      <header class="topbar">
+        <div>
+          <div class="topbar-title" id="pageTitle">总览</div>
+          <div class="topbar-subtitle" id="pageSubtitle">系统概览与业务入口</div>
+        </div>
+        <div class="topbar-actions">
+          <span class="user-chip" id="currentUser">admin</span>
+          <button class="btn btn-ghost" id="switchUserBtn" type="button">切换用户</button>
+          <button class="btn btn-ghost" id="logoutBtn" type="button">
+            <span class="btn-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none"><path d="M9 17l-5-5 5-5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><path d="M4 12h12" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><path d="M13 7V5a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4a2 2 0 0 1-2-2v-2" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            </span>
+            退出
+          </button>
+        </div>
+      </header>
+
+      <main id="moduleContent" class="content"></main>
+    </div>
+  </div>
+
+  <div id="modalOverlay" class="modal-overlay is-hidden" aria-hidden="true">
+    <div class="modal-shell">
+      <div class="modal-card" id="modalCard"></div>
+    </div>
+  </div>
+
+  <div id="toastHost" class="toast-host" aria-live="polite"></div>
+</body>
+</html>

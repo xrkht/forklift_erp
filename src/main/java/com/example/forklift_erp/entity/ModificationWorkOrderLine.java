@@ -1,0 +1,72 @@
+package com.example.forklift_erp.entity;
+
+import jakarta.persistence.*;
+import lombok.Data;
+
+import java.time.LocalDateTime;
+
+@Data
+@Entity
+@Table(name = "modification_work_order_line")
+public class ModificationWorkOrderLine {
+
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+
+    @Column(name = "work_order_id", nullable = false)
+    private Long workOrderId;
+
+    @Column(name = "machine_config_id", nullable = false)
+    private Long machineConfigId;
+
+    @Column(name = "config_item_id")
+    private Long configItemId;
+
+    @Column(name = "item_name", length = 100)
+    private String itemName;
+
+    @Column(name = "old_value", length = 200)
+    private String oldValue;
+
+    @Column(name = "new_part_id", nullable = false)
+    private Long newPartId;
+
+    @Column(name = "new_part_code", length = 100)
+    private String newPartCode;
+
+    @Column(name = "new_part_name", length = 120)
+    private String newPartName;
+
+    @Column(name = "new_value", length = 200)
+    private String newValue;
+
+    @Column(name = "quantity", nullable = false)
+    private Integer quantity = 1;
+
+    @Column(name = "old_part_action", nullable = false, length = 30)
+    private String oldPartAction = "STOCK_IN";
+
+    @Column(name = "replace_log_id")
+    private Long replaceLogId;
+
+    @Column(length = 500)
+    private String remark;
+
+    @Column(name = "created_at", updatable = false)
+    private LocalDateTime createdAt;
+
+    @Column(name = "updated_at")
+    private LocalDateTime updatedAt;
+
+    @PrePersist
+    public void prePersist() {
+        this.createdAt = LocalDateTime.now();
+        this.updatedAt = LocalDateTime.now();
+    }
+
+    @PreUpdate
+    public void preUpdate() {
+        this.updatedAt = LocalDateTime.now();
+    }
+}
