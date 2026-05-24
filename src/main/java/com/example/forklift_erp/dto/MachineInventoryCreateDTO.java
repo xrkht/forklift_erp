@@ -29,6 +29,7 @@ public class MachineInventoryCreateDTO {
     private BigDecimal purchasePrice;
     private BigDecimal salePrice;
     private BigDecimal settlementPrice;
+    private String engineNumber;
     private String frameNumber;
     private String warrantyCardNumber;
     private LocalDate manufacturingDate;
@@ -53,6 +54,7 @@ public class MachineInventoryCreateDTO {
         entity.setPurchasePrice(this.purchasePrice);
         entity.setSalePrice(this.salePrice);
         entity.setSettlementPrice(this.settlementPrice);
+        entity.setEngineNumber(this.engineNumber);
         entity.setFrameNumber(this.frameNumber);
         entity.setWarrantyCardNumber(this.warrantyCardNumber);
         entity.setManufacturingDate(this.manufacturingDate);
@@ -79,6 +81,7 @@ public class MachineInventoryCreateDTO {
         entity.setPurchasePrice(this.purchasePrice);
         entity.setSalePrice(this.salePrice);
         entity.setSettlementPrice(this.settlementPrice);
+        entity.setEngineNumber(this.engineNumber);
         entity.setFrameNumber(this.frameNumber);
         entity.setWarrantyCardNumber(this.warrantyCardNumber);
         entity.setManufacturingDate(this.manufacturingDate);

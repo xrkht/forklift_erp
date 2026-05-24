@@ -58,6 +58,9 @@ public class MachineInventory implements CollaborativeResource {
     @Column(name = "vehicle_number", unique = true, length = 100) // 假设车号/产品编号是唯一的
     private String vehicleProductNumber; // 车号/产品编号
 
+    @Column(name = "engine_number", length = 100)
+    private String engineNumber; // 发动机号
+
     @Column(name = "frame_number", length = 100)
     private String frameNumber; // 车架号
 
