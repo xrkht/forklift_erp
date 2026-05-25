@@ -746,6 +746,20 @@ tbody tr:hover {
   background: #fafcff;
 }
 
+tbody tr.table-row-selectable td {
+  cursor: pointer;
+}
+
+tbody tr.table-row-selectable:hover,
+tbody tr.table-row-active {
+  background: #f8fbff;
+}
+
+tbody tr.table-row-selectable:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: -2px;
+}
+
 .muted {
   color: var(--muted);
 }
@@ -886,9 +900,19 @@ tbody tr:hover {
   background: #fff;
 }
 
+.config-item.is-selectable {
+  cursor: pointer;
+}
+
+.config-item.is-selectable:hover,
 .config-item.is-active {
   border-color: var(--primary);
   background: #f8fbff;
+}
+
+.config-item.is-selectable:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
 }
 
 .config-item-head {

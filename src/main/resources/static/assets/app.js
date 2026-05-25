@@ -335,6 +335,7 @@ document.addEventListener("DOMContentLoaded", () => {
   els.logoutBtn.addEventListener("click", () => logout("已退出登录"));
   els.mainNav.addEventListener("click", handleNav);
   els.content.addEventListener("click", handleContentClick);
+  els.content.addEventListener("keydown", handleContentKeydown);
   els.content.addEventListener("input", handleContentInput);
   els.content.addEventListener("change", handleContentChange);
   els.modalOverlay.addEventListener("click", handleOverlayClick);
@@ -530,12 +531,12 @@ function handleNav(event) {
 }
 
 async function handleContentClick(event) {
-  const button = event.target.closest("button[data-action]");
-  if (!button) return;
+  const control = event.target.closest("[data-action], [data-select-action]");
+  if (!control) return;
 
-  const action = button.dataset.action;
-  const kind = button.dataset.kind;
-  const id = button.dataset.id ? Number(button.dataset.id) : null;
+  const action = control.dataset.action || control.dataset.selectAction;
+  const kind = control.dataset.kind;
+  const id = control.dataset.id ? Number(control.dataset.id) : null;
 
   try {
     if (action === "refresh") {
@@ -551,7 +552,7 @@ async function handleContentClick(event) {
       return;
     }
     if (action === "create-vehicle-model") {
-      await openEntityModal("vehicleModel", vehicleModelDefaults(button.dataset.powerType));
+      await openEntityModal("vehicleModel", vehicleModelDefaults(control.dataset.powerType));
       return;
     }
     if (action === "create") {
@@ -559,33 +560,33 @@ async function handleContentClick(event) {
       return;
     }
     if (action === "model-inbound") {
-      const group = vehicleModelGroups().find(item => item.modelKey === button.dataset.modelKey);
+      const group = vehicleModelGroups().find(item => item.modelKey === control.dataset.modelKey);
       await openEntityModal("vehicleInbound", vehicleInboundDefaultsForModel(group));
       return;
     }
     if (action === "model-outbound") {
-      const group = vehicleModelGroups().find(item => item.modelKey === button.dataset.modelKey);
+      const group = vehicleModelGroups().find(item => item.modelKey === control.dataset.modelKey);
       await openEntityModal("vehicleOutbound", vehicleOutboundDefaultsForModel(group));
       return;
     }
     if (action === "vehicle-stock") {
-      const vehicle = findEntity("vehicle", id || Number(button.dataset.machineId || ""));
+      const vehicle = findEntity("vehicle", id || Number(control.dataset.machineId || ""));
       const modalItem = {
         version: vehicle.version,
-        direction: button.dataset.direction
+        direction: control.dataset.direction
       };
-      setPrefill(modalItem, "machineId", id || Number(button.dataset.machineId || ""), `预填：${vehicleNumberLabel(vehicle)}`);
+      setPrefill(modalItem, "machineId", id || Number(control.dataset.machineId || ""), `预填：${vehicleNumberLabel(vehicle)}`);
       await openEntityModal("vehicleStock", modalItem);
       return;
     }
     if (action === "part-stock") {
-      const part = state.data.parts.find(item => item.partCode === button.dataset.partCode) || {};
+      const part = state.data.parts.find(item => item.partCode === control.dataset.partCode) || {};
       const modalItem = {
         version: part.version,
-        direction: button.dataset.direction
+        direction: control.dataset.direction
       };
-      setPrefill(modalItem, "partCode", button.dataset.partCode || "", `预填：${part.partCode || ""} · ${part.partName || ""}`);
-      if (button.dataset.direction === "outbound") {
+      setPrefill(modalItem, "partCode", control.dataset.partCode || "", `预填：${part.partCode || ""} · ${part.partName || ""}`);
+      if (control.dataset.direction === "outbound") {
         const price = part.settlementPrice || part.salePrice || "";
         setPrefill(modalItem, "settlementPrice", price, price ? `预填：${money(price)}` : undefined);
       }
@@ -609,15 +610,15 @@ async function handleContentClick(event) {
       return;
     }
     if (action === "detail-vehicle") {
-      if (button.dataset.modelKey) {
-        await loadVehicleModelDetail(button.dataset.modelKey);
+      if (control.dataset.modelKey) {
+        await loadVehicleModelDetail(control.dataset.modelKey);
       } else {
         await loadVehicleDetail(id);
       }
       return;
     }
     if (action === "select-model-vehicle") {
-      await loadVehicleModelDetail(button.dataset.modelKey, Number(button.dataset.machineId || 0));
+      await loadVehicleModelDetail(control.dataset.modelKey, Number(control.dataset.machineId || 0));
       return;
     }
     if (action === "select-config-item") {
@@ -625,19 +626,19 @@ async function handleContentClick(event) {
       return;
     }
     if (action === "part-replace") {
-      const machineId = Number(button.dataset.machineId || state.selectedVehicleId || "");
+      const machineId = Number(control.dataset.machineId || state.selectedVehicleId || "");
       const machine = findEntity("vehicle", machineId);
       await openEntityModal("partReplace", {
         machineId,
         machineVersion: machine.version,
-        machineConfigId: button.dataset.machineConfigId ? Number(button.dataset.machineConfigId) : null
+        machineConfigId: control.dataset.machineConfigId ? Number(control.dataset.machineConfigId) : null
       });
       return;
     }
     if (action === "create-modification-order") {
-      const machineId = Number(button.dataset.machineId || state.selectedVehicleId || "");
+      const machineId = Number(control.dataset.machineId || state.selectedVehicleId || "");
       const machine = findEntity("vehicle", machineId);
-      const configId = button.dataset.machineConfigId ? Number(button.dataset.machineConfigId) : null;
+      const configId = control.dataset.machineConfigId ? Number(control.dataset.machineConfigId) : null;
       await openEntityModal("modificationOrder", {
         __placeholders: modificationOrderPlaceholders(machine, configId)
       });
@@ -654,6 +655,15 @@ async function handleContentClick(event) {
   } catch (error) {
     handleActionError(error);
   }
+}
+
+function handleContentKeydown(event) {
+  if (event.key !== "Enter" && event.key !== " ") return;
+  if (event.target.closest("button, a, input, select, textarea")) return;
+  const selectable = event.target.closest("[data-select-action]");
+  if (!selectable || !els.content.contains(selectable)) return;
+  event.preventDefault();
+  selectable.click();
 }
 
 function handleContentInput(event) {
@@ -1386,7 +1396,14 @@ function renderVehicles() {
         { label: "库存", html: true, render: row => stockBadge(row.inventoryCount, "台") },
         { label: "销售价", key: "salePrice", formatter: money },
         { label: "操作", html: true, render: row => vehicleModelActions(row) }
-      ], rows))}
+      ], rows, {
+        selectableRow: row => ({
+          action: "detail-vehicle",
+          data: { modelKey: row.modelKey },
+          active: state.vehicleDetail?.modelKey === row.modelKey,
+          label: `查看车型 ${vehicleModelLabel(row)} 详情`
+        })
+      }))}
       ${renderVehicleDetail()}
     </div>
   `;
@@ -1982,7 +1999,7 @@ function summaryCard(label, value, foot) {
   `;
 }
 
-function renderTable(columns, rows) {
+function renderTable(columns, rows, options = {}) {
   if (!rows.length) return emptyState("暂无数据");
   return `
     <div class="table-wrap">
@@ -1991,11 +2008,18 @@ function renderTable(columns, rows) {
           <tr>${columns.map(column => `<th>${escapeHtml(column.label)}</th>`).join("")}</tr>
         </thead>
         <tbody>
-          ${rows.map(row => `
-            <tr>
-              ${columns.map(column => `<td>${renderCell(column, row)}</td>`).join("")}
-            </tr>
-          `).join("")}
+          ${rows.map(row => {
+            const selectable = options.selectableRow ? options.selectableRow(row) : null;
+            const rowClass = [
+              selectable ? "table-row-selectable" : "",
+              selectable?.active ? "table-row-active" : ""
+            ].filter(Boolean).join(" ");
+            return `
+              <tr${rowClass ? ` class="${rowClass}"` : ""}${renderSelectableAttrs(selectable)}>
+                ${columns.map(column => `<td>${renderCell(column, row)}</td>`).join("")}
+              </tr>
+            `;
+          }).join("")}
         </tbody>
       </table>
     </div>
@@ -2013,10 +2037,39 @@ function renderCell(column, row) {
   return escapeHtml(display(value));
 }
 
+function renderSelectableAttrs(selectable) {
+  if (!selectable?.action) return "";
+  const attrs = [
+    `data-select-action="${escapeAttr(selectable.action)}"`,
+    'tabindex="0"',
+    'role="button"'
+  ];
+  if (typeof selectable.active === "boolean") {
+    attrs.push(`aria-pressed="${selectable.active ? "true" : "false"}"`);
+  }
+  if (selectable.label) {
+    attrs.push(`aria-label="${escapeAttr(selectable.label)}"`);
+  }
+  for (const [key, value] of Object.entries(selectable.data || {})) {
+    if (value === undefined || value === null) continue;
+    attrs.push(`data-${toDataAttrName(key)}="${escapeAttr(value)}"`);
+  }
+  return ` ${attrs.join(" ")}`;
+}
+
+function toDataAttrName(key) {
+  return String(key).replace(/([A-Z])/g, "-$1").toLowerCase();
+}
+
 function renderConfigItemCard(item) {
-  const active = item.id === state.selectedConfigItemId ? " is-active" : "";
+  const active = item.id === state.selectedConfigItemId;
   return `
-    <article class="config-item${active}">
+    <article class="config-item is-selectable${active ? " is-active" : ""}"${renderSelectableAttrs({
+      action: "select-config-item",
+      data: { id: item.id },
+      active,
+      label: `查看配置项 ${item.itemName || item.itemCode || item.id} 的值列表`
+    })}>
       <div class="config-item-head">
         <div>
           <div class="config-item-title">${escapeHtml(item.itemName || "-")}</div>
