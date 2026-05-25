@@ -126,7 +126,13 @@ class OutboundOrderIntegrationTests {
         outboundPayload.put("machineId", machine.path("id").asLong());
         outboundPayload.put("machineVersion", machine.path("version").asLong());
         outboundPayload.put("customerId", customer.path("id").asLong());
+        outboundPayload.put("salesDate", "2026-05-20");
         outboundPayload.put("settlementPrice", "128000.00");
+        outboundPayload.put("salePrice", "136000.00");
+        outboundPayload.put("paymentRemark", "已收定金 20000 元");
+        outboundPayload.put("invoiceStatus", "含税未开票");
+        outboundPayload.put("registrationStatus", "包上牌");
+        outboundPayload.put("contractType", "纸质合同");
         outboundPayload.put("operator", "outbound-test");
         outboundPayload.put("orderRemark", "整车出库集成测试");
 
@@ -137,6 +143,12 @@ class OutboundOrderIntegrationTests {
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.code").value(200))
                 .andExpect(jsonPath("$.data.resourceType").value("MACHINE"))
+                .andExpect(jsonPath("$.data.salesDate").value("2026-05-20"))
+                .andExpect(jsonPath("$.data.salePrice").value(136000.00))
+                .andExpect(jsonPath("$.data.paymentRemark").value("已收定金 20000 元"))
+                .andExpect(jsonPath("$.data.invoiceStatus").value("含税未开票"))
+                .andExpect(jsonPath("$.data.registrationStatus").value("包上牌"))
+                .andExpect(jsonPath("$.data.contractType").value("纸质合同"))
                 .andExpect(jsonPath("$.data.paymentSettled").value(false))
                 .andReturn()
                 .getResponse()
@@ -150,17 +162,27 @@ class OutboundOrderIntegrationTests {
         assertThat(adjustedMachine.getInventoryCount()).isZero();
         assertThat(adjustedMachine.getStockStatus()).isEqualTo("OUTBOUND");
         assertThat(adjustedMachine.getSettlementPrice()).isEqualByComparingTo(new BigDecimal("128000.00"));
+        assertThat(adjustedMachine.getSalePrice()).isEqualByComparingTo(new BigDecimal("136000.00"));
+        assertThat(adjustedMachine.getSalesDate()).isEqualTo("2026-05-20");
         assertThat(adjustedMachine.getDestination1()).startsWith("广东日丰电缆有限公司");
         assertThat(stockMovementRepository.findBySourceTypeAndSourceId("OUTBOUND_ORDER", orderId))
                 .hasSizeGreaterThanOrEqualTo(1);
 
         Map<String, Object> updatePayload = new LinkedHashMap<>();
         updatePayload.put("version", order.path("version").asLong());
+        updatePayload.put("salesDate", "2026-05-21");
+        updatePayload.put("settlementPrice", "129500.00");
+        updatePayload.put("salePrice", "137500.00");
         updatePayload.put("paymentSettled", true);
+        updatePayload.put("paymentRemark", "尾款已结清");
         updatePayload.put("salesReported", true);
         updatePayload.put("invoiceApplied", true);
         updatePayload.put("salesReportDate", "2026-05-25");
         updatePayload.put("invoiceApplicationDate", "2026-05-25");
+        updatePayload.put("invoiceStatus", "含税已开票");
+        updatePayload.put("invoiceIssuedDate", "2026-05-26");
+        updatePayload.put("registrationStatus", "已上牌");
+        updatePayload.put("contractType", "纸质合同");
         updatePayload.put("orderRemark", "车款已结清，已报销售并申请发票");
 
         mockMvc.perform(put("/api/outbound-orders/{id}", orderId)
@@ -169,14 +191,25 @@ class OutboundOrderIntegrationTests {
                         .content(json(updatePayload)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value(200))
+                .andExpect(jsonPath("$.data.salesDate").value("2026-05-21"))
+                .andExpect(jsonPath("$.data.settlementPrice").value(129500.00))
+                .andExpect(jsonPath("$.data.salePrice").value(137500.00))
                 .andExpect(jsonPath("$.data.paymentSettled").value(true))
+                .andExpect(jsonPath("$.data.paymentRemark").value("尾款已结清"))
                 .andExpect(jsonPath("$.data.salesReported").value(true))
-                .andExpect(jsonPath("$.data.invoiceApplied").value(true));
+                .andExpect(jsonPath("$.data.invoiceApplied").value(true))
+                .andExpect(jsonPath("$.data.invoiceStatus").value("含税已开票"))
+                .andExpect(jsonPath("$.data.invoiceIssuedDate").value("2026-05-26"))
+                .andExpect(jsonPath("$.data.registrationStatus").value("已上牌"))
+                .andExpect(jsonPath("$.data.contractType").value("纸质合同"));
 
         MachineInventory reportedMachine = machineRepository.findById(machine.path("id").asLong()).orElseThrow();
         assertThat(reportedMachine.getIsSalesReported()).isEqualTo("是");
         assertThat(reportedMachine.getIsInvoiceApplied()).isEqualTo("是");
         assertThat(reportedMachine.getSalesReportDate()).isEqualTo(LocalDate.of(2026, 5, 25));
+        assertThat(reportedMachine.getSettlementPrice()).isEqualByComparingTo(new BigDecimal("129500.00"));
+        assertThat(reportedMachine.getSalePrice()).isEqualByComparingTo(new BigDecimal("137500.00"));
+        assertThat(reportedMachine.getSalesDate()).isEqualTo("2026-05-21");
     }
 
     @Test
@@ -238,9 +271,13 @@ class OutboundOrderIntegrationTests {
         payload.put("vehicleProductNumber", "OO-" + unique("machine"));
         payload.put("name", "出库测试车型");
         payload.put("specificationModel", "CPCD30");
+        payload.put("configuration", "国四 / 二节 3 米 / 1220 货叉");
         payload.put("machineType", "内燃叉车");
         payload.put("supplier", "Codex Supplier");
+        payload.put("applicationNumber", "APP-" + unique("apply"));
+        payload.put("materialNumber", "MAT-" + unique("material"));
         payload.put("inventoryCount", 1);
+        payload.put("remarks", "整机进出库台账测试数据");
 
         String response = mockMvc.perform(post("/api/inventory")
                         .header("Authorization", bearer(superToken))

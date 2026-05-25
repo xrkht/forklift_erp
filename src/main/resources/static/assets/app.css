@@ -453,6 +453,30 @@ button {
   outline: none;
 }
 
+.segmented-control {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+}
+
+.segment-btn {
+  min-width: 88px;
+  min-height: 32px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+}
+
+.segment-btn.is-active {
+  background: var(--primary-weak);
+  color: var(--primary);
+}
+
 .hover-menu {
   position: relative;
 }
@@ -717,6 +741,21 @@ button {
   align-items: center;
   gap: 8px;
   flex-wrap: wrap;
+}
+
+.cell-stack {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.cell-stack span,
+.cell-stack strong {
+  word-break: break-word;
+}
+
+.cell-stack .helper-inline {
+  white-space: normal;
 }
 
 table {
