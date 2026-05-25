@@ -1,4 +1,4 @@
-const CACHE_NAME = "forklift-erp-client-v11";
+const CACHE_NAME = "forklift-erp-client-v12";
 const SHELL_ASSETS = [
   "/",
   "/index.html",
