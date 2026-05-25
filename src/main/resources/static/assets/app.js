@@ -24,7 +24,8 @@ const state = {
       view: "model",
       power: "",
       supplier: "",
-      stock: ""
+      stock: "",
+      workflow: ""
     }
   },
   data: {
@@ -44,6 +45,7 @@ const state = {
   selectedVehicleId: null,
   vehicleDetail: null,
   selectedConfigItemId: null,
+  configItemScrollTop: 0,
   selectedStatsYear: new Date().getFullYear(),
   visibleLogRows: LOG_PAGE_SIZE,
   modal: null
@@ -73,40 +75,44 @@ const icons = {
   trash: '<svg viewBox="0 0 24 24" fill="none"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 14h10l1-14M9 7V4h6v3" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>',
   eye: '<svg viewBox="0 0 24 24" fill="none"><path d="M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6S2 12 2 12Z" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><circle cx="12" cy="12" r="3" stroke="currentColor" stroke-width="1.8"/></svg>',
   search: '<svg viewBox="0 0 24 24" fill="none"><circle cx="11" cy="11" r="7" stroke="currentColor" stroke-width="1.8"/><path d="m20 20-3.5-3.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>',
-  swap: '<svg viewBox="0 0 24 24" fill="none"><path d="M7 7h12l-3-3M17 17H5l3 3" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>'
+  swap: '<svg viewBox="0 0 24 24" fill="none"><path d="M7 7h12l-3-3M17 17H5l3 3" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+  upload: '<svg viewBox="0 0 24 24" fill="none"><path d="M12 16V4M7 9l5-5 5 5M5 20h14" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+  download: '<svg viewBox="0 0 24 24" fill="none"><path d="M12 4v12M7 11l5 5 5-5M5 20h14" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+  lock: '<svg viewBox="0 0 24 24" fill="none"><rect x="5" y="10" width="14" height="10" rx="2" stroke="currentColor" stroke-width="1.8"/><path d="M8 10V7a4 4 0 0 1 8 0v3" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>',
+  unlock: '<svg viewBox="0 0 24 24" fill="none"><rect x="5" y="10" width="14" height="10" rx="2" stroke="currentColor" stroke-width="1.8"/><path d="M8 10V7a4 4 0 0 1 7.3-2.3" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>'
 };
 
 const fields = {
   vehicle: [
-    { name: "vehicleProductNumber", label: "车号/产品编号", required: true },
-    { name: "name", label: "名称", required: true },
-    { name: "specificationModel", label: "规格型号", required: true },
-    { name: "configuration", label: "配置", type: "textarea", span: 2 },
-    { name: "machineType", label: "动力", type: "select", options: powerTypeOptions, allowCustom: true },
-    { name: "supplier", label: "供应商" },
-    { name: "warehouseName", label: "经销商/仓位" },
-    { name: "applicationNumber", label: "样机申请单号" },
-    { name: "materialNumber", label: "物料号" },
-    { name: "stockStatus", label: "库存状态", type: "select", options: stockStatusOptions(), defaultValue: "IN_STOCK" },
-    { name: "purchasePrice", label: "采购价", type: "number", coerce: "decimal", step: "0.01" },
-    { name: "settlementPrice", label: "结算价", type: "number", coerce: "decimal", step: "0.01" },
-    { name: "salePrice", label: "销售单价", type: "number", coerce: "decimal", step: "0.01" },
-    { name: "engineNumber", label: "发动机号" },
-    { name: "frameNumber", label: "车架号" },
-    { name: "warrantyCardNumber", label: "保修卡号" },
-    { name: "manufacturingDate", label: "制造日期", type: "date", coerce: "date" },
-    { name: "inboundDate", label: "入库时间", type: "datetime-local", coerce: "datetime" },
-    { name: "salesDate", label: "销售日期", type: "date", coerce: "date" },
-    { name: "isSalesReported", label: "报销售状态" },
-    { name: "salesReportDate", label: "报销售日期", type: "date", coerce: "date" },
-    { name: "inventoryCount", label: "库存数", type: "number", coerce: "int", step: "1", defaultValue: 1 },
-    { name: "destination1", label: "去向1", span: 2 },
-    { name: "destination2", label: "去向2", span: 2 },
-    { name: "destination3", label: "去向3", span: 2 },
-    { name: "destination4", label: "去向4", span: 2 },
-    { name: "destination5", label: "去向5", span: 2 },
-    { name: "isInvoiceApplied", label: "发票申请状态" },
-    { name: "remarks", label: "备注", type: "textarea", span: 2 }
+    { name: "vehicleProductNumber", label: "车号/产品编号", required: true, section: "入库台账" },
+    { name: "inboundDate", label: "入库日期", type: "datetime-local", coerce: "datetime", defaultValue: nowInputDateTime, section: "入库台账" },
+    { name: "supplier", label: "供应商", section: "入库台账" },
+    { name: "warehouseName", label: "经销商名称/仓位", section: "入库台账" },
+    { name: "applicationNumber", label: "样机申请单号", section: "入库台账" },
+    { name: "materialNumber", label: "物料号", section: "入库台账" },
+    { name: "name", label: "名称", required: true, section: "整机识别" },
+    { name: "specificationModel", label: "规格型号", required: true, section: "整机识别" },
+    { name: "configuration", label: "配置", type: "textarea", span: 2, section: "整机识别" },
+    { name: "machineType", label: "动力", type: "select", options: powerTypeOptions, allowCustom: true, section: "整机识别" },
+    { name: "engineNumber", label: "发动机号", section: "整机识别" },
+    { name: "frameNumber", label: "车架号", section: "整机识别" },
+    { name: "warrantyCardNumber", label: "保修卡号", section: "整机识别" },
+    { name: "manufacturingDate", label: "制造日期", type: "date", coerce: "date", section: "整机识别" },
+    { name: "stockStatus", label: "库存状态", type: "select", options: stockStatusOptions(), defaultValue: "IN_STOCK", section: "价格库存" },
+    { name: "purchasePrice", label: "采购价", type: "number", coerce: "decimal", step: "0.01", section: "价格库存" },
+    { name: "settlementPrice", label: "结算价", type: "number", coerce: "decimal", step: "0.01", section: "价格库存" },
+    { name: "salePrice", label: "销售单价", type: "number", coerce: "decimal", step: "0.01", section: "价格库存" },
+    { name: "inventoryCount", label: "库存数", type: "number", coerce: "int", step: "1", defaultValue: 1, section: "价格库存" },
+    { name: "salesDate", label: "销售日期", type: "date", coerce: "date", section: "销售与去向" },
+    { name: "isSalesReported", label: "是否报销售", section: "销售与去向" },
+    { name: "salesReportDate", label: "报销售日期", type: "date", coerce: "date", section: "销售与去向" },
+    { name: "isInvoiceApplied", label: "是否申请发票", section: "销售与去向" },
+    { name: "destination1", label: "去向1", span: 2, section: "销售与去向" },
+    { name: "destination2", label: "去向2", span: 2, section: "销售与去向" },
+    { name: "destination3", label: "去向3", span: 2, section: "销售与去向" },
+    { name: "destination4", label: "去向4", span: 2, section: "销售与去向" },
+    { name: "destination5", label: "去向5", span: 2, section: "销售与去向" },
+    { name: "remarks", label: "备注", type: "textarea", span: 2, section: "销售与去向" }
   ],
   vehicleModel: [
     { name: "name", label: "车型", required: true },
@@ -119,26 +125,26 @@ const fields = {
     { name: "salePrice", label: "销售单价", type: "number", coerce: "decimal", step: "0.01" }
   ],
   vehicleInbound: [
-    { name: "vehicleProductNumber", label: "车号/产品编号", required: true },
-    { name: "name", label: "名称", required: true },
-    { name: "specificationModel", label: "规格型号", required: true },
-    { name: "configuration", label: "配置", type: "textarea", span: 2 },
-    { name: "machineType", label: "动力", type: "select", options: powerTypeOptions, allowCustom: true, required: true },
-    { name: "supplier", label: "供应商" },
-    { name: "warehouseName", label: "经销商/仓位" },
-    { name: "applicationNumber", label: "样机申请单号" },
-    { name: "materialNumber", label: "物料号" },
-    { name: "stockStatus", label: "库存状态", type: "select", options: stockStatusOptions(), defaultValue: "IN_STOCK" },
-    { name: "purchasePrice", label: "采购价", type: "number", coerce: "decimal", step: "0.01" },
-    { name: "settlementPrice", label: "结算价", type: "number", coerce: "decimal", step: "0.01" },
-    { name: "salePrice", label: "销售单价", type: "number", coerce: "decimal", step: "0.01" },
-    { name: "engineNumber", label: "发动机号" },
-    { name: "frameNumber", label: "车架号" },
-    { name: "warrantyCardNumber", label: "保修卡号" },
-    { name: "manufacturingDate", label: "制造日期", type: "date", coerce: "date" },
-    { name: "inboundDate", label: "入库时间", type: "datetime-local", coerce: "datetime" },
-    { name: "inventoryCount", label: "库存数", type: "number", coerce: "int", step: "1", defaultValue: 1 },
-    { name: "remarks", label: "备注", type: "textarea", span: 2 }
+    { name: "vehicleProductNumber", label: "车号/产品编号", required: true, section: "入库台账" },
+    { name: "inboundDate", label: "入库日期", type: "datetime-local", coerce: "datetime", defaultValue: nowInputDateTime, section: "入库台账" },
+    { name: "supplier", label: "供应商", section: "入库台账" },
+    { name: "warehouseName", label: "经销商名称/仓位", section: "入库台账" },
+    { name: "applicationNumber", label: "样机申请单号", section: "入库台账" },
+    { name: "materialNumber", label: "物料号", section: "入库台账" },
+    { name: "name", label: "名称", required: true, section: "整机识别" },
+    { name: "specificationModel", label: "规格型号", required: true, section: "整机识别" },
+    { name: "configuration", label: "配置", type: "textarea", span: 2, section: "整机识别" },
+    { name: "machineType", label: "动力", type: "select", options: powerTypeOptions, allowCustom: true, required: true, section: "整机识别" },
+    { name: "engineNumber", label: "发动机号", section: "整机识别" },
+    { name: "frameNumber", label: "车架号", section: "整机识别" },
+    { name: "warrantyCardNumber", label: "保修卡号", section: "整机识别" },
+    { name: "manufacturingDate", label: "制造日期", type: "date", coerce: "date", section: "整机识别" },
+    { name: "stockStatus", label: "库存状态", type: "select", options: stockStatusOptions(), defaultValue: "IN_STOCK", section: "价格库存" },
+    { name: "purchasePrice", label: "采购价", type: "number", coerce: "decimal", step: "0.01", section: "价格库存" },
+    { name: "settlementPrice", label: "结算价", type: "number", coerce: "decimal", step: "0.01", section: "价格库存" },
+    { name: "salePrice", label: "销售单价", type: "number", coerce: "decimal", step: "0.01", section: "价格库存" },
+    { name: "inventoryCount", label: "库存数", type: "number", coerce: "int", step: "1", defaultValue: 1, section: "价格库存" },
+    { name: "remarks", label: "备注", type: "textarea", span: 2, section: "销售与去向" }
   ],
   part: [
     { name: "partCode", label: "配件编码", required: true },
@@ -200,23 +206,32 @@ const fields = {
     { name: "remark", label: "备注", type: "textarea", span: 2 }
   ],
   vehicleOutbound: [
-    { name: "machineId", label: "出库车号", type: "select", coerce: "int", required: true, options: vehicleOutboundOptions },
-    { name: "customerId", label: "客户", type: "select", coerce: "int", required: true, options: customerOptions },
-    { name: "salesDate", label: "销售日期", type: "date", coerce: "date", defaultValue: todayInputDate },
-    { name: "settlementPrice", label: "结算价", type: "number", coerce: "decimal", step: "0.01", required: true },
-    { name: "salePrice", label: "销售单价", type: "number", coerce: "decimal", step: "0.01" },
-    { name: "paymentSettled", label: "车款结清", type: "checkbox", coerce: "boolean" },
-    { name: "paymentRemark", label: "收款情况", type: "textarea", span: 2 },
-    { name: "salesReported", label: "已报销售", type: "checkbox", coerce: "boolean" },
-    { name: "salesReportDate", label: "报销售日期", type: "date", coerce: "date" },
-    { name: "invoiceApplied", label: "申请发票", type: "checkbox", coerce: "boolean" },
-    { name: "invoiceApplicationDate", label: "发票申请日期", type: "date", coerce: "date" },
-    { name: "invoiceStatus", label: "开票情况" },
-    { name: "invoiceIssuedDate", label: "开票日期", type: "date", coerce: "date" },
-    { name: "registrationStatus", label: "上牌情况" },
-    { name: "contractType", label: "合同" },
-    { name: "operator", label: "经办人" },
-    { name: "orderRemark", label: "订单备注", type: "textarea", span: 2 }
+    { name: "machineId", label: "车号/产品编号", type: "select", coerce: "int", required: true, options: vehicleOutboundOptions, section: "销售车辆" },
+    { name: "salesDate", label: "销售日期", type: "date", coerce: "date", defaultValue: todayInputDate, section: "销售车辆" },
+    { name: "settlementPrice", label: "结算价", type: "number", coerce: "decimal", step: "0.01", required: true, section: "价格收款" },
+    { name: "salePrice", label: "销售单价", type: "number", coerce: "decimal", step: "0.01", section: "价格收款" },
+    { name: "paymentSettled", label: "车款是否结清", type: "checkbox", coerce: "boolean", section: "价格收款" },
+    { name: "paymentRemark", label: "收款情况", type: "textarea", span: 2, section: "价格收款" },
+    { name: "customerMode", label: "客户录入", type: "select", required: true, options: customerEntryModeOptions, defaultValue: "existing", section: "客户资料" },
+    { name: "customerId", label: "客户", type: "select", coerce: "int", required: true, options: customerOptions, section: "客户资料" },
+    { name: "invoiceStatus", label: "开发票情况", section: "票据与报销售" },
+    { name: "invoiceIssuedDate", label: "开票日期", type: "date", coerce: "date", section: "票据与报销售" },
+    { name: "salesReported", label: "是否报销售", type: "checkbox", coerce: "boolean", section: "票据与报销售" },
+    { name: "salesReportDate", label: "报销售日期", type: "date", coerce: "date", section: "票据与报销售" },
+    { name: "invoiceApplied", label: "是否申请发票", type: "checkbox", coerce: "boolean", section: "票据与报销售" },
+    { name: "invoiceApplicationDate", label: "发票申请日期", type: "date", coerce: "date", section: "票据与报销售" },
+    { name: "registrationStatus", label: "是否上牌", section: "票据与报销售" },
+    { name: "contractType", label: "合同", section: "票据与报销售" },
+    { name: "operator", label: "经办人", section: "备注" },
+    { name: "orderRemark", label: "备注", type: "textarea", span: 2, section: "备注" }
+  ],
+  vehicleOutboundQuickCustomer: [
+    { name: "customerCompanyName", label: "客户", required: true, span: 2, section: "客户资料" },
+    { name: "customerAddress", label: "地址", span: 2, section: "客户资料" },
+    { name: "customerContactName", label: "联系人", section: "客户资料" },
+    { name: "customerContactPhone", label: "电话", section: "客户资料" },
+    { name: "customerTaxOrIdNumber", label: "税号/身份证号", span: 2, section: "客户资料" },
+    { name: "customerRemarks", label: "客户备注", type: "textarea", span: 2, section: "客户资料" }
   ],
   partStock: [
     { name: "partCode", label: "配件", type: "select", required: true, options: partCodeOptions },
@@ -256,6 +271,9 @@ const fields = {
     { name: "contractType", label: "合同" },
     { name: "orderRemark", label: "订单备注", type: "textarea", span: 2 },
     { name: "operator", label: "经办人" }
+  ],
+  invoiceUpload: [
+    { name: "invoiceFile", label: "发票文件", type: "file", required: true, span: 2, accept: ".pdf,.ofd,.jpg,.jpeg,.png,.webp,application/pdf,image/jpeg,image/png,image/webp" }
   ],
   partReplace: [
     { name: "machineId", label: "整车", type: "select", coerce: "int", required: true, options: vehicleOptions },
@@ -331,7 +349,10 @@ const endpoints = {
     list: "/api/outbound-orders",
     vehicle: "/api/outbound-orders/vehicle",
     part: "/api/outbound-orders/part",
-    update: id => `/api/outbound-orders/${id}`
+    update: id => `/api/outbound-orders/${id}`,
+    lock: id => `/api/outbound-orders/${id}/lock`,
+    uploadInvoice: id => `/api/outbound-orders/${id}/invoice`,
+    downloadInvoice: id => `/api/outbound-orders/${id}/invoice`
   },
   customer: {
     list: "/api/customers",
@@ -509,12 +530,20 @@ async function loadConfigValueCache(items = state.data.configItems) {
   state.data.configValueMap = Object.fromEntries(entries);
 }
 
-async function loadConfigValues(itemId) {
+async function loadConfigValues(itemId, options = {}) {
   state.selectedConfigItemId = Number(itemId);
   const values = sortById(await fetchConfigValues(itemId), false);
   state.data.configValueMap[state.selectedConfigItemId] = values;
   state.data.configValues = values;
   renderCurrentTab();
+  if (options.restoreConfigScroll) restoreConfigItemScroll();
+}
+
+function restoreConfigItemScroll() {
+  requestAnimationFrame(() => {
+    const list = els.content.querySelector(".config-items-pane .config-list");
+    if (list) list.scrollTop = state.configItemScrollTop || 0;
+  });
 }
 
 async function loadVehicleDetail(id, shouldRender = true) {
@@ -598,6 +627,14 @@ async function handleContentClick(event) {
       renderCurrentTab();
       return;
     }
+    if (action === "set-vehicle-workflow") {
+      state.filters.vehicles = {
+        ...state.filters.vehicles,
+        workflow: control.dataset.workflow || ""
+      };
+      renderCurrentTab();
+      return;
+    }
     if (action === "create-vehicle-model") {
       await openEntityModal("vehicleModel", vehicleModelDefaults(control.dataset.powerType));
       return;
@@ -649,6 +686,27 @@ async function handleContentClick(event) {
       await openEntityModal(kind, findEntity(kind, id));
       return;
     }
+    if (action === "upload-invoice") {
+      const order = findEntity("outboundOrder", id);
+      if (!isInvoiceIssued(order)) {
+        showToast("请先登记开票日期或开票情况为已开票", "error");
+        return;
+      }
+      await openEntityModal("invoiceUpload", order);
+      return;
+    }
+    if (action === "download-invoice") {
+      await downloadInvoice(findEntity("outboundOrder", id));
+      return;
+    }
+    if (action === "toggle-order-status") {
+      await toggleOutboundOrderStatus(id, control.dataset.field);
+      return;
+    }
+    if (action === "toggle-order-lock") {
+      await toggleOutboundOrderLock(id, control.dataset.locked === "true");
+      return;
+    }
     if (action === "user-username") {
       await openEntityModal("userUsername", findEntity("user", id));
       return;
@@ -674,7 +732,9 @@ async function handleContentClick(event) {
       return;
     }
     if (action === "select-config-item") {
-      await loadConfigValues(id);
+      const configList = control.closest(".config-list");
+      state.configItemScrollTop = configList ? configList.scrollTop : 0;
+      await loadConfigValues(id, { restoreConfigScroll: true });
       return;
     }
     if (action === "part-replace") {
@@ -881,6 +941,14 @@ async function handleModalChange(event) {
     return;
   }
 
+  if (kind === "vehicleOutbound" && event.target.name === "customerMode") {
+    if (event.target.value === "quickCreate") {
+      state.modal.item.customerId = null;
+    }
+    renderModal();
+    return;
+  }
+
   if (kind === "vehicleOutbound" && event.target.name === "machineId") {
     syncVehicleOutboundDefaults(Number(event.target.value || 0));
     renderModal();
@@ -928,6 +996,19 @@ async function handleModalSubmit(event) {
   if (!validateCombos(form)) return;
   const item = state.modal?.item || {};
   const activeModelKey = state.vehicleDetail?.modelKey;
+
+  if (kind === "invoiceUpload") {
+    try {
+      await uploadInvoiceForOrder(item, form);
+      closeModal();
+      await loadAllData();
+      renderCurrentTab();
+    } catch (error) {
+      handleActionError(error);
+    }
+    return;
+  }
+
   const payload = serializeForm(kind, form);
   attachVersion(payload, item);
 
@@ -960,10 +1041,6 @@ async function handleModalSubmit(event) {
       showToast("车型已新增", "success");
     } else if (kind === "vehicleInbound") {
       const configs = buildInboundConfigs(item);
-      if (!configs.length) {
-        showToast("请至少选择一项入库配置", "error");
-        return;
-      }
       await api("/api/inventory/inbound", {
         method: "POST",
         body: {
@@ -977,12 +1054,16 @@ async function handleModalSubmit(event) {
       showToast("此车型入库成功", "success");
     } else if (kind === "vehicleOutbound") {
       const machine = findEntity("vehicle", Number(payload.machineId || 0));
+      const customerResult = await ensureVehicleOutboundCustomer(payload);
+      if (!customerResult?.customerId) {
+        return;
+      }
       await api(endpoints.outboundOrder.vehicle, {
         method: "POST",
         body: {
           machineId: payload.machineId,
           machineVersion: machine.version,
-          customerId: payload.customerId,
+          customerId: customerResult.customerId,
           salesDate: payload.salesDate,
           settlementPrice: payload.settlementPrice,
           salePrice: payload.salePrice,
@@ -1000,7 +1081,7 @@ async function handleModalSubmit(event) {
           orderRemark: payload.orderRemark
         }
       });
-      showToast("整车出库订单已创建", "success");
+      showToast(customerResult.created ? "已新建客户并创建整车出库订单" : "整车出库订单已创建", "success");
     } else if (kind === "vehicleStock") {
       attachStockVersion(payload, "vehicle");
       await api(`/api/inventory/${payload.machineId}/${item.direction}`, {
@@ -1213,6 +1294,175 @@ function buildInboundConfigs(item) {
     });
 }
 
+async function ensureVehicleOutboundCustomer(payload) {
+  if (payload.customerMode !== "quickCreate") {
+    if (!payload.customerId) {
+      showToast("请选择客户", "error");
+      return null;
+    }
+    return { customerId: payload.customerId, created: false };
+  }
+
+  const companyName = String(payload.customerCompanyName || "").trim();
+  if (!companyName) {
+    showToast("请填写客户公司", "error");
+    return null;
+  }
+
+  const existingCustomer = state.data.customers.find(item => normalizeText(item.companyName) === normalizeText(companyName));
+  if (existingCustomer) {
+    return { customerId: existingCustomer.id, created: false };
+  }
+
+  const createdCustomer = await api(endpoints.customer.create, {
+    method: "POST",
+    body: {
+      companyName,
+      address: payload.customerAddress,
+      contactName: payload.customerContactName || companyName,
+      contactPhone: payload.customerContactPhone,
+      taxOrIdNumber: payload.customerTaxOrIdNumber,
+      remarks: payload.customerRemarks
+    }
+  });
+  return { customerId: createdCustomer.id, created: true };
+}
+
+async function uploadInvoiceForOrder(order, form) {
+  if (!order?.id) {
+    throw new Error("未找到订单");
+  }
+  const file = form.elements.invoiceFile?.files?.[0];
+  if (!file) {
+    throw new Error("请选择发票文件");
+  }
+  const formData = new FormData();
+  formData.append("file", file);
+  await api(endpoints.outboundOrder.uploadInvoice(order.id), {
+    method: "POST",
+    body: formData
+  });
+  showToast("发票已上传", "success");
+}
+
+async function downloadInvoice(order) {
+  if (!order?.id || !order.invoiceFileAvailable) {
+    showToast("该订单还没有发票文件", "error");
+    return;
+  }
+  const headers = {};
+  if (state.token) {
+    headers.Authorization = `Bearer ${state.token}`;
+  }
+  const response = await fetch(endpoints.outboundOrder.downloadInvoice(order.id), { headers });
+  if (!response.ok) {
+    const payload = await response.json().catch(() => null);
+    throw new Error(payload?.message || `下载失败：${response.status}`);
+  }
+  const blob = await response.blob();
+  const filename = filenameFromDisposition(response.headers.get("Content-Disposition"))
+    || order.invoiceOriginalName
+    || `${order.orderNo || "invoice"}-发票`;
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+function filenameFromDisposition(disposition = "") {
+  const encodedMatch = /filename\*=UTF-8''([^;]+)/i.exec(disposition);
+  if (encodedMatch) {
+    try {
+      return decodeURIComponent(encodedMatch[1]);
+    } catch {
+      return encodedMatch[1];
+    }
+  }
+  const plainMatch = /filename="?([^";]+)"?/i.exec(disposition);
+  return plainMatch ? plainMatch[1] : "";
+}
+
+async function toggleOutboundOrderStatus(id, field) {
+  const order = findEntity("outboundOrder", id);
+  if (!order?.id || !field) return;
+  const overrides = orderStatusToggleOverrides(order, field);
+  if (!overrides) return;
+
+  await api(endpoints.outboundOrder.update(order.id), {
+    method: "PUT",
+    body: buildOutboundOrderStatusPayload(order, overrides)
+  });
+  showToast("订单状态已更新", "success");
+  await loadAllData();
+  renderCurrentTab();
+}
+
+async function toggleOutboundOrderLock(id, locked) {
+  const order = findEntity("outboundOrder", id);
+  if (!order?.id || !canManageOrderLock()) return;
+  const params = new URLSearchParams({ locked: String(locked) });
+  if (order.version !== undefined && order.version !== null) {
+    params.set("version", String(order.version));
+  }
+  await api(`${endpoints.outboundOrder.lock(order.id)}?${params.toString()}`, { method: "PUT" });
+  showToast(locked ? "订单已锁定，关联记录仅管理员可见" : "订单已解锁", "success");
+  await loadAllData();
+  renderCurrentTab();
+}
+
+function orderStatusToggleOverrides(order, field) {
+  if (field === "paymentSettled") {
+    return { paymentSettled: !Boolean(order.paymentSettled) };
+  }
+  if (field === "salesReported") {
+    const next = !Boolean(order.salesReported);
+    return {
+      salesReported: next,
+      salesReportDate: next && !order.salesReportDate ? todayInputDate() : order.salesReportDate
+    };
+  }
+  if (field === "invoiceApplied") {
+    const next = !Boolean(order.invoiceApplied);
+    return {
+      invoiceApplied: next,
+      invoiceApplicationDate: next && !order.invoiceApplicationDate ? todayInputDate() : order.invoiceApplicationDate
+    };
+  }
+  if (field === "registrationStatus") {
+    return { registrationStatus: yesNoFromStatusText(order.registrationStatus) ? "未上牌" : "已上牌" };
+  }
+  if (field === "contractType") {
+    return { contractType: yesNoFromStatusText(order.contractType) ? "无合同" : "有合同" };
+  }
+  return null;
+}
+
+function buildOutboundOrderStatusPayload(order, overrides) {
+  return {
+    version: order.version,
+    settlementPrice: order.settlementPrice,
+    salesDate: order.salesDate,
+    salePrice: order.salePrice,
+    paymentSettled: Boolean(order.paymentSettled),
+    paymentRemark: order.paymentRemark,
+    salesReported: Boolean(order.salesReported),
+    invoiceApplied: Boolean(order.invoiceApplied),
+    salesReportDate: order.salesReportDate,
+    invoiceApplicationDate: order.invoiceApplicationDate,
+    invoiceStatus: order.invoiceStatus,
+    invoiceIssuedDate: order.invoiceIssuedDate,
+    registrationStatus: order.registrationStatus,
+    contractType: order.contractType,
+    orderRemark: order.orderRemark,
+    operator: order.operator,
+    ...overrides
+  };
+}
+
 async function openEntityModal(kind, item = {}) {
   if (kind === "configValue" && !state.data.configItems.length) {
     state.data.configItems = sortById(await api("/api/config/items"), false);
@@ -1302,7 +1552,7 @@ function renderModal() {
     <form data-kind="${escapeAttr(kind)}">
       <div class="modal-body">
         <div class="modal-grid">
-          ${modalFields.map(field => renderField(field, item)).join("")}
+          ${renderModalFields(modalFields, item)}
         </div>
         ${kind === "vehicleInbound" ? renderConfigSelectionEditor(item) : ""}
       </div>
@@ -1421,6 +1671,8 @@ function renderOverview() {
         </div>
         <div class="surface-body toolbar-actions">
           ${hasPermission("vehicle:write") ? renderVehicleModelMenu() : ""}
+          ${hasPermission("vehicle:write") ? `<button class="btn" type="button" data-action="create" data-kind="vehicle">${icon("plus")}新增入库台账</button>` : ""}
+          ${hasPermission("stock:adjust") ? `<button class="btn" type="button" data-action="create" data-kind="vehicleOutbound">${icon("minus")}登记销售跟进</button>` : ""}
           <button class="btn" type="button" data-action="create" data-kind="part">${icon("plus")}新增配件</button>
           ${hasPermission("vehicle:write") ? `<button class="btn" type="button" data-action="create" data-kind="customer">${icon("plus")}新增客户</button>` : ""}
           ${hasPermission("replace:write") ? `<button class="btn" type="button" data-action="create" data-kind="modificationOrder">${icon("swap")}新建改装工单</button>` : ""}
@@ -1437,10 +1689,11 @@ function renderVehicles() {
   const modelRows = filterVehicleRows(filterRows(vehicleModelGroups(), state.search.vehicles, [
     "name", "specificationModel", "configuration", "machineType", "supplier", "warehouseName", "vehicleNumbers"
   ]));
-  const ledgerRows = filterVehicleRows(filterRows(vehicleLedgerRows(), state.search.vehicles, [
+  const ledgerBaseRows = filterVehicleRows(filterRows(vehicleLedgerRows(), state.search.vehicles, [
     "vehicleProductNumber", "name", "specificationModel", "configuration", "supplier", "warehouseName",
-    "applicationNumber", "materialNumber", "customerName", "destinationText", "paymentRemark", "invoiceStatus", "remarks"
-  ]));
+    "applicationNumber", "materialNumber", "customerName", "destinationText", "paymentRemark", "invoiceStatus", "invoiceOriginalName", "remarks"
+  ]), { includeWorkflow: false });
+  const ledgerRows = filterVehicleRows(ledgerBaseRows);
 
   return `
     <div class="page">
@@ -1451,11 +1704,13 @@ function renderVehicles() {
         </div>
         <div class="toolbar-actions">
           ${renderVehicleViewToggle(view)}
+          ${view === "ledger" && hasPermission("vehicle:write") ? `<button class="btn" type="button" data-action="create" data-kind="vehicle">${icon("plus")}新增入库台账</button>` : ""}
+          ${view === "ledger" && hasPermission("stock:adjust") ? `<button class="btn" type="button" data-action="create" data-kind="vehicleOutbound">${icon("minus")}登记销售跟进</button>` : ""}
           ${hasPermission("vehicle:write") ? renderVehicleModelMenu() : ""}
           <button class="btn btn-ghost" type="button" data-action="refresh">${icon("refresh")}刷新</button>
         </div>
       </div>
-      ${view === "ledger" ? renderVehicleLedgerPanel(ledgerRows) : renderVehicleModelPanel(modelRows)}
+      ${view === "ledger" ? renderVehicleLedgerPanel(ledgerRows, ledgerBaseRows) : renderVehicleModelPanel(modelRows)}
       ${renderVehicleDetail()}
     </div>
   `;
@@ -1491,38 +1746,62 @@ function renderVehicleModelPanel(rows) {
   }));
 }
 
-function renderVehicleLedgerPanel(rows) {
-  const inStockCount = rows.filter(row => Number(row.inventoryCount || 0) > 0).length;
-  const outboundCount = rows.filter(row => row.orderId).length;
-  const pendingReport = rows.filter(row => row.orderId && !row.salesReported).length;
-  const pendingInvoice = rows.filter(row => row.orderId && !row.invoiceApplied).length;
+function renderVehicleLedgerPanel(rows, baseRows = rows) {
+  const inStockCount = baseRows.filter(row => matchesVehicleWorkflow(row, "inStock")).length;
+  const pendingPayment = baseRows.filter(row => matchesVehicleWorkflow(row, "pendingPayment")).length;
+  const pendingReport = baseRows.filter(row => matchesVehicleWorkflow(row, "pendingSalesReport")).length;
+  const pendingInvoice = baseRows.filter(row => matchesVehicleWorkflow(row, "pendingInvoice")).length;
+  const completedCount = baseRows.filter(row => matchesVehicleWorkflow(row, "completed")).length;
 
   return `
     <section class="summary-grid">
-      ${summaryCard("在库整机", inStockCount, `${rows.length - inStockCount} 台已出库或待跟进`)}
-      ${summaryCard("已登记销售", outboundCount, `${Math.max(0, rows.length - outboundCount)} 台仅有入库档案`)}
-      ${summaryCard("待报销售", pendingReport, `${rows.filter(row => row.orderId).length} 台已建出库订单`)}
-      ${summaryCard("待申请发票", pendingInvoice, `${rows.filter(row => row.paymentSettled).length} 台车款已结清`)}
+      ${summaryCard("在库整机", inStockCount, `${Math.max(0, baseRows.length - inStockCount)} 台已出库或已完成跟进`)}
+      ${summaryCard("待收款", pendingPayment, `${baseRows.filter(row => row.orderId).length} 台已登记销售跟进`)}
+      ${summaryCard("待报销售", pendingReport, `${baseRows.filter(row => row.salesReported).length} 台已完成报销售`)}
+      ${summaryCard("待申请发票", pendingInvoice, `${completedCount} 台已完成整机台账闭环`)}
     </section>
-    ${renderSurface("整机进出库台账", renderTable([
-      { label: "入库时间", key: "inboundDate", formatter: dateTime },
-      { label: "车号/产品编号", html: true, render: row => ledgerMachineSummary(row) },
-      { label: "供应商", key: "supplier" },
-      { label: "规格型号", key: "specificationModel" },
-      { label: "台账状态", html: true, render: row => vehicleLedgerStatusSummary(row) },
-      { label: "价格", html: true, render: row => vehicleLedgerPriceSummary(row) },
-      { label: "销售跟进", html: true, render: row => vehicleLedgerFollowupSummary(row) },
-      { label: "客户/去向", html: true, render: row => vehicleLedgerDestinationSummary(row) },
-      { label: "备注", html: true, render: row => vehicleLedgerRemarkSummary(row) },
-      { label: "操作", html: true, render: row => machineLedgerActions(row) }
-    ], rows, {
-      selectableRow: row => ({
-        action: "detail-vehicle",
-        data: { id: row.id },
-        active: state.selectedVehicleId === row.id && !state.vehicleDetail?.modelKey,
-        label: `查看车辆 ${row.vehicleProductNumber || row.id} 详情`
-      })
-    }))}
+    ${renderSurface("整机进出库台账", `
+      ${renderVehicleWorkflowFilters(baseRows)}
+      ${renderTable([
+        { label: "入库时间", key: "inboundDate", formatter: dateTime },
+        { label: "车号/产品编号", html: true, render: row => ledgerMachineSummary(row) },
+        { label: "供应商", key: "supplier" },
+        { label: "规格型号", key: "specificationModel" },
+        { label: "台账状态", html: true, render: row => vehicleLedgerStatusSummary(row) },
+        { label: "价格", html: true, render: row => vehicleLedgerPriceSummary(row) },
+        { label: "销售跟进", html: true, render: row => vehicleLedgerFollowupSummary(row) },
+        { label: "客户/去向", html: true, render: row => vehicleLedgerDestinationSummary(row) },
+        { label: "备注", html: true, render: row => vehicleLedgerRemarkSummary(row) },
+        { label: "操作", html: true, render: row => machineLedgerActions(row) }
+      ], rows, {
+        selectableRow: row => ({
+          action: "detail-vehicle",
+          data: { id: row.id },
+          active: state.selectedVehicleId === row.id && !state.vehicleDetail?.modelKey,
+          label: `查看车辆 ${row.vehicleProductNumber || row.id} 详情`
+        })
+      })}
+    `)}
+  `;
+}
+
+function renderVehicleWorkflowFilters(rows) {
+  const current = state.filters.vehicles?.workflow || "";
+  const options = [
+    { value: "", label: "全部台账" },
+    { value: "inStock", label: "在库待销售" },
+    { value: "pendingPayment", label: "待收款" },
+    { value: "pendingSalesReport", label: "待报销售" },
+    { value: "pendingInvoice", label: "待申请发票" },
+    { value: "completed", label: "已完成" }
+  ];
+  return `
+    <div class="workflow-strip" role="tablist" aria-label="整机台账阶段筛选">
+      ${options.map(option => {
+        const count = option.value ? rows.filter(row => matchesVehicleWorkflow(row, option.value)).length : rows.length;
+        return `<button class="workflow-chip${current === option.value ? " is-active" : ""}" type="button" data-action="set-vehicle-workflow" data-workflow="${escapeAttr(option.value)}">${escapeHtml(option.label)} · ${count}</button>`;
+      }).join("")}
+    </div>
   `;
 }
 
@@ -1544,6 +1823,10 @@ function vehicleLedgerRows() {
         invoiceApplicationDate: order?.invoiceApplicationDate || "",
         invoiceStatus: order?.invoiceStatus || "",
         invoiceIssuedDate: order?.invoiceIssuedDate || "",
+        invoiceFileAvailable: Boolean(order?.invoiceFileAvailable),
+        invoiceOriginalName: order?.invoiceOriginalName || "",
+        invoiceFileSize: order?.invoiceFileSize || null,
+        invoiceUploadedAt: order?.invoiceUploadedAt || "",
         salePrice: order?.salePrice ?? machine.salePrice,
         settlementPrice: order?.settlementPrice ?? machine.settlementPrice,
         registrationStatus: order?.registrationStatus || "",
@@ -1569,11 +1852,48 @@ function joinVehicleDestinations(machine = {}) {
     .join(" / ");
 }
 
+function vehicleLedgerStage(row) {
+  if (!row?.orderId) {
+    return Number(row?.inventoryCount || 0) > 0
+      ? { label: "在库待销售", type: "teal" }
+      : { label: "仅保留入库档案", type: "primary" };
+  }
+  if (!row.paymentSettled) {
+    return { label: "待收款", type: "warn" };
+  }
+  if (!row.salesReported) {
+    return { label: "待报销售", type: "primary" };
+  }
+  if (!row.invoiceApplied) {
+    return { label: "待申请发票", type: "warn" };
+  }
+  return { label: "台账已完成", type: "success" };
+}
+
+function matchesVehicleWorkflow(row, workflow) {
+  switch (workflow) {
+    case "inStock":
+      return !row.orderId && Number(row.inventoryCount || 0) > 0;
+    case "pendingPayment":
+      return Boolean(row.orderId) && !row.paymentSettled;
+    case "pendingSalesReport":
+      return Boolean(row.orderId) && row.paymentSettled && !row.salesReported;
+    case "pendingInvoice":
+      return Boolean(row.orderId) && row.paymentSettled && row.salesReported && !row.invoiceApplied;
+    case "completed":
+      return Boolean(row.orderId) && row.paymentSettled && row.salesReported && row.invoiceApplied;
+    default:
+      return true;
+  }
+}
+
 function machineLedgerActions(row) {
   return `
     <div class="action-row">
       <button class="btn btn-sm" type="button" data-action="detail-vehicle" data-id="${escapeAttr(row.id)}">${icon("eye")}详情</button>
       ${row.orderId && hasPermission("stock:adjust") ? `<button class="btn btn-sm" type="button" data-action="edit" data-kind="outboundOrder" data-id="${escapeAttr(row.orderId)}">${icon("edit")}销售跟进</button>` : ""}
+      ${row.orderId && hasPermission("stock:adjust") && isInvoiceIssued(row) ? `<button class="btn btn-sm" type="button" data-action="upload-invoice" data-id="${escapeAttr(row.orderId)}">${icon("upload")}发票</button>` : ""}
+      ${row.orderId && hasPermission("stock:adjust") && row.invoiceFileAvailable ? `<button class="btn btn-sm" type="button" data-action="download-invoice" data-id="${escapeAttr(row.orderId)}">${icon("download")}发票</button>` : ""}
       ${!row.orderId && Number(row.inventoryCount || 0) > 0 && hasPermission("stock:adjust") ? `<button class="btn btn-sm" type="button" data-action="vehicle-outbound-direct" data-machine-id="${escapeAttr(row.id)}">${icon("minus")}登记出库</button>` : ""}
       ${hasPermission("vehicle:write") ? `<button class="btn btn-sm" type="button" data-action="edit" data-kind="vehicle" data-id="${escapeAttr(row.id)}">${icon("edit")}编辑档案</button>` : ""}
     </div>
@@ -1591,8 +1911,10 @@ function ledgerMachineSummary(row) {
 }
 
 function vehicleLedgerStatusSummary(row) {
+  const stage = vehicleLedgerStage(row);
   return `
     <div class="cell-stack">
+      ${badge(stage.label, stage.type)}
       ${stockStatusBadge(row.stockStatus)}
       <span class="helper-inline">库存 ${escapeHtml(row.inventoryCount || 0)} 台</span>
     </div>
@@ -1613,6 +1935,7 @@ function vehicleLedgerFollowupSummary(row) {
     <div class="cell-stack">
       <span>${escapeHtml(dateValue(row.salesDate) || "未登记销售日期")}</span>
       <span class="helper-inline">车款 ${escapeHtml(yesNoText(row.paymentSettled))} · 报销售 ${escapeHtml(yesNoText(row.salesReported))} · 发票 ${escapeHtml(yesNoText(row.invoiceApplied))}</span>
+      ${row.invoiceFileAvailable ? `<span class="helper-inline">发票文件 ${escapeHtml(row.invoiceOriginalName || "已上传")}</span>` : ""}
       ${row.paymentRemark ? `<span class="helper-inline">${escapeHtml(row.paymentRemark)}</span>` : ""}
     </div>
   `;
@@ -1711,19 +2034,20 @@ function renderModificationOrders() {
 function renderOutboundOrders() {
   const rows = filterRows(state.data.outboundOrders, state.search.outboundOrders, [
     "orderNo", "resourceType", "resourceCode", "resourceName", "customerName", "operator", "orderRemark",
-    "paymentRemark", "invoiceStatus", "registrationStatus", "contractType"
+    "paymentRemark", "invoiceStatus", "invoiceOriginalName", "registrationStatus", "contractType"
   ]);
   const unsettledOrders = rows.filter(item => !item.paymentSettled).length;
   const pendingReports = rows.filter(item => !item.salesReported).length;
   const pendingInvoices = rows.filter(item => !item.invoiceApplied).length;
   const settledOrders = rows.filter(item => item.paymentSettled).length;
+  const uploadedInvoices = rows.filter(item => item.invoiceFileAvailable).length;
 
   return `
     <div class="page">
       <section class="summary-grid">
         ${summaryCard("出库订单", rows.length, `${unsettledOrders} 单待收款`)}
         ${summaryCard("待报销售", pendingReports, `${rows.filter(item => item.resourceType === "MACHINE").length} 单整机订单`)}
-        ${summaryCard("待申请发票", pendingInvoices, `${rows.filter(item => item.invoiceStatus).length} 单已写开票情况`)}
+        ${summaryCard("待申请发票", pendingInvoices, `${uploadedInvoices} 单已上传发票`)}
         ${summaryCard("已结清车款", settledOrders, `${rows.filter(item => item.salesReported).length} 单已报销售`)}
       </section>
       <div class="toolbar">
@@ -1733,7 +2057,7 @@ function renderOutboundOrders() {
         </div>
       </div>
       ${renderSurface("出库订单列表", renderTable([
-        { label: "订单号", key: "orderNo" },
+        { label: "订单号", html: true, render: row => orderNoSummary(row) },
         { label: "出库项", html: true, render: row => orderResourceSummary(row) },
         { label: "客户", key: "customerName" },
         { label: "销售日期", key: "salesDate", formatter: dateValue },
@@ -1758,10 +2082,19 @@ function orderPriceSummary(row) {
   `;
 }
 
+function orderNoSummary(row) {
+  return `
+    <div class="cell-stack">
+      <strong>${escapeHtml(row.orderNo || "-")}</strong>
+      ${row.isLocked ? `<span>${badge("已锁定", "danger")}</span>` : ""}
+    </div>
+  `;
+}
+
 function orderPaymentSummary(row) {
   return `
     <div class="cell-stack">
-      ${yesNoBadge(row.paymentSettled)}
+      ${orderStatusToggle(row, "paymentSettled", Boolean(row.paymentSettled), "已结清", "未结清")}
       ${row.paymentRemark ? `<span class="helper-inline">${escapeHtml(row.paymentRemark)}</span>` : `<span class="helper-inline">未填写收款情况</span>`}
     </div>
   `;
@@ -1770,7 +2103,7 @@ function orderPaymentSummary(row) {
 function orderSalesReportSummary(row) {
   return `
     <div class="cell-stack">
-      ${yesNoBadge(row.salesReported)}
+      ${orderStatusToggle(row, "salesReported", Boolean(row.salesReported), "已报销售", "未报销售")}
       <span class="helper-inline">${escapeHtml(dateValue(row.salesReportDate) || "未登记报销售日期")}</span>
     </div>
   `;
@@ -1779,20 +2112,54 @@ function orderSalesReportSummary(row) {
 function orderInvoiceSummary(row) {
   return `
     <div class="cell-stack">
-      ${yesNoBadge(row.invoiceApplied)}
+      ${orderStatusToggle(row, "invoiceApplied", Boolean(row.invoiceApplied), "已申请发票", "未申请发票")}
       ${row.invoiceStatus ? `<span class="helper-inline">${escapeHtml(row.invoiceStatus)}</span>` : ""}
       <span class="helper-inline">申请 ${escapeHtml(dateValue(row.invoiceApplicationDate) || "-")} · 开票 ${escapeHtml(dateValue(row.invoiceIssuedDate) || "-")}</span>
+      ${row.invoiceFileAvailable ? `<span class="helper-inline">发票 ${escapeHtml(row.invoiceOriginalName || "已上传")} · ${escapeHtml(fileSize(row.invoiceFileSize))}</span>` : `<span class="helper-inline">未上传发票文件</span>`}
     </div>
   `;
 }
 
+function isInvoiceIssued(row = {}) {
+  if (row.invoiceIssuedDate) return true;
+  const status = String(row.invoiceStatus || "").trim();
+  const lowerStatus = status.toLowerCase();
+  return status.includes("已开")
+    || status.includes("开票完成")
+    || status.includes("完成开票")
+    || status.includes("已出票")
+    || lowerStatus.includes("issued")
+    || lowerStatus.includes("invoiced");
+}
+
 function orderContractSummary(row) {
+  const registered = yesNoFromStatusText(row.registrationStatus);
+  const contracted = yesNoFromStatusText(row.contractType);
   return `
     <div class="cell-stack">
-      <span>${escapeHtml(row.registrationStatus || "未登记")}</span>
-      <span class="helper-inline">${escapeHtml(row.contractType || "未登记合同")}</span>
+      ${orderStatusToggle(row, "registrationStatus", registered, "已上牌", "未上牌")}
+      ${orderStatusToggle(row, "contractType", contracted, "有合同", "无合同")}
+      <span class="helper-inline">${escapeHtml([row.registrationStatus, row.contractType].filter(Boolean).join(" · ") || "未登记")}</span>
     </div>
   `;
+}
+
+function orderStatusToggle(row, field, active, activeLabel, inactiveLabel) {
+  if (!hasPermission("stock:adjust")) {
+    return active ? badge(activeLabel, "teal") : badge(inactiveLabel, "primary");
+  }
+  const label = active ? activeLabel : inactiveLabel;
+  const type = active ? "teal" : "primary";
+  return `<button class="status-toggle ${escapeAttr(type)}" type="button" data-action="toggle-order-status" data-id="${escapeAttr(row.id)}" data-field="${escapeAttr(field)}" aria-pressed="${active ? "true" : "false"}" title="点击切换状态">${escapeHtml(label)}</button>`;
+}
+
+function yesNoFromStatusText(value) {
+  const normalized = String(value || "").trim();
+  if (!normalized) return false;
+  const lower = normalized.toLowerCase();
+  if (["否", "无", "未", "不", "no", "none", "false"].some(prefix => lower.startsWith(prefix))) return false;
+  if (normalized.includes("未登记") || normalized.includes("未上牌") || normalized.includes("无合同")) return false;
+  return true;
 }
 
 function renderCustomers() {
@@ -1988,21 +2355,25 @@ function renderConfigs() {
       </div>
 
       <section class="config-layout">
-        ${renderSurface("配置项", `
-          <div class="config-list">
-            ${items.length ? items.map(renderConfigItemCard).join("") : emptyState("暂无配置项")}
-          </div>
-        `)}
-        ${renderSurface(selectedItem ? `配置值 · ${escapeHtml(selectedItem.itemName || "")}` : "配置值", `
-          ${selectedItem ? `<div class="helper">当前配置项：${escapeHtml(selectedItem.category || "-")} / ${escapeHtml(selectedItem.subCategory || "-")}</div>` : ""}
-          ${renderTable([
-            { label: "显示值", key: "valueLabel" },
-            { label: "编码", key: "valueCode" },
-            { label: "默认", html: true, render: row => row.isDefault ? badge("默认", "teal") : badge("普通", "primary") },
-            { label: "排序", key: "sortOrder" },
-            { label: "操作", html: true, render: row => rowActions("configValue", row, ["delete"]) }
-          ], values)}
-        `)}
+        <div class="config-pane config-items-pane">
+          ${renderSurface("配置项", `
+            <div class="config-list">
+              ${items.length ? items.map(renderConfigItemCard).join("") : emptyState("暂无配置项")}
+            </div>
+          `)}
+        </div>
+        <div class="config-pane config-values-pane">
+          ${renderSurface(selectedItem ? `配置值 · ${escapeHtml(selectedItem.itemName || "")}` : "配置值", `
+            ${selectedItem ? `<div class="helper">当前配置项：${escapeHtml(selectedItem.category || "-")} / ${escapeHtml(selectedItem.subCategory || "-")}</div>` : ""}
+            ${renderTable([
+              { label: "显示值", key: "valueLabel" },
+              { label: "编码", key: "valueCode" },
+              { label: "默认", html: true, render: row => row.isDefault ? badge("默认", "teal") : badge("普通", "primary") },
+              { label: "排序", key: "sortOrder" },
+              { label: "操作", html: true, render: row => rowActions("configValue", row, ["delete"]) }
+            ], values)}
+          `)}
+        </div>
       </section>
     </div>
   `;
@@ -2074,6 +2445,8 @@ function renderVehicleSalesSurface(machine = {}, order = null) {
       { label: "发票申请日期", value: dateValue(order?.invoiceApplicationDate) },
       { label: "开票情况", value: order?.invoiceStatus },
       { label: "开票日期", value: dateValue(order?.invoiceIssuedDate) },
+      { label: "发票文件", value: order?.invoiceFileAvailable ? `${order.invoiceOriginalName || "已上传"} · ${fileSize(order.invoiceFileSize)}` : "" },
+      { label: "发票上传时间", value: dateTime(order?.invoiceUploadedAt) },
       { label: "上牌情况", value: order?.registrationStatus },
       { label: "合同", value: order?.contractType },
       { label: "订单备注", value: order?.orderRemark }
@@ -2474,9 +2847,14 @@ function vehicleModelActions(row) {
 
 function outboundOrderActions(row) {
   if (!hasPermission("stock:adjust")) return "";
+  const issued = isInvoiceIssued(row);
+  const nextLocked = !Boolean(row.isLocked);
   return `
     <div class="action-row">
       <button class="btn btn-sm" type="button" data-action="edit" data-kind="outboundOrder" data-id="${escapeAttr(row.id)}">${icon("edit")}编辑</button>
+      ${canManageOrderLock() ? `<button class="btn btn-sm ${row.isLocked ? "" : "btn-danger"}" type="button" data-action="toggle-order-lock" data-id="${escapeAttr(row.id)}" data-locked="${escapeAttr(nextLocked)}">${icon(row.isLocked ? "unlock" : "lock")}${row.isLocked ? "解锁" : "锁定"}</button>` : ""}
+      ${issued ? `<button class="btn btn-sm" type="button" data-action="upload-invoice" data-id="${escapeAttr(row.id)}">${icon("upload")}上传发票</button>` : ""}
+      ${row.invoiceFileAvailable ? `<button class="btn btn-sm" type="button" data-action="download-invoice" data-id="${escapeAttr(row.id)}">${icon("download")}下载发票</button>` : ""}
     </div>
   `;
 }
@@ -2519,6 +2897,20 @@ function userActions(row) {
       <button class="btn btn-sm btn-danger" type="button" data-action="delete" data-kind="user" data-id="${escapeAttr(row.id)}">${icon("trash")}删除</button>
     </div>
   `;
+}
+
+function renderModalFields(modalFields, item) {
+  let activeSection = null;
+  return modalFields.map(field => {
+    const section = field.type === "hidden" ? activeSection : (field.section || "");
+    const sectionTitle = section && section !== activeSection
+      ? `<div class="form-section-title">${escapeHtml(section)}</div>`
+      : "";
+    if (field.type !== "hidden") {
+      activeSection = section;
+    }
+    return `${sectionTitle}${renderField(field, item)}`;
+  }).join("");
 }
 
 function renderField(field, data) {
@@ -2573,6 +2965,15 @@ function renderField(field, data) {
     `;
   }
 
+  if (field.type === "file") {
+    return `
+      <label class="field"${span}>
+        <span>${escapeHtml(field.label)}</span>
+        <input name="${escapeAttr(field.name)}" type="file"${field.accept ? ` accept="${escapeAttr(field.accept)}"` : ""}${required}>
+      </label>
+    `;
+  }
+
   return `
     <label class="field"${span}>
       <span>${escapeHtml(field.label)}</span>
@@ -2586,7 +2987,10 @@ function renderConfigSelectionEditor(item) {
   return `
     <section class="config-selection-editor">
       <div class="config-editor-head">
-        <span>入库配置</span>
+        <div class="config-editor-copy">
+          <strong>结构化配置（选填）</strong>
+          <span class="helper-inline">按 Excel 台账录入时可先只填“配置”文本；需要拆解到配置字典时再补充这里。</span>
+        </div>
         <button class="btn btn-sm" type="button" data-config-action="add">${icon("plus")}添加配置</button>
       </div>
       <div class="config-selection-list">
@@ -2830,6 +3234,9 @@ function coerceValue(value, coerce, inputType) {
 }
 
 function defaultEntity(kind) {
+  if (kind === "vehicleOutbound") {
+    return vehicleOutboundDefaultsForMachine();
+  }
   const entity = {};
   if (kind === "configValue" && state.selectedConfigItemId) {
     const selectedItem = state.data.configItems.find(item => Number(item.id) === Number(state.selectedConfigItemId));
@@ -2911,7 +3318,8 @@ function vehicleInboundDefaultsForModel(group = {}) {
 
 function vehicleOutboundDefaultsForMachine(machine = {}, modelKey = null) {
   const entity = {
-    __modelKey: modelKey || vehicleModelKey(machine),
+    __modelKey: modelKey || (machine?.id ? vehicleModelKey(machine) : ""),
+    customerMode: "existing",
     salesDate: todayInputDate(),
     paymentSettled: false,
     salesReported: false,
@@ -2946,6 +3354,7 @@ function vehicleOutboundDefaultsForModel(group = {}) {
   }
   return {
     __modelKey: group.modelKey,
+    customerMode: "existing",
     salesDate: todayInputDate(),
     paymentSettled: false,
     salesReported: false,
@@ -3079,6 +3488,18 @@ function getFields(kind, item = state.modal?.item || {}) {
       { name: "machineType", type: "hidden" }
     ];
   }
+  if (kind === "vehicleOutbound") {
+    const customerMode = fieldOrPrefillValue(item, "customerMode") === "quickCreate" ? "quickCreate" : "existing";
+    if (customerMode === "quickCreate") {
+      const baseFields = fields.vehicleOutbound.filter(field => field.name !== "customerId");
+      const insertIndex = baseFields.findIndex(field => field.name === "customerMode") + 1;
+      return [
+        ...baseFields.slice(0, insertIndex),
+        ...fields.vehicleOutboundQuickCustomer,
+        ...baseFields.slice(insertIndex)
+      ];
+    }
+  }
   if (kind === "partStock" && item.direction === "outbound") {
     return fields.partOutbound;
   }
@@ -3118,13 +3539,14 @@ function findEntity(kind, id) {
 
 function modalTitle(kind, item) {
   const names = {
-    vehicle: "车辆",
+    vehicle: "整机台账",
     vehicleModel: "车型",
     vehicleInbound: "车型入库",
-    vehicleOutbound: "整车出库",
+    vehicleOutbound: "销售跟进",
     part: "配件",
     customer: "客户",
     outboundOrder: "出库订单",
+    invoiceUpload: "上传发票",
     repair: "维修记录",
     configItem: "配置项",
     configValue: "配置值",
@@ -3137,20 +3559,23 @@ function modalTitle(kind, item) {
     userPassword: "修改密码",
     switchUser: "切换用户"
   };
-  if (kind === "switchUser" || kind === "vehicleStock" || kind === "vehicleInbound" || kind === "vehicleOutbound" || kind === "partStock" || kind === "partReplace" || kind === "modificationOrder" || kind === "userUsername" || kind === "userPassword") return names[kind];
+  if (kind === "switchUser" || kind === "vehicleStock" || kind === "vehicleInbound" || kind === "vehicleOutbound" || kind === "partStock" || kind === "partReplace" || kind === "modificationOrder" || kind === "userUsername" || kind === "userPassword" || kind === "invoiceUpload") {
+    return kind === "invoiceUpload" && item?.orderNo ? `${names[kind]}：${item.orderNo}` : names[kind];
+  }
   if (kind === "configValue" || kind === "user" || kind === "vehicleModel") return `新增${names[kind]}`;
   return item?.id ? `编辑${names[kind]}` : `新增${names[kind]}`;
 }
 
 function modalSubtitle(kind) {
   const subtitles = {
-    vehicle: "填写车辆档案、价格和入库信息。",
+    vehicle: "按进出库明细表直接录入单台整机的入库、库存、去向和后续跟进字段。",
     vehicleModel: "只维护车型、型号和动力信息；具体配置在入库时选择。",
-    vehicleInbound: "按配置字典选择入库配置，系统会为手动叉车自动生成唯一车号。",
-    vehicleOutbound: "从此车型库存车号中选择准确出库车辆，并选择客户列表中的公司。",
+    vehicleInbound: "结构化配置现在改为选填；按台账先录文本配置，后续再补配置字典也可以。",
+    vehicleOutbound: "可直接选择现有客户，也可以在当前弹窗里按销售表字段临时录入并新建客户。",
     part: "维护配件编码、库存和价格。",
     customer: "维护出库时可直接下拉选择的客户公司信息。",
     outboundOrder: "维护车款结清、报销售、发票申请和订单备注。",
+    invoiceUpload: "仅已登记为已开票的订单可上传；再次上传会替换原发票文件。",
     repair: "记录维修过程、费用与处理状态。",
     configItem: "定义可维护的车辆配置项。",
     configValue: "为当前配置项添加可选值。",
@@ -3211,13 +3636,15 @@ function stockFilterOptions() {
   ];
 }
 
-function filterVehicleRows(rows) {
+function filterVehicleRows(rows, options = {}) {
   const filters = state.filters.vehicles || {};
+  const includeWorkflow = options.includeWorkflow !== false;
   return rows.filter(row => {
     if (filters.power && normalizePowerType(row.machineType) !== filters.power) return false;
     if (filters.supplier && row.supplier !== filters.supplier) return false;
     if (filters.stock === "inStock" && Number(row.inventoryCount || 0) <= 0) return false;
     if (filters.stock === "empty" && Number(row.inventoryCount || 0) !== 0) return false;
+    if (includeWorkflow && filters.workflow && Object.prototype.hasOwnProperty.call(row, "orderId") && !matchesVehicleWorkflow(row, filters.workflow)) return false;
     return true;
   });
 }
@@ -3440,6 +3867,13 @@ function customerOptions() {
   }));
 }
 
+function customerEntryModeOptions() {
+  return [
+    { value: "existing", label: "选择现有客户" },
+    { value: "quickCreate", label: "直接录入并新建客户" }
+  ];
+}
+
 function partCodeOptions() {
   return state.data.parts.map(item => ({
     value: item.partCode,
@@ -3532,6 +3966,10 @@ function hasRole(role) {
 
 function hasAnyRole(...roles) {
   return roles.some(role => hasRole(role));
+}
+
+function canManageOrderLock() {
+  return hasAnyRole("ADMIN", "SUPER_ADMIN");
 }
 
 function hasPermission(permission) {
@@ -3770,6 +4208,14 @@ function dateValue(value) {
 function dateTime(value) {
   if (!value) return "";
   return String(value).replace("T", " ").slice(0, 16);
+}
+
+function fileSize(value) {
+  const size = Number(value || 0);
+  if (!Number.isFinite(size) || size <= 0) return "-";
+  if (size < 1024) return `${size} B`;
+  if (size < 1024 * 1024) return `${(size / 1024).toFixed(1)} KB`;
+  return `${(size / 1024 / 1024).toFixed(1)} MB`;
 }
 
 function toInputValue(value, field) {

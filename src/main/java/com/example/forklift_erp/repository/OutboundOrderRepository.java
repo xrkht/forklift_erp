@@ -15,7 +15,17 @@ import java.util.Optional;
 public interface OutboundOrderRepository extends JpaRepository<OutboundOrder, Long> {
     List<OutboundOrder> findAllByOrderByCreatedAtDesc();
 
+    List<OutboundOrder> findAllByIsLockedFalseOrderByCreatedAtDesc();
+
+    Optional<OutboundOrder> findByIdAndIsLockedFalse(Long id);
+
     List<OutboundOrder> findByResourceTypeAndResourceIdOrderByCreatedAtDesc(String resourceType, Long resourceId);
+
+    boolean existsByResourceTypeAndResourceIdAndIsLockedTrueAndIdNot(
+            String resourceType,
+            Long resourceId,
+            Long id
+    );
 
     boolean existsByCustomerId(Long customerId);
 

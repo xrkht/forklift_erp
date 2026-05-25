@@ -453,6 +453,28 @@ button {
   outline: none;
 }
 
+.workflow-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+
+.workflow-chip {
+  min-height: 34px;
+  padding: 0 12px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: #fff;
+  color: var(--muted);
+}
+
+.workflow-chip.is-active {
+  border-color: var(--primary);
+  background: var(--primary-weak);
+  color: var(--primary);
+}
+
 .segmented-control {
   display: inline-flex;
   align-items: center;
@@ -844,6 +866,37 @@ tbody tr.table-row-selectable:focus-visible {
   border-color: #bbf7d0;
 }
 
+.status-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 30px;
+  width: fit-content;
+  padding: 5px 10px;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  background: #fff;
+  font-size: 12px;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+
+.status-toggle.primary {
+  border-color: #bfdbfe;
+  background: var(--primary-weak);
+  color: var(--primary);
+}
+
+.status-toggle.teal {
+  border-color: #a7f3d0;
+  background: var(--accent-weak);
+  color: var(--accent);
+}
+
+.status-toggle:hover {
+  filter: brightness(0.98);
+}
+
 .split {
   display: grid;
   gap: 16px;
@@ -922,12 +975,60 @@ tbody tr.table-row-selectable:focus-visible {
 .config-layout {
   display: grid;
   grid-template-columns: minmax(0, 0.95fr) minmax(0, 1.05fr);
+  align-items: start;
   gap: 16px;
+  min-height: 0;
+}
+
+.config-pane {
+  min-width: 0;
+}
+
+.config-pane .surface {
+  display: flex;
+  flex-direction: column;
+  height: min(720px, calc(100vh - 184px));
+  min-height: 360px;
+}
+
+.config-pane .surface-body {
+  flex: 1;
+  min-height: 0;
+}
+
+.config-items-pane .surface-body,
+.config-values-pane .surface-body {
+  display: grid;
+  gap: 12px;
+  overflow: hidden;
+}
+
+.config-items-pane .surface-body {
+  grid-template-rows: minmax(0, 1fr);
+}
+
+.config-values-pane .surface-body {
+  grid-template-rows: auto minmax(0, 1fr);
 }
 
 .config-list {
   display: grid;
   gap: 10px;
+  height: 100%;
+  min-height: 0;
+  overflow-y: auto;
+  padding-right: 4px;
+  scrollbar-width: thin;
+}
+
+.config-values-pane {
+  position: sticky;
+  top: 92px;
+}
+
+.config-values-pane .table-wrap {
+  height: 100%;
+  min-height: 0;
 }
 
 .config-item {
@@ -984,6 +1085,8 @@ tbody tr.table-row-selectable:focus-visible {
 .modal-shell {
   width: min(920px, 100%);
   max-height: calc(100vh - 48px);
+  max-height: calc(100dvh - 48px);
+  min-height: 0;
 }
 
 .modal-card {
@@ -994,9 +1097,12 @@ tbody tr.table-row-selectable:focus-visible {
   display: flex;
   flex-direction: column;
   max-height: calc(100vh - 48px);
+  max-height: calc(100dvh - 48px);
+  min-height: 0;
 }
 
 .modal-head {
+  flex: 0 0 auto;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -1006,9 +1112,20 @@ tbody tr.table-row-selectable:focus-visible {
   background: var(--panel-2);
 }
 
+.modal-card > form {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+}
+
 .modal-body {
+  flex: 1 1 auto;
+  min-height: 0;
   padding: 18px;
   overflow: auto;
+  overscroll-behavior: contain;
 }
 
 .modal-grid {
@@ -1019,6 +1136,22 @@ tbody tr.table-row-selectable:focus-visible {
 
 .modal-grid .field[data-span="2"] {
   grid-column: span 2;
+}
+
+.form-section-title {
+  grid-column: 1 / -1;
+  margin-top: 4px;
+  padding: 8px 0 2px;
+  border-top: 1px solid var(--line);
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.form-section-title:first-child {
+  margin-top: 0;
+  padding-top: 0;
+  border-top: 0;
 }
 
 .config-selection-editor {
@@ -1036,6 +1169,11 @@ tbody tr.table-row-selectable:focus-visible {
   gap: 10px;
   color: var(--muted);
   font-size: 14px;
+}
+
+.config-editor-copy {
+  display: grid;
+  gap: 4px;
 }
 
 .config-selection-list {
@@ -1072,6 +1210,7 @@ tbody tr.table-row-selectable:focus-visible {
   padding: 16px 18px 18px;
   border-top: 1px solid var(--line);
   background: #fff;
+  box-shadow: 0 -10px 24px rgba(15, 23, 42, 0.06);
 }
 
 .toast-host {
@@ -1130,6 +1269,26 @@ tbody tr.table-row-selectable:focus-visible {
     position: static;
   }
 
+  .config-values-pane {
+    position: static;
+  }
+
+  .config-pane .surface {
+    height: auto;
+    min-height: 0;
+  }
+
+  .config-list {
+    height: auto;
+    max-height: none;
+    overflow: visible;
+  }
+
+  .config-values-pane .table-wrap {
+    height: auto;
+    max-height: none;
+  }
+
   .sidebar-brand {
     justify-content: space-between;
   }
@@ -1160,6 +1319,16 @@ tbody tr.table-row-selectable:focus-visible {
   .detail-grid,
   .config-selection-row {
     grid-template-columns: 1fr;
+  }
+
+  .modal-overlay {
+    padding: 12px;
+  }
+
+  .modal-shell,
+  .modal-card {
+    max-height: calc(100vh - 24px);
+    max-height: calc(100dvh - 24px);
   }
 
   .toolbar,

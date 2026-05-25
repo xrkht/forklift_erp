@@ -2,12 +2,14 @@ package com.example.forklift_erp;
 
 import com.example.forklift_erp.entity.MachineInventory;
 import com.example.forklift_erp.entity.PartInventory;
+import com.example.forklift_erp.entity.Permission;
 import com.example.forklift_erp.entity.Role;
 import com.example.forklift_erp.entity.User;
 import com.example.forklift_erp.repository.CustomerRepository;
 import com.example.forklift_erp.repository.MachineInventoryRepository;
 import com.example.forklift_erp.repository.OutboundOrderRepository;
 import com.example.forklift_erp.repository.PartInventoryRepository;
+import com.example.forklift_erp.repository.PermissionRepository;
 import com.example.forklift_erp.repository.RoleRepository;
 import com.example.forklift_erp.repository.StockMovementRepository;
 import com.example.forklift_erp.repository.UserRepository;
@@ -19,22 +21,35 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
+import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.test.context.DynamicPropertyRegistry;
+import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
 
 import java.math.BigDecimal;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.time.LocalDate;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 
+import static org.hamcrest.Matchers.containsString;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -43,6 +58,12 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 class OutboundOrderIntegrationTests {
 
     private static final String PASSWORD = "CodexTest123!";
+    private static final Path INVOICE_STORAGE_DIR = Paths.get("target", "invoice-test-files", UUID.randomUUID().toString());
+
+    @DynamicPropertySource
+    static void registerInvoiceStorage(DynamicPropertyRegistry registry) {
+        registry.add("forklift-erp.invoice-storage-dir", () -> INVOICE_STORAGE_DIR.toString());
+    }
 
     @Autowired
     private MockMvc mockMvc;
@@ -69,6 +90,9 @@ class OutboundOrderIntegrationTests {
     private PartInventoryRepository partRepository;
 
     @Autowired
+    private PermissionRepository permissionRepository;
+
+    @Autowired
     private StockMovementRepository stockMovementRepository;
 
     @Autowired
@@ -79,6 +103,7 @@ class OutboundOrderIntegrationTests {
     private final List<Long> customersToCleanup = new ArrayList<>();
     private final List<Long> machinesToCleanup = new ArrayList<>();
     private final List<String> partsToCleanup = new ArrayList<>();
+    private final List<String> rolesToCleanup = new ArrayList<>();
 
     private String superToken;
 
@@ -115,6 +140,11 @@ class OutboundOrderIntegrationTests {
             userRepository.findByUsername(username).ifPresent(userRepository::delete);
         }
         usersToCleanup.clear();
+
+        for (String roleName : rolesToCleanup.reversed()) {
+            roleRepository.findByName(roleName).ifPresent(roleRepository::delete);
+        }
+        rolesToCleanup.clear();
     }
 
     @Test
@@ -157,6 +187,18 @@ class OutboundOrderIntegrationTests {
         Long orderId = order.path("id").asLong();
         ordersToCleanup.add(orderId);
         assertThat(order.path("customerName").asText()).startsWith("广东日丰电缆有限公司");
+
+        MockMultipartFile earlyInvoice = new MockMultipartFile(
+                "file",
+                "early-invoice.pdf",
+                "application/pdf",
+                "not issued".getBytes(StandardCharsets.UTF_8)
+        );
+        mockMvc.perform(multipart("/api/outbound-orders/{id}/invoice", orderId)
+                        .file(earlyInvoice)
+                        .header("Authorization", bearer(superToken)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value(4001));
 
         MachineInventory adjustedMachine = machineRepository.findById(machine.path("id").asLong()).orElseThrow();
         assertThat(adjustedMachine.getInventoryCount()).isZero();
@@ -203,6 +245,31 @@ class OutboundOrderIntegrationTests {
                 .andExpect(jsonPath("$.data.registrationStatus").value("已上牌"))
                 .andExpect(jsonPath("$.data.contractType").value("纸质合同"));
 
+        byte[] invoiceBytes = "%PDF-1.4 Codex invoice".getBytes(StandardCharsets.UTF_8);
+        MockMultipartFile issuedInvoice = new MockMultipartFile(
+                "file",
+                "invoice-test.pdf",
+                "application/pdf",
+                invoiceBytes
+        );
+        mockMvc.perform(multipart("/api/outbound-orders/{id}/invoice", orderId)
+                        .file(issuedInvoice)
+                        .header("Authorization", bearer(superToken)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(200))
+                .andExpect(jsonPath("$.data.invoiceOriginalName").value("invoice-test.pdf"))
+                .andExpect(jsonPath("$.data.invoiceContentType").value("application/pdf"))
+                .andExpect(jsonPath("$.data.invoiceFileSize").value(invoiceBytes.length))
+                .andExpect(jsonPath("$.data.invoiceFileAvailable").value(true))
+                .andExpect(jsonPath("$.data.invoiceUploadedAt").exists());
+
+        mockMvc.perform(get("/api/outbound-orders/{id}/invoice", orderId)
+                        .header("Authorization", bearer(superToken)))
+                .andExpect(status().isOk())
+                .andExpect(header().string(HttpHeaders.CONTENT_TYPE, containsString("application/pdf")))
+                .andExpect(header().string(HttpHeaders.CONTENT_DISPOSITION, containsString("invoice-test.pdf")))
+                .andExpect(content().bytes(invoiceBytes));
+
         MachineInventory reportedMachine = machineRepository.findById(machine.path("id").asLong()).orElseThrow();
         assertThat(reportedMachine.getIsSalesReported()).isEqualTo("是");
         assertThat(reportedMachine.getIsInvoiceApplied()).isEqualTo("是");
@@ -242,6 +309,157 @@ class OutboundOrderIntegrationTests {
 
         PartInventory adjustedPart = partRepository.findByPartCode(part.path("partCode").asText()).orElseThrow();
         assertThat(adjustedPart.getQuantity()).isEqualTo(3);
+    }
+
+    @Test
+    void adminOrderLockHidesOrderAndRelatedStockFromNonAdminUsers() throws Exception {
+        String adminUsername = unique("admin");
+        createUserDirectly(adminUsername, "ADMIN");
+        String adminToken = login(adminUsername);
+        String stockUsername = unique("stock");
+        createUserWithPermissions(stockUsername, unique("stock_role"), "stock:adjust");
+        String stockToken = login(stockUsername);
+
+        JsonNode customer = createCustomer("Codex 锁定客户有限公司");
+        JsonNode machine = createMachine();
+        JsonNode vehicleOrder = createVehicleOrder(customer, machine);
+        String vehicleNumber = machine.path("vehicleProductNumber").asText();
+        String vehicleOrderNo = vehicleOrder.path("orderNo").asText();
+
+        String stockOrdersBefore = mockMvc.perform(get("/api/outbound-orders")
+                        .header("Authorization", bearer(stockToken)))
+                .andExpect(status().isOk())
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+        assertThat(stockOrdersBefore).contains(vehicleOrderNo);
+
+        String vehicleLockResponse = mockMvc.perform(put("/api/outbound-orders/{id}/lock", vehicleOrder.path("id").asLong())
+                        .param("locked", "true")
+                        .param("version", vehicleOrder.path("version").asText())
+                        .header("Authorization", bearer(adminToken)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.isLocked").value(true))
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+        JsonNode lockedVehicleOrder = objectMapper.readTree(vehicleLockResponse).path("data");
+        assertThat(machineRepository.findById(machine.path("id").asLong()).orElseThrow().getIsLocked()).isTrue();
+
+        String stockOrdersAfterLock = mockMvc.perform(get("/api/outbound-orders")
+                        .header("Authorization", bearer(stockToken)))
+                .andExpect(status().isOk())
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+        assertThat(stockOrdersAfterLock).doesNotContain(vehicleOrderNo);
+
+        String stockInventoryAfterLock = mockMvc.perform(get("/api/inventory")
+                        .header("Authorization", bearer(stockToken)))
+                .andExpect(status().isOk())
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+        assertThat(stockInventoryAfterLock).doesNotContain(vehicleNumber);
+
+        String adminInventoryAfterLock = mockMvc.perform(get("/api/inventory")
+                        .header("Authorization", bearer(adminToken)))
+                .andExpect(status().isOk())
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+        assertThat(adminInventoryAfterLock).contains(vehicleNumber);
+
+        JsonNode part = createPart();
+        JsonNode partOrder = createPartOrder(customer, part);
+        String partCode = part.path("partCode").asText();
+
+        mockMvc.perform(put("/api/outbound-orders/{id}/lock", partOrder.path("id").asLong())
+                        .param("locked", "true")
+                        .param("version", partOrder.path("version").asText())
+                        .header("Authorization", bearer(adminToken)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.isLocked").value(true));
+        assertThat(partRepository.findByPartCode(partCode).orElseThrow().getIsLocked()).isTrue();
+
+        String stockPartsAfterLock = mockMvc.perform(get("/api/parts")
+                        .header("Authorization", bearer(stockToken)))
+                .andExpect(status().isOk())
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+        assertThat(stockPartsAfterLock).doesNotContain(partCode);
+
+        String adminPartsAfterLock = mockMvc.perform(get("/api/parts")
+                        .header("Authorization", bearer(adminToken)))
+                .andExpect(status().isOk())
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+        assertThat(adminPartsAfterLock).contains(partCode);
+
+        mockMvc.perform(put("/api/outbound-orders/{id}/lock", lockedVehicleOrder.path("id").asLong())
+                        .param("locked", "false")
+                        .param("version", lockedVehicleOrder.path("version").asText())
+                        .header("Authorization", bearer(adminToken)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.isLocked").value(false));
+        assertThat(machineRepository.findById(machine.path("id").asLong()).orElseThrow().getIsLocked()).isFalse();
+
+        String stockInventoryAfterUnlock = mockMvc.perform(get("/api/inventory")
+                        .header("Authorization", bearer(stockToken)))
+                .andExpect(status().isOk())
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+        assertThat(stockInventoryAfterUnlock).contains(vehicleNumber);
+    }
+
+    private JsonNode createVehicleOrder(JsonNode customer, JsonNode machine) throws Exception {
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("machineId", machine.path("id").asLong());
+        payload.put("machineVersion", machine.path("version").asLong());
+        payload.put("customerId", customer.path("id").asLong());
+        payload.put("salesDate", "2026-05-26");
+        payload.put("settlementPrice", "118000.00");
+        payload.put("operator", "order-lock-test");
+        payload.put("orderRemark", "订单锁定集成测试");
+
+        String response = mockMvc.perform(post("/api/outbound-orders/vehicle")
+                        .header("Authorization", bearer(superToken))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json(payload)))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.code").value(200))
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+        JsonNode order = objectMapper.readTree(response).path("data");
+        ordersToCleanup.add(order.path("id").asLong());
+        return order;
+    }
+
+    private JsonNode createPartOrder(JsonNode customer, JsonNode part) throws Exception {
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("partCode", part.path("partCode").asText());
+        payload.put("partVersion", part.path("version").asLong());
+        payload.put("quantity", 1);
+        payload.put("customerId", customer.path("id").asLong());
+        payload.put("settlementPrice", "180.00");
+        payload.put("operator", "part-order-lock-test");
+
+        String response = mockMvc.perform(post("/api/outbound-orders/part")
+                        .header("Authorization", bearer(superToken))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json(payload)))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.code").value(200))
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+        JsonNode order = objectMapper.readTree(response).path("data");
+        ordersToCleanup.add(order.path("id").asLong());
+        return order;
     }
 
     private JsonNode createCustomer(String companyName) throws Exception {
@@ -315,6 +533,35 @@ class OutboundOrderIntegrationTests {
                 .getResponse()
                 .getContentAsString();
         return objectMapper.readTree(response).path("data");
+    }
+
+    private void createUserWithPermissions(String username, String roleName, String... permissionCodes) {
+        Set<Permission> permissions = new HashSet<>();
+        for (String code : permissionCodes) {
+            Permission permission = permissionRepository.findByCode(code)
+                    .orElseGet(() -> {
+                        Permission created = new Permission();
+                        created.setCode(code);
+                        created.setDescription(code);
+                        return permissionRepository.save(created);
+                    });
+            permissions.add(permission);
+        }
+
+        Role role = new Role();
+        role.setName(roleName);
+        role.setDescription(roleName);
+        role.setPermissions(permissions);
+        roleRepository.save(role);
+        rolesToCleanup.add(roleName);
+
+        User user = new User();
+        user.setUsername(username);
+        user.setPassword(passwordEncoder.encode(PASSWORD));
+        user.setEnabled(true);
+        user.setRoles(Set.of(role));
+        userRepository.save(user);
+        usersToCleanup.add(username);
     }
 
     private void createUserDirectly(String username, String roleName) {

@@ -98,6 +98,21 @@ public class OutboundOrder implements CollaborativeResource {
     @Column(name = "invoice_issued_date")
     private LocalDate invoiceIssuedDate;
 
+    @Column(name = "invoice_stored_file_name", length = 255)
+    private String invoiceStoredFileName;
+
+    @Column(name = "invoice_original_name", length = 255)
+    private String invoiceOriginalName;
+
+    @Column(name = "invoice_content_type", length = 120)
+    private String invoiceContentType;
+
+    @Column(name = "invoice_file_size")
+    private Long invoiceFileSize;
+
+    @Column(name = "invoice_uploaded_at")
+    private LocalDateTime invoiceUploadedAt;
+
     @Column(name = "registration_status", length = 120)
     private String registrationStatus;
 
@@ -112,6 +127,12 @@ public class OutboundOrder implements CollaborativeResource {
 
     @Column(name = "stock_operation_log_id")
     private Long stockOperationLogId;
+
+    @Column(name = "is_locked")
+    private Boolean isLocked = false;
+
+    @Column(name = "resource_locked_by_order")
+    private Boolean resourceLockedByOrder = false;
 
     @Column(name = "created_at", updatable = false)
     private LocalDateTime createdAt;

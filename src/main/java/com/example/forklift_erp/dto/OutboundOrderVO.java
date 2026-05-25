@@ -36,11 +36,18 @@ public class OutboundOrderVO {
     private LocalDate invoiceApplicationDate;
     private String invoiceStatus;
     private LocalDate invoiceIssuedDate;
+    private String invoiceOriginalName;
+    private String invoiceContentType;
+    private Long invoiceFileSize;
+    private LocalDateTime invoiceUploadedAt;
+    private Boolean invoiceFileAvailable;
     private String registrationStatus;
     private String contractType;
     private String orderRemark;
     private String operator;
     private Long stockOperationLogId;
+    private Boolean isLocked;
+    private Boolean resourceLockedByOrder;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
 
@@ -73,11 +80,18 @@ public class OutboundOrderVO {
         vo.setInvoiceApplicationDate(entity.getInvoiceApplicationDate());
         vo.setInvoiceStatus(entity.getInvoiceStatus());
         vo.setInvoiceIssuedDate(entity.getInvoiceIssuedDate());
+        vo.setInvoiceOriginalName(entity.getInvoiceOriginalName());
+        vo.setInvoiceContentType(entity.getInvoiceContentType());
+        vo.setInvoiceFileSize(entity.getInvoiceFileSize());
+        vo.setInvoiceUploadedAt(entity.getInvoiceUploadedAt());
+        vo.setInvoiceFileAvailable(entity.getInvoiceStoredFileName() != null && !entity.getInvoiceStoredFileName().isBlank());
         vo.setRegistrationStatus(entity.getRegistrationStatus());
         vo.setContractType(entity.getContractType());
         vo.setOrderRemark(entity.getOrderRemark());
         vo.setOperator(entity.getOperator());
         vo.setStockOperationLogId(entity.getStockOperationLogId());
+        vo.setIsLocked(Boolean.TRUE.equals(entity.getIsLocked()));
+        vo.setResourceLockedByOrder(Boolean.TRUE.equals(entity.getResourceLockedByOrder()));
         vo.setCreatedAt(entity.getCreatedAt());
         vo.setUpdatedAt(entity.getUpdatedAt());
         return vo;

@@ -25,7 +25,8 @@ export function clearSession() {
 
 export function createApiClient(getToken) {
   return async function api(path, options = {}) {
-    const headers = { "Content-Type": "application/json" };
+    const isFormData = options.body instanceof FormData;
+    const headers = isFormData ? {} : { "Content-Type": "application/json" };
     const token = getToken();
     if (options.auth !== false && token) {
       headers.Authorization = `Bearer ${token}`;
@@ -34,7 +35,7 @@ export function createApiClient(getToken) {
     const response = await fetch(path, {
       method: options.method || "GET",
       headers,
-      body: options.body === undefined ? undefined : JSON.stringify(options.body)
+      body: options.body === undefined ? undefined : (isFormData ? options.body : JSON.stringify(options.body))
     });
 
     const payload = await response.json().catch(() => null);

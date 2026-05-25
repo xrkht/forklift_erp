@@ -2,6 +2,107 @@
 
 本项目遵循 [语义化版本](https://semver.org/lang/zh-CN/) 和 [Keep a Changelog](https://keepachangelog.com/zh-CN/) 规范。
 
+## [0.1.26] - 2026-05-26 - xrkht
+
+### 修复
+- **长弹窗底部按钮不可见**
+  - 修复车辆库存“整车出库/销售跟进”等长表单弹窗在视口内无法滚动到保存按钮的问题。
+  - 弹窗头部和底部操作区固定在可见结构中，表单主体独立滚动；移动端同步缩小弹窗边距，避免小屏遮挡底部按钮。
+  - Service Worker 缓存版本升级为 `forklift-erp-client-v19`。
+
+### 验证
+- 内置 Node：`node --check src\main\resources\static\assets\app.js` 通过。
+- 内置 Node：`node --check src\main\resources\static\assets\modules\session.js` 通过。
+- 内置 Node：`node --check src\main\resources\static\sw.js` 通过。
+- Python：`python -m py_compile scripts\import_workbook_smoke_data.py` 通过。
+- Git：`git diff --check` 通过，仅有 Windows 换行提示。
+- Java 21：`.\mvnw.cmd test` 通过，累计 `16` 个测试通过。
+- Java 21：`.\mvnw.cmd package -DskipTests` 通过。
+- 浏览器验证：`http://127.0.0.1:8086/` 登录后打开“登记销售跟进”长弹窗，默认视口下保存/取消按钮保持可见；表单主体可滚动到底部，滚动后保存按钮仍在视口内。
+
+## [0.1.25] - 2026-05-26 - xrkht
+
+### 新增
+- **订单锁定与关联记录隔离**
+  - 新增 Flyway `V12__outbound_order_lock_fields.sql`，为出库订单增加锁定状态和“由订单锁定关联资源”标记。
+  - 新增 `/api/outbound-orders/{id}/lock` 管理员/超级管理员接口；锁定订单时同步锁定订单关联的整车或配件，普通用户及非管理员权限账号无法再通过订单、整车库存或配件库存接口看到对应记录。
+  - 解锁订单时会释放由该订单带来的关联库存锁；若关联库存原本已被手动锁定，则不会被订单解锁误放开。
+  - 订单列表新增管理员可见的“锁定/解锁”按钮，锁定后订单号旁显示“已锁定”标记；Service Worker 缓存版本升级为 `forklift-erp-client-v18`。
+
+### 验证
+- 内置 Node：`node --check src\main\resources\static\assets\app.js` 通过。
+- 内置 Node：`node --check src\main\resources\static\sw.js` 通过。
+- Java 21：`.\mvnw.cmd -Dtest=OutboundOrderIntegrationTests test` 通过，新增覆盖管理员锁定订单后非管理员不可见订单及关联整车/配件、管理员仍可见、解锁后恢复可见。
+- Java 21：`.\mvnw.cmd test` 通过，累计 `16` 个测试通过。
+- Java 21：`.\mvnw.cmd package -DskipTests` 通过。
+- 浏览器验证：`http://127.0.0.1:8087/` 登录后进入订单列表，临时 `CODEX-LOCK-VERIFY` 订单显示“锁定”按钮；点击后显示“已锁定”标记和“解锁”按钮，并提示“关联记录仅管理员可见”。验证数据已用项目测试上下文按精确 ID 清理。
+
+## [0.1.24] - 2026-05-26 - xrkht
+
+### 修改
+- **配置字典独立滚动**
+  - 配置字典页将左侧配置项列表和右侧配置值列表拆成独立卡片滚动区域，配置项很多时滚动左侧不会把右侧值列表带出视野。
+  - 选择下方配置项后保留左侧列表滚动位置，并让右侧值列表直接刷新为当前配置项。
+  - Service Worker 缓存版本升级为 `forklift-erp-client-v17`。
+
+### 验证
+- 内置 Node：`node --check src\main\resources\static\assets\app.js` 通过。
+- 内置 Node：`node --check src\main\resources\static\sw.js` 通过。
+- Java 21：`.\mvnw.cmd test` 通过，累计 `15` 个测试通过。
+- Java 21：`.\mvnw.cmd package -DskipTests` 通过。
+- 浏览器验证：`http://127.0.0.1:8086/` 进入配置字典后，左侧配置项列表可独立滚动，右侧配置值卡片保持可见；滚动到下方选择“轮胎类型”后右侧刷新为对应值列表且控制台无错误。
+
+## [0.1.23] - 2026-05-26 - xrkht
+
+### 新增
+- **订单关联发票**
+  - 新增 Flyway `V11__outbound_order_invoice_file_fields.sql`，为出库订单保存发票文件名、原始文件名、文件类型、大小和上传时间。
+  - 新增 `/api/outbound-orders/{id}/invoice` 上传与下载接口；上传仅允许已登记开票日期或开票情况为已开票的订单，支持 PDF、OFD、JPG、PNG、WEBP，单文件上限 20MB。
+  - 订单列表和整机台账行新增“上传发票/下载发票”入口，已上传时展示发票文件名和大小；API 客户端支持 `FormData` 上传。
+
+### 修改
+- **发票文件保护与审计**
+  - 发票文件保存到本地存储目录，默认 `uploads/invoices`，也可通过 `forklift-erp.invoice-storage-dir` 或 `FORKLIFT_ERP_INVOICE_STORAGE_DIR` 配置。
+  - 上传发票会记录统一操作审计，并在再次上传时替换订单原发票文件。
+- **订单列表状态快切**
+  - 订单列表的收款跟进、报销售、发票跟进、上牌/合同改为可点击状态按钮，点击后直接切换是否状态并保存到订单。
+  - 报销售和发票申请由未完成切换为已完成时自动补齐当天日期；上牌/合同状态在“已上牌/未上牌”和“有合同/无合同”之间切换。
+  - Service Worker 缓存版本升级为 `forklift-erp-client-v16`。
+
+### 验证
+- 内置 Node：`node --check src\main\resources\static\assets\app.js` 通过。
+- 内置 Node：`node --check src\main\resources\static\assets\modules\session.js` 通过。
+- 内置 Node：`node --check src\main\resources\static\sw.js` 通过。
+- Java 21：`.\mvnw.cmd -Dtest=OutboundOrderIntegrationTests test` 通过，新增覆盖未开票拒绝上传、已开票上传和下载发票内容。
+- Java 21：`.\mvnw.cmd test` 通过，累计 `15` 个测试通过。
+- Java 21：`.\mvnw.cmd package -DskipTests` 通过。
+- 本地 MySQL：V11 迁移成功应用，schema 当前版本为 `11`。
+- 浏览器验证：`http://127.0.0.1:8086/` 登录后进入订单列表，发票相关文案正常渲染；收款、报销售、发票申请、上牌、合同状态按钮均可点击切换并刷新为新状态，控制台无错误。
+
+## [0.1.22] - 2026-05-26 - xrkht
+
+### 新增
+- **整机进出库表驱动验证**
+  - 新增 `/api/admin/business-data/reset` 超级管理员清库接口，只清理客户、整机、配件、订单、维修、改装、库存流水和审计等业务数据，保留账号、角色、权限和配置字典。
+  - 新增 `scripts/import_workbook_smoke_data.py`，可读取 `00整机进出库管理明细表.xlsx` 的入库表、销售表和旧车入库，先清库再通过真实 API 导入销售、在库和旧车样例数据。
+
+### 修改
+- **进出库台账交互**
+  - 车辆库存新增“台账视图”阶段筛选，按“在库待销售、待收款、待报销售、待申请发票、已完成”汇总并过滤整机进出库明细。
+  - “新增入库台账”和“销售跟进”弹窗按 Excel 表的业务块分组，字段文案对齐入库表/销售表；入库日期和销售日期默认当前日期，结构化配置改为选填。
+  - 销售跟进支持在弹窗内选择现有客户或直接录入客户资料并自动创建客户，减少从销售表补录时的页面跳转。
+  - 修正 `V10__outbound_order_sales_followup_fields.sql` 的 MySQL 条件加列写法，避免本地 MySQL 对 `ADD COLUMN IF NOT EXISTS` 兼容性不稳。
+
+### 验证
+- 内置 Node：`node --check src\main\resources\static\assets\app.js` 通过。
+- 内置 Node：`node --check src\main\resources\static\sw.js` 通过。
+- 内置 Python：`python -m py_compile scripts\import_workbook_smoke_data.py` 通过。
+- Java 21：`.\mvnw.cmd test` 通过，累计 `15` 个测试通过；新增覆盖业务数据清空接口。
+- Java 21：`.\mvnw.cmd package -DskipTests` 通过。
+- 本地 MySQL：清理失败的 V10 Flyway 历史后，修正后的 V10 迁移成功应用，schema 当前版本为 `10`。
+- API 验证：在 `http://127.0.0.1:8086` 清库后按 Excel 导入 `2` 个客户、`6` 台整机和 `2` 张整机出库订单；其中 `4` 台仍在库、`2` 台已完成销售闭环。
+- 浏览器验证：台账视图显示 `全部台账 · 6`、`在库待销售 · 4`、`已完成 · 2`，新增入库台账和销售跟进弹窗均显示新的分组录入结构。
+
 ## [0.1.21] - 2026-05-25 - xrkht
 
 ### 修改

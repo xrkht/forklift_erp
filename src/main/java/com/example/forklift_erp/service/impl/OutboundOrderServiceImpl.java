@@ -1,6 +1,7 @@
 package com.example.forklift_erp.service.impl;
 
 import com.example.forklift_erp.common.ResultCode;
+import com.example.forklift_erp.dto.OutboundInvoiceDownload;
 import com.example.forklift_erp.dto.OutboundOrderUpdateDTO;
 import com.example.forklift_erp.dto.OutboundOrderVO;
 import com.example.forklift_erp.dto.PartOutboundOrderCreateDTO;
@@ -20,23 +21,46 @@ import com.example.forklift_erp.service.CollaborationService;
 import com.example.forklift_erp.service.OperationAuditService;
 import com.example.forklift_erp.service.OutboundOrderService;
 import com.example.forklift_erp.service.StockLedgerService;
+import com.example.forklift_erp.util.SecurityUtils;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.core.io.Resource;
+import org.springframework.core.io.UrlResource;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.util.StringUtils;
+import org.springframework.web.multipart.MultipartFile;
 
 import java.math.BigDecimal;
+import java.io.IOException;
+import java.io.InputStream;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.nio.file.StandardCopyOption;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
+import java.util.Arrays;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Objects;
+import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 
+@Slf4j
 @Service
 public class OutboundOrderServiceImpl implements OutboundOrderService {
 
     private static final String SOURCE_TYPE = "OUTBOUND_ORDER";
     private static final DateTimeFormatter ORDER_NO_TIME = DateTimeFormatter.ofPattern("yyyyMMddHHmmssSSS");
+    private static final long MAX_INVOICE_FILE_SIZE = 20L * 1024 * 1024;
+    private static final Set<String> ALLOWED_INVOICE_EXTENSIONS = new HashSet<>(Arrays.asList(
+            "pdf", "ofd", "jpg", "jpeg", "png", "webp"
+    ));
 
     @Autowired
     private OutboundOrderRepository outboundOrderRepository;
@@ -62,10 +86,16 @@ public class OutboundOrderServiceImpl implements OutboundOrderService {
     @Autowired
     private CollaborationService collaborationService;
 
+    @Value("${forklift-erp.invoice-storage-dir:${FORKLIFT_ERP_INVOICE_STORAGE_DIR:uploads/invoices}}")
+    private String invoiceStorageDir;
+
     @Override
     @Transactional(readOnly = true)
     public List<OutboundOrderVO> findAll() {
-        return outboundOrderRepository.findAllByOrderByCreatedAtDesc().stream()
+        List<OutboundOrder> orders = SecurityUtils.isAdminOrSuperAdmin()
+                ? outboundOrderRepository.findAllByOrderByCreatedAtDesc()
+                : outboundOrderRepository.findAllByIsLockedFalseOrderByCreatedAtDesc();
+        return orders.stream()
                 .map(OutboundOrderVO::fromEntity)
                 .toList();
     }
@@ -73,7 +103,7 @@ public class OutboundOrderServiceImpl implements OutboundOrderService {
     @Override
     @Transactional(readOnly = true)
     public OutboundOrderVO findById(Long id) {
-        return outboundOrderRepository.findById(id)
+        return visibleOrderById(id)
                 .map(OutboundOrderVO::fromEntity)
                 .orElseThrow(() -> new BusinessException(ResultCode.NOT_FOUND, "出库订单不存在"));
     }
@@ -83,6 +113,7 @@ public class OutboundOrderServiceImpl implements OutboundOrderService {
     public OutboundOrderVO createVehicleOutbound(VehicleOutboundOrderCreateDTO request) {
         MachineInventory machine = machineRepository.findByIdForUpdate(request.getMachineId())
                 .orElseThrow(() -> new BusinessException(ResultCode.VEHICLE_NOT_FOUND, "出库车辆不存在"));
+        ensureResourceVisible(Boolean.TRUE.equals(machine.getIsLocked()), ResultCode.VEHICLE_NOT_FOUND, "出库车辆不存在");
         if (Boolean.TRUE.equals(machine.getModelOnly())) {
             throw new BusinessException(ResultCode.PARAM_ERROR, "车型模板不能直接出库，请选择具体库存车号");
         }
@@ -168,6 +199,7 @@ public class OutboundOrderServiceImpl implements OutboundOrderService {
     public OutboundOrderVO createPartOutbound(PartOutboundOrderCreateDTO request) {
         PartInventory part = partRepository.findByPartCodeForUpdate(request.getPartCode())
                 .orElseThrow(() -> new BusinessException(ResultCode.PART_NOT_FOUND, "出库配件不存在"));
+        ensureResourceVisible(Boolean.TRUE.equals(part.getIsLocked()), ResultCode.PART_NOT_FOUND, "出库配件不存在");
         collaborationService.validateWrite(part, request.getPartVersion());
         int quantity = request.getQuantity() == null ? 0 : request.getQuantity();
         if (quantity < 1) {
@@ -229,6 +261,7 @@ public class OutboundOrderServiceImpl implements OutboundOrderService {
     public OutboundOrderVO update(Long id, OutboundOrderUpdateDTO request) {
         OutboundOrder order = outboundOrderRepository.findByIdForUpdate(id)
                 .orElseThrow(() -> new BusinessException(ResultCode.NOT_FOUND, "出库订单不存在"));
+        ensureOrderVisible(order);
         collaborationService.validateWrite(order, request.getVersion());
         if (request.getSettlementPrice() != null) {
             order.setSettlementPrice(request.getSettlementPrice());
@@ -264,6 +297,177 @@ public class OutboundOrderServiceImpl implements OutboundOrderService {
                 saved.getOrderNo(), saved.getCustomerName(), "更新出库订单状态",
                 saved.getOperator(), saved.getOrderRemark(), SOURCE_TYPE, saved.getId());
         return OutboundOrderVO.fromEntity(saved);
+    }
+
+    @Override
+    @Transactional
+    public OutboundOrderVO setLocked(Long id, boolean locked, Long version) {
+        if (!SecurityUtils.isAdminOrSuperAdmin()) {
+            throw new BusinessException(ResultCode.FORBIDDEN, "仅管理员和超级管理员可操作订单锁定");
+        }
+        OutboundOrder order = outboundOrderRepository.findByIdForUpdate(id)
+                .orElseThrow(() -> new BusinessException(ResultCode.NOT_FOUND, "出库订单不存在"));
+        collaborationService.validateWrite(order, version);
+        if (locked) {
+            order.setIsLocked(true);
+            lockRelatedResource(order);
+        } else {
+            releaseRelatedResource(order);
+            order.setIsLocked(false);
+        }
+        collaborationService.stampWrite(order);
+        OutboundOrder saved = outboundOrderRepository.saveAndFlush(order);
+        operationAuditService.record("订单列表", locked ? "LOCK" : "UNLOCK", "OUTBOUND_ORDER", saved.getId(),
+                saved.getOrderNo(), saved.getCustomerName(),
+                locked ? "锁定出库订单及关联出库记录" : "解锁出库订单及关联出库记录",
+                saved.getOperator(), saved.getOrderRemark(), SOURCE_TYPE, saved.getId());
+        return OutboundOrderVO.fromEntity(saved);
+    }
+
+    @Override
+    @Transactional
+    public OutboundOrderVO uploadInvoice(Long id, MultipartFile file) {
+        OutboundOrder order = outboundOrderRepository.findByIdForUpdate(id)
+                .orElseThrow(() -> new BusinessException(ResultCode.NOT_FOUND, "出库订单不存在"));
+        ensureOrderVisible(order);
+        validateInvoiceUpload(order, file);
+
+        String originalName = cleanOriginalInvoiceName(file.getOriginalFilename());
+        String extension = Objects.requireNonNull(StringUtils.getFilenameExtension(originalName)).toLowerCase(Locale.ROOT);
+        String storedFileName = "order-" + order.getId() + "-" + UUID.randomUUID()
+                .toString()
+                .replace("-", "")
+                + "." + extension;
+        Path target = invoiceStorageRoot().resolve(storedFileName).normalize();
+        String previousFileName = order.getInvoiceStoredFileName();
+
+        try {
+            Files.createDirectories(invoiceStorageRoot());
+            try (InputStream inputStream = file.getInputStream()) {
+                Files.copy(inputStream, target, StandardCopyOption.REPLACE_EXISTING);
+            }
+        } catch (IOException e) {
+            throw new BusinessException(ResultCode.SYSTEM_ERROR, "发票文件保存失败");
+        }
+
+        order.setInvoiceStoredFileName(storedFileName);
+        order.setInvoiceOriginalName(originalName);
+        order.setInvoiceContentType(firstNonBlank(file.getContentType(), probeContentType(target), "application/octet-stream"));
+        order.setInvoiceFileSize(file.getSize());
+        order.setInvoiceUploadedAt(LocalDateTime.now());
+        collaborationService.stampWrite(order);
+
+        OutboundOrder saved = outboundOrderRepository.saveAndFlush(order);
+        deleteStoredInvoice(previousFileName);
+        operationAuditService.record("订单列表", "UPLOAD_INVOICE", "OUTBOUND_ORDER", saved.getId(),
+                saved.getOrderNo(), saved.getCustomerName(), "上传订单发票 " + originalName,
+                saved.getOperator(), saved.getOrderRemark(), SOURCE_TYPE, saved.getId());
+        return OutboundOrderVO.fromEntity(saved);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public OutboundInvoiceDownload downloadInvoice(Long id) {
+        OutboundOrder order = visibleOrderById(id)
+                .orElseThrow(() -> new BusinessException(ResultCode.NOT_FOUND, "出库订单不存在"));
+        if (order.getInvoiceStoredFileName() == null || order.getInvoiceStoredFileName().isBlank()) {
+            throw new BusinessException(ResultCode.NOT_FOUND, "该订单尚未上传发票");
+        }
+
+        Path filePath = resolveInvoiceFile(order.getInvoiceStoredFileName());
+        if (!Files.isRegularFile(filePath)) {
+            throw new BusinessException(ResultCode.NOT_FOUND, "发票文件不存在");
+        }
+        try {
+            Resource resource = new UrlResource(filePath.toUri());
+            return new OutboundInvoiceDownload(
+                    resource,
+                    firstNonBlank(order.getInvoiceOriginalName(), "invoice-" + order.getOrderNo()),
+                    firstNonBlank(order.getInvoiceContentType(), "application/octet-stream"),
+                    Files.size(filePath)
+            );
+        } catch (IOException e) {
+            throw new BusinessException(ResultCode.SYSTEM_ERROR, "发票文件读取失败");
+        }
+    }
+
+    private Optional<OutboundOrder> visibleOrderById(Long id) {
+        if (SecurityUtils.isAdminOrSuperAdmin()) {
+            return outboundOrderRepository.findById(id);
+        }
+        return outboundOrderRepository.findByIdAndIsLockedFalse(id);
+    }
+
+    private void ensureOrderVisible(OutboundOrder order) {
+        if (Boolean.TRUE.equals(order.getIsLocked()) && !SecurityUtils.isAdminOrSuperAdmin()) {
+            throw new BusinessException(ResultCode.NOT_FOUND, "出库订单不存在");
+        }
+    }
+
+    private void ensureResourceVisible(boolean locked, ResultCode resultCode, String message) {
+        if (locked && !SecurityUtils.isAdminOrSuperAdmin()) {
+            throw new BusinessException(resultCode, message);
+        }
+    }
+
+    private void lockRelatedResource(OutboundOrder order) {
+        boolean previouslyOrderLocked = Boolean.TRUE.equals(order.getResourceLockedByOrder());
+        if (order.getResourceId() == null) {
+            order.setResourceLockedByOrder(false);
+            return;
+        }
+        if (OutboundOrder.RESOURCE_MACHINE.equals(order.getResourceType())) {
+            machineRepository.findByIdForUpdate(order.getResourceId()).ifPresent(machine -> {
+                boolean alreadyLocked = Boolean.TRUE.equals(machine.getIsLocked());
+                machine.setIsLocked(true);
+                order.setResourceLockedByOrder(previouslyOrderLocked || !alreadyLocked);
+                collaborationService.stampWrite(machine);
+                machineRepository.saveAndFlush(machine);
+            });
+            return;
+        }
+        if (OutboundOrder.RESOURCE_PART.equals(order.getResourceType())) {
+            partRepository.findByIdForUpdate(order.getResourceId()).ifPresent(part -> {
+                boolean alreadyLocked = Boolean.TRUE.equals(part.getIsLocked());
+                part.setIsLocked(true);
+                order.setResourceLockedByOrder(previouslyOrderLocked || !alreadyLocked);
+                collaborationService.stampWrite(part);
+                partRepository.saveAndFlush(part);
+            });
+        }
+    }
+
+    private void releaseRelatedResource(OutboundOrder order) {
+        if (!Boolean.TRUE.equals(order.getResourceLockedByOrder()) || order.getResourceId() == null) {
+            order.setResourceLockedByOrder(false);
+            return;
+        }
+        if (hasOtherLockedOrderForResource(order)) {
+            order.setResourceLockedByOrder(false);
+            return;
+        }
+        if (OutboundOrder.RESOURCE_MACHINE.equals(order.getResourceType())) {
+            machineRepository.findByIdForUpdate(order.getResourceId()).ifPresent(machine -> {
+                machine.setIsLocked(false);
+                collaborationService.stampWrite(machine);
+                machineRepository.saveAndFlush(machine);
+            });
+        } else if (OutboundOrder.RESOURCE_PART.equals(order.getResourceType())) {
+            partRepository.findByIdForUpdate(order.getResourceId()).ifPresent(part -> {
+                part.setIsLocked(false);
+                collaborationService.stampWrite(part);
+                partRepository.saveAndFlush(part);
+            });
+        }
+        order.setResourceLockedByOrder(false);
+    }
+
+    private boolean hasOtherLockedOrderForResource(OutboundOrder order) {
+        return outboundOrderRepository.existsByResourceTypeAndResourceIdAndIsLockedTrueAndIdNot(
+                order.getResourceType(),
+                order.getResourceId(),
+                order.getId()
+        );
     }
 
     private Customer findCustomer(Long customerId) {
@@ -349,6 +553,80 @@ public class OutboundOrderServiceImpl implements OutboundOrderService {
         return savedLog;
     }
 
+    private void validateInvoiceUpload(OutboundOrder order, MultipartFile file) {
+        if (!isInvoiceIssued(order)) {
+            throw new BusinessException(ResultCode.PARAM_ERROR, "订单尚未登记为已开票，请先填写开票日期或开票情况");
+        }
+        if (file == null || file.isEmpty()) {
+            throw new BusinessException(ResultCode.PARAM_ERROR, "请先选择发票文件");
+        }
+        if (file.getSize() > MAX_INVOICE_FILE_SIZE) {
+            throw new BusinessException(ResultCode.PARAM_ERROR, "发票文件不能超过20MB");
+        }
+        String originalName = cleanOriginalInvoiceName(file.getOriginalFilename());
+        String extension = StringUtils.getFilenameExtension(originalName);
+        if (extension == null || !ALLOWED_INVOICE_EXTENSIONS.contains(extension.toLowerCase(Locale.ROOT))) {
+            throw new BusinessException(ResultCode.PARAM_ERROR, "仅支持 PDF、OFD、JPG、PNG、WEBP 发票文件");
+        }
+    }
+
+    private boolean isInvoiceIssued(OutboundOrder order) {
+        if (order.getInvoiceIssuedDate() != null) {
+            return true;
+        }
+        String status = blankToNull(order.getInvoiceStatus());
+        if (status == null) {
+            return false;
+        }
+        String lowerStatus = status.toLowerCase(Locale.ROOT);
+        return status.contains("已开")
+                || status.contains("开票完成")
+                || status.contains("完成开票")
+                || status.contains("已出票")
+                || lowerStatus.contains("issued")
+                || lowerStatus.contains("invoiced");
+    }
+
+    private String cleanOriginalInvoiceName(String originalFilename) {
+        String originalName = StringUtils.cleanPath(Objects.requireNonNullElse(originalFilename, "invoice.pdf")).trim();
+        if (originalName.isBlank() || originalName.contains("..") || originalName.contains("/") || originalName.contains("\\")) {
+            throw new BusinessException(ResultCode.PARAM_ERROR, "发票文件名不合法");
+        }
+        return originalName;
+    }
+
+    private Path invoiceStorageRoot() {
+        return Paths.get(invoiceStorageDir).toAbsolutePath().normalize();
+    }
+
+    private Path resolveInvoiceFile(String storedFileName) {
+        Path root = invoiceStorageRoot();
+        Path filePath = root.resolve(storedFileName).normalize();
+        if (!filePath.startsWith(root)) {
+            throw new BusinessException(ResultCode.PARAM_ERROR, "发票文件路径不合法");
+        }
+        return filePath;
+    }
+
+    private String probeContentType(Path target) {
+        try {
+            return Files.probeContentType(target);
+        } catch (IOException e) {
+            return null;
+        }
+    }
+
+    private void deleteStoredInvoice(String storedFileName) {
+        if (storedFileName == null || storedFileName.isBlank()) {
+            return;
+        }
+        try {
+            Files.deleteIfExists(resolveInvoiceFile(storedFileName));
+        } catch (IOException e) {
+            log.warn("删除旧发票文件失败: {}", storedFileName, e);
+        }
+    }
+
     private String nextOrderNo() {
         String suffix = UUID.randomUUID().toString()
                 .replace("-", "")
@@ -368,6 +646,15 @@ public class OutboundOrderServiceImpl implements OutboundOrderService {
 
     private String blankToNull(String value) {
         return value == null || value.isBlank() ? null : value.trim();
+    }
+
+    private String firstNonBlank(String... values) {
+        for (String value : values) {
+            if (value != null && !value.isBlank()) {
+                return value.trim();
+            }
+        }
+        return null;
     }
 
     private String joinRemark(String... values) {
