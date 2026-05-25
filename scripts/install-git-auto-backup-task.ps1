@@ -11,7 +11,7 @@ if ($IntervalMinutes -lt 1) {
 
 $backupScript = Resolve-Path (Join-Path $PSScriptRoot "git-backup-and-push.ps1")
 $startTime = (Get-Date).AddMinutes(1).ToString("HH:mm")
-$taskCommand = "powershell.exe -NoProfile -ExecutionPolicy Bypass -File `"$backupScript`" -Auto -LogPath `"logs\git-auto-backup.log`""
+$taskCommand = "powershell.exe -NoProfile -ExecutionPolicy Bypass -File `"$backupScript`" -Auto -LocalOnly -LogPath `"logs\git-auto-backup.log`""
 
 $arguments = @(
     "/Create",

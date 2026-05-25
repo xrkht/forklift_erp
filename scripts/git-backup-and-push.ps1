@@ -3,6 +3,8 @@ param(
     [string]$Remote = "origin",
     [string]$Branch,
     [switch]$Auto,
+    [switch]$LocalOnly,
+    [switch]$NoPush,
     [string]$LogPath
 )
 
@@ -45,6 +47,7 @@ function Invoke-GitQuiet {
 
 $repoRoot = Resolve-Path (Join-Path $PSScriptRoot "..")
 Set-Location $repoRoot
+$skipPush = $LocalOnly -or $NoPush
 
 $transcriptStarted = $false
 if ($LogPath) {
@@ -96,11 +99,6 @@ try {
         Invoke-Git @("checkout", "-B", $Branch)
     }
 
-    $remoteResult = Invoke-GitQuiet @("remote", "get-url", $Remote)
-    if ($remoteResult.ExitCode -ne 0 -or -not $remoteResult.Output) {
-        throw "Remote '$Remote' is not configured. Run: git remote add $Remote https://github.com/xrkht/forklift_erp.git"
-    }
-
     Invoke-Git @("add", "-A")
 
     $diffResult = Invoke-GitQuiet @("diff", "--cached", "--quiet")
@@ -119,6 +117,16 @@ try {
         Invoke-Git @("commit", "-m", $Message)
     } else {
         Write-Host "No local changes to commit."
+    }
+
+    if ($skipPush) {
+        Write-Host "Local Git backup complete. Skipping GitHub sync because local-only mode is enabled."
+        exit 0
+    }
+
+    $remoteResult = Invoke-GitQuiet @("remote", "get-url", $Remote)
+    if ($remoteResult.ExitCode -ne 0 -or -not $remoteResult.Output) {
+        throw "Remote '$Remote' is not configured. Run: git remote add $Remote https://github.com/xrkht/forklift_erp.git"
     }
 
     $upstreamResult = Invoke-GitQuiet @("rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}")
