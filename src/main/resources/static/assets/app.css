@@ -920,6 +920,7 @@ tbody tr:hover {
 
 .modal-shell {
   width: min(920px, 100%);
+  max-height: calc(100vh - 48px);
 }
 
 .modal-card {
@@ -927,6 +928,9 @@ tbody tr:hover {
   border-radius: 10px;
   border: 1px solid var(--line);
   overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  max-height: calc(100vh - 48px);
 }
 
 .modal-head {
@@ -941,6 +945,7 @@ tbody tr:hover {
 
 .modal-body {
   padding: 18px;
+  overflow: auto;
 }
 
 .modal-grid {
@@ -997,6 +1002,7 @@ tbody tr:hover {
 }
 
 .modal-actions {
+  flex: 0 0 auto;
   display: flex;
   justify-content: flex-end;
   gap: 10px;
