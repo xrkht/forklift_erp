@@ -749,6 +749,7 @@ function handleModalInput(event) {
   const query = input.value.trim();
   const allowCustom = combo.dataset.allowCustom === "true";
   const exact = findComboOption(combo, query);
+  input.dataset.userEdited = "true";
   if (exact) {
     setComboValue(combo, exact.dataset.value, exact.dataset.label, exact.dataset.meta, false);
   } else if (allowCustom) {
@@ -2258,6 +2259,7 @@ function setComboValue(combo, value, label, meta, shouldNotify) {
   const hidden = combo.querySelector("input[type='hidden']");
   const previous = hidden.value;
   input.value = label || "";
+  delete input.dataset.userEdited;
   hidden.value = value || "";
   hidden.dataset.selectedLabel = label || "";
   hidden.dataset.selectedMeta = meta || "";
@@ -2325,7 +2327,7 @@ function validateCombos(form) {
   const invalid = [...form.querySelectorAll("[data-combo][data-required='true']")]
     .find(combo => {
       const hidden = combo.querySelector("input[type='hidden']");
-      return !hidden.value.trim() && hidden.dataset.prefillValue === undefined;
+      return !comboHasSubmittableValue(combo, hidden);
     });
   if (!invalid) return true;
   const input = invalid.querySelector("[data-combo-input]");
@@ -2333,6 +2335,14 @@ function validateCombos(form) {
   input.focus();
   showToast("请从下拉列表中选择有效选项", "error");
   return false;
+}
+
+function comboHasSubmittableValue(combo, hidden = combo?.querySelector("input[type='hidden']")) {
+  if (!combo || !hidden) return false;
+  if (String(hidden.value || "").trim()) return true;
+  const input = combo.querySelector("[data-combo-input]");
+  const typedValue = String(input?.value || "").trim();
+  return typedValue === "" && hidden.dataset.prefillValue !== undefined;
 }
 
 function resolveOptions(field) {
@@ -2380,7 +2390,9 @@ function serializeForm(kind, form) {
     if (!input) continue;
     const coerce = input.dataset.coerce || "string";
     let raw = input.type === "checkbox" ? input.checked : String(input.value || "").trim();
-    if (raw === "" && input.dataset.prefillValue !== undefined) {
+    const combo = input.closest?.("[data-combo]");
+    const comboTypedValue = combo ? String(combo.querySelector("[data-combo-input]")?.value || "").trim() : "";
+    if (raw === "" && input.dataset.prefillValue !== undefined && (!combo || comboTypedValue === "")) {
       raw = input.dataset.prefillValue;
     }
     const value = coerceValue(raw, coerce, input.type);

@@ -2,6 +2,26 @@
 
 本项目遵循 [语义化版本](https://semver.org/lang/zh-CN/) 和 [Keep a Changelog](https://keepachangelog.com/zh-CN/) 规范。
 
+## [0.1.20] - 2026-05-25 - xrkht
+
+### 新增
+- **客户列表与出库订单**
+  - 新增 Flyway `V9__customers_and_outbound_orders.sql`，创建 `customer_profile` 和 `outbound_order`，用于维护客户公司信息并统一记录整车/配件出库订单。
+  - 新增 `/api/customers` 客户接口，支持公司名称、地址、联系人、电话、税号/身份证号和备注的新增、编辑、删除与下拉读取。
+  - 新增 `/api/outbound-orders` 出库订单接口；整车出库会按具体车号扣减库存、写入库存流水、记录客户与结算价，配件出库也同步生成订单并扣减配件库存。
+  - 订单列表新增车款结清、报销售、申请发票三项状态，并支持编辑报销售日期、发票申请日期和订单备注。
+### 修改
+- **车辆库存出库与前端入口**
+  - 车辆库存车型行在“入库”后新增“整车出库”按钮，弹窗只拉取该车型仍在库的具体车号，避免仅按车型出库导致标识不准。
+  - 整车/配件出库弹窗均从客户列表拉取公司信息；整车出库必填结算价和客户，配件出库也会把客户、结算价与备注写入订单。
+  - 左侧导航新增“订单列表”和“客户列表”，总览快捷操作补充“新增客户”，Service Worker 缓存版本升级为 `forklift-erp-client-v12`。
+### 验证
+- 内置 Node：`node --check src\main\resources\static\assets\app.js` 通过。
+- 内置 Node：`node --check src\main\resources\static\sw.js` 通过。
+- Java 21：`.\mvnw.cmd test` 通过，累计 `14` 个测试通过；新增覆盖客户创建、整车出库订单、订单状态编辑和配件出库订单。
+- Java 21：`.\mvnw.cmd package -DskipTests` 通过。
+- 浏览器验证通过：车辆库存页按临时车型搜索后可打开“整车出库”，车号下拉只出现对应在库车号，客户下拉能读取客户列表；“订单列表”和“客户列表”导航及页面正常显示，验证数据已清理。
+
 ## [0.1.19] - 2026-05-25 - xrkht
 
 ### 新增

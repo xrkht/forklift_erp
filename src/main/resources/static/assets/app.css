@@ -457,6 +457,17 @@ button {
   position: relative;
 }
 
+.hover-menu::after {
+  content: "";
+  position: absolute;
+  z-index: 34;
+  top: 100%;
+  right: 0;
+  min-width: 178px;
+  width: 100%;
+  height: 10px;
+}
+
 .hover-menu-panel {
   position: absolute;
   z-index: 35;
