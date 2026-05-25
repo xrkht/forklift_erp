@@ -2,6 +2,21 @@
 
 本项目遵循 [语义化版本](https://semver.org/lang/zh-CN/) 和 [Keep a Changelog](https://keepachangelog.com/zh-CN/) 规范。
 
+## [0.1.21] - 2026-05-25 - xrkht
+
+### 修改
+- **详情/值列表点击选中交互**
+  - 车辆库存列表支持点击整行直接进入车型详情，并根据当前详情高亮选中行；原有“详情”按钮保留，方便继续显式操作。
+  - 配置项卡片支持点击整卡直接切换右侧“值列表”，沿用库存车号卡片的选中态，并补充键盘 `Enter` / `Space` 触发。
+  - 前端内容区统一识别 `data-select-action` 选择动作，表格行与卡片补上可聚焦样式；Service Worker 缓存版本升级到 `forklift-erp-client-v14`，避免浏览器继续命中旧静态资源。
+
+### 验证
+- 内置 Node：`node --check src\main\resources\static\assets\app.js` 通过。
+- 内置 Node：`node --check src\main\resources\static\sw.js` 通过。
+- Java 21：`.\mvnw.cmd test` 通过，累计 `14` 个测试通过。
+- Java 21：`.\mvnw.cmd package -DskipTests` 通过。
+- 本地启动验证：以 `-Djava.io.tmpdir=target\tomcat-temp` 启动 jar 后，`curl.exe -I http://127.0.0.1:8080/` 返回 `302` 并跳转到 `https://127.0.0.1:8086/`，Node HTTPS 请求首页返回 `200`。
+
 ## [0.1.20] - 2026-05-25 - xrkht
 
 ### 新增
