@@ -25,6 +25,8 @@ public class MachineInventoryCreateDTO {
     private String warehouseName;
     private Long warehouseId;
     private String stockStatus;
+    private String applicationNumber;
+    private String materialNumber;
     private BigDecimal purchasePrice;
     private BigDecimal salePrice;
     private BigDecimal settlementPrice;
@@ -33,7 +35,17 @@ public class MachineInventoryCreateDTO {
     private String warrantyCardNumber;
     private LocalDate manufacturingDate;
     private LocalDateTime inboundDate;
+    private String salesDate;
+    private String isSalesReported;
+    private LocalDate salesReportDate;
     private Integer inventoryCount;
+    private String destination1;
+    private String destination2;
+    private String destination3;
+    private String destination4;
+    private String destination5;
+    private String isInvoiceApplied;
+    private String remarks;
     private Boolean modelOnly;
 
     public MachineInventory toEntity() {
@@ -51,6 +63,8 @@ public class MachineInventoryCreateDTO {
         if (this.stockStatus != null) {
             entity.setStockStatus(this.stockStatus);
         }
+        entity.setApplicationNumber(this.applicationNumber);
+        entity.setMaterialNumber(this.materialNumber);
         entity.setPurchasePrice(this.purchasePrice);
         entity.setSalePrice(this.salePrice);
         entity.setSettlementPrice(this.settlementPrice);
@@ -59,7 +73,17 @@ public class MachineInventoryCreateDTO {
         entity.setWarrantyCardNumber(this.warrantyCardNumber);
         entity.setManufacturingDate(this.manufacturingDate);
         entity.setInboundDate(this.inboundDate);
+        entity.setSalesDate(this.salesDate);
+        entity.setIsSalesReported(this.isSalesReported);
+        entity.setSalesReportDate(this.salesReportDate);
         entity.setInventoryCount(this.inventoryCount);
+        entity.setDestination1(this.destination1);
+        entity.setDestination2(this.destination2);
+        entity.setDestination3(this.destination3);
+        entity.setDestination4(this.destination4);
+        entity.setDestination5(this.destination5);
+        entity.setIsInvoiceApplied(this.isInvoiceApplied);
+        entity.setRemarks(this.remarks);
         if (this.modelOnly != null) {
             entity.setModelOnly(this.modelOnly);
         }
@@ -81,6 +105,8 @@ public class MachineInventoryCreateDTO {
         if (this.stockStatus != null) {
             entity.setStockStatus(this.stockStatus);
         }
+        entity.setApplicationNumber(this.applicationNumber);
+        entity.setMaterialNumber(this.materialNumber);
         entity.setPurchasePrice(this.purchasePrice);
         entity.setSalePrice(this.salePrice);
         entity.setSettlementPrice(this.settlementPrice);
@@ -89,7 +115,17 @@ public class MachineInventoryCreateDTO {
         entity.setWarrantyCardNumber(this.warrantyCardNumber);
         entity.setManufacturingDate(this.manufacturingDate);
         entity.setInboundDate(this.inboundDate);
+        entity.setSalesDate(this.salesDate);
+        entity.setIsSalesReported(this.isSalesReported);
+        entity.setSalesReportDate(this.salesReportDate);
         entity.setInventoryCount(this.inventoryCount);
+        entity.setDestination1(this.destination1);
+        entity.setDestination2(this.destination2);
+        entity.setDestination3(this.destination3);
+        entity.setDestination4(this.destination4);
+        entity.setDestination5(this.destination5);
+        entity.setIsInvoiceApplied(this.isInvoiceApplied);
+        entity.setRemarks(this.remarks);
         if (this.modelOnly != null) {
             entity.setModelOnly(this.modelOnly);
         }

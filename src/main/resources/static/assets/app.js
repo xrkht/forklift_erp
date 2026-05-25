@@ -21,6 +21,7 @@ const state = {
   },
   filters: {
     vehicles: {
+      view: "model",
       power: "",
       supplier: "",
       stock: ""
@@ -52,7 +53,7 @@ const api = createApiClient(() => state.token);
 
 const tabs = {
   overview: { title: "总览", subtitle: "系统概览与业务入口" },
-  vehicles: { title: "车辆库存", subtitle: "整车入库、库存信息与配置明细" },
+  vehicles: { title: "车辆库存", subtitle: "车型库存与整机进出库台账" },
   parts: { title: "配件库存", subtitle: "配件档案、库存数量与价格信息" },
   modifications: { title: "改装工单", subtitle: "客户出库前改装、配件替换与拆下件回库" },
   outboundOrders: { title: "订单列表", subtitle: "记录整车与配件出库、车款结清、报销售和发票申请" },

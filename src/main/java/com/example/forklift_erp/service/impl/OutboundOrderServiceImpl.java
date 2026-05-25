@@ -25,6 +25,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
@@ -103,6 +104,24 @@ public class OutboundOrderServiceImpl implements OutboundOrderService {
         order.setUnit("台");
         copyCustomer(order, customer);
         order.setSettlementPrice(request.getSettlementPrice());
+        order.setSalesDate(request.getSalesDate());
+        order.setSalePrice(firstPrice(request.getSalePrice(), machine.getSalePrice()));
+        if (request.getPaymentSettled() != null) {
+            order.setPaymentSettled(request.getPaymentSettled());
+        }
+        order.setPaymentRemark(blankToNull(request.getPaymentRemark()));
+        if (request.getSalesReported() != null) {
+            order.setSalesReported(request.getSalesReported());
+        }
+        if (request.getInvoiceApplied() != null) {
+            order.setInvoiceApplied(request.getInvoiceApplied());
+        }
+        order.setSalesReportDate(request.getSalesReportDate());
+        order.setInvoiceApplicationDate(request.getInvoiceApplicationDate());
+        order.setInvoiceStatus(blankToNull(request.getInvoiceStatus()));
+        order.setInvoiceIssuedDate(request.getInvoiceIssuedDate());
+        order.setRegistrationStatus(blankToNull(request.getRegistrationStatus()));
+        order.setContractType(blankToNull(request.getContractType()));
         order.setOperator(blankToNull(request.getOperator()));
         order.setOrderRemark(blankToNull(request.getOrderRemark()));
         collaborationService.stampWrite(order);
@@ -112,9 +131,12 @@ public class OutboundOrderServiceImpl implements OutboundOrderService {
         machine.setInventoryCount(after);
         machine.setStockStatus(after > 0 ? "IN_STOCK" : "OUTBOUND");
         machine.setSettlementPrice(request.getSettlementPrice());
+        machine.setSalePrice(firstPrice(request.getSalePrice(), machine.getSalePrice()));
+        machine.setSalesDate(toMachineSalesDate(request.getSalesDate()));
         machine.setDestination1(customer.getCompanyName());
-        machine.setIsSalesReported("否");
-        machine.setIsInvoiceApplied("否");
+        machine.setIsSalesReported(yesNo(order.getSalesReported()));
+        machine.setSalesReportDate(order.getSalesReportDate());
+        machine.setIsInvoiceApplied(yesNo(order.getInvoiceApplied()));
         collaborationService.stampWrite(machine);
         MachineInventory savedMachine = machineRepository.saveAndFlush(machine);
 
@@ -208,9 +230,17 @@ public class OutboundOrderServiceImpl implements OutboundOrderService {
         OutboundOrder order = outboundOrderRepository.findByIdForUpdate(id)
                 .orElseThrow(() -> new BusinessException(ResultCode.NOT_FOUND, "出库订单不存在"));
         collaborationService.validateWrite(order, request.getVersion());
+        if (request.getSettlementPrice() != null) {
+            order.setSettlementPrice(request.getSettlementPrice());
+        }
+        order.setSalesDate(request.getSalesDate());
+        if (request.getSalePrice() != null) {
+            order.setSalePrice(request.getSalePrice());
+        }
         if (request.getPaymentSettled() != null) {
             order.setPaymentSettled(request.getPaymentSettled());
         }
+        order.setPaymentRemark(blankToNull(request.getPaymentRemark()));
         if (request.getSalesReported() != null) {
             order.setSalesReported(request.getSalesReported());
         }
@@ -219,6 +249,10 @@ public class OutboundOrderServiceImpl implements OutboundOrderService {
         }
         order.setSalesReportDate(request.getSalesReportDate());
         order.setInvoiceApplicationDate(request.getInvoiceApplicationDate());
+        order.setInvoiceStatus(blankToNull(request.getInvoiceStatus()));
+        order.setInvoiceIssuedDate(request.getInvoiceIssuedDate());
+        order.setRegistrationStatus(blankToNull(request.getRegistrationStatus()));
+        order.setContractType(blankToNull(request.getContractType()));
         order.setOrderRemark(blankToNull(request.getOrderRemark()));
         if (request.getOperator() != null && !request.getOperator().isBlank()) {
             order.setOperator(request.getOperator().trim());
@@ -249,6 +283,9 @@ public class OutboundOrderServiceImpl implements OutboundOrderService {
     private void syncLegacyOutboundFlags(OutboundOrder order) {
         if (OutboundOrder.RESOURCE_MACHINE.equals(order.getResourceType())) {
             machineRepository.findByIdForUpdate(order.getResourceId()).ifPresent(machine -> {
+                machine.setSettlementPrice(firstPrice(order.getSettlementPrice(), machine.getSettlementPrice()));
+                machine.setSalePrice(firstPrice(order.getSalePrice(), machine.getSalePrice()));
+                machine.setSalesDate(toMachineSalesDate(order.getSalesDate()));
                 machine.setIsSalesReported(yesNo(order.getSalesReported()));
                 machine.setSalesReportDate(order.getSalesReportDate());
                 machine.setIsInvoiceApplied(yesNo(order.getInvoiceApplied()));
@@ -345,6 +382,10 @@ public class OutboundOrderServiceImpl implements OutboundOrderService {
             builder.append(value.trim());
         }
         return builder.isEmpty() ? null : builder.toString();
+    }
+
+    private String toMachineSalesDate(LocalDate salesDate) {
+        return salesDate == null ? null : salesDate.toString();
     }
 
     private String yesNo(Boolean value) {

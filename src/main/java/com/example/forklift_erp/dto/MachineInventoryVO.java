@@ -20,6 +20,8 @@ public class MachineInventoryVO {
     private String warehouseName;
     private Long warehouseId;
     private String stockStatus;
+    private String applicationNumber;
+    private String materialNumber;
     private BigDecimal purchasePrice;
     private BigDecimal salePrice;
     private BigDecimal settlementPrice;
@@ -28,7 +30,17 @@ public class MachineInventoryVO {
     private String warrantyCardNumber;
     private LocalDate manufacturingDate;
     private LocalDateTime inboundDate;
+    private String salesDate;
+    private String isSalesReported;
+    private LocalDate salesReportDate;
     private Integer inventoryCount;
+    private String destination1;
+    private String destination2;
+    private String destination3;
+    private String destination4;
+    private String destination5;
+    private String isInvoiceApplied;
+    private String remarks;
     private Boolean modelOnly;
     // 排除审计字段
 
@@ -45,6 +57,8 @@ public class MachineInventoryVO {
         vo.setWarehouseName(entity.getWarehouseName());
         vo.setWarehouseId(entity.getWarehouseId());
         vo.setStockStatus(entity.getStockStatus());
+        vo.setApplicationNumber(entity.getApplicationNumber());
+        vo.setMaterialNumber(entity.getMaterialNumber());
         vo.setPurchasePrice(entity.getPurchasePrice());
         vo.setSalePrice(entity.getSalePrice());
         vo.setSettlementPrice(entity.getSettlementPrice());
@@ -53,7 +67,17 @@ public class MachineInventoryVO {
         vo.setWarrantyCardNumber(entity.getWarrantyCardNumber());
         vo.setManufacturingDate(entity.getManufacturingDate());
         vo.setInboundDate(entity.getInboundDate());
+        vo.setSalesDate(entity.getSalesDate());
+        vo.setIsSalesReported(entity.getIsSalesReported());
+        vo.setSalesReportDate(entity.getSalesReportDate());
         vo.setInventoryCount(entity.getInventoryCount());
+        vo.setDestination1(entity.getDestination1());
+        vo.setDestination2(entity.getDestination2());
+        vo.setDestination3(entity.getDestination3());
+        vo.setDestination4(entity.getDestination4());
+        vo.setDestination5(entity.getDestination5());
+        vo.setIsInvoiceApplied(entity.getIsInvoiceApplied());
+        vo.setRemarks(entity.getRemarks());
         vo.setModelOnly(Boolean.TRUE.equals(entity.getModelOnly()));
         return vo;
     }

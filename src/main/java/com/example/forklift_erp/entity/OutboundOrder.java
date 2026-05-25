@@ -68,8 +68,17 @@ public class OutboundOrder implements CollaborativeResource {
     @Column(name = "settlement_price", precision = 12, scale = 2)
     private BigDecimal settlementPrice;
 
+    @Column(name = "sales_date")
+    private LocalDate salesDate;
+
+    @Column(name = "sale_price", precision = 12, scale = 2)
+    private BigDecimal salePrice;
+
     @Column(name = "payment_settled")
     private Boolean paymentSettled = false;
+
+    @Column(name = "payment_remark", length = 500)
+    private String paymentRemark;
 
     @Column(name = "sales_reported")
     private Boolean salesReported = false;
@@ -82,6 +91,18 @@ public class OutboundOrder implements CollaborativeResource {
 
     @Column(name = "invoice_application_date")
     private LocalDate invoiceApplicationDate;
+
+    @Column(name = "invoice_status", length = 120)
+    private String invoiceStatus;
+
+    @Column(name = "invoice_issued_date")
+    private LocalDate invoiceIssuedDate;
+
+    @Column(name = "registration_status", length = 120)
+    private String registrationStatus;
+
+    @Column(name = "contract_type", length = 80)
+    private String contractType;
 
     @Column(name = "order_remark", length = 500)
     private String orderRemark;

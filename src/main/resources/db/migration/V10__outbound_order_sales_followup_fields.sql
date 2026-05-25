@@ -1,0 +1,8 @@
+ALTER TABLE outbound_order
+    ADD COLUMN IF NOT EXISTS sales_date DATE NULL,
+    ADD COLUMN IF NOT EXISTS sale_price DECIMAL(12, 2) NULL,
+    ADD COLUMN IF NOT EXISTS payment_remark VARCHAR(500) NULL,
+    ADD COLUMN IF NOT EXISTS invoice_status VARCHAR(120) NULL,
+    ADD COLUMN IF NOT EXISTS invoice_issued_date DATE NULL,
+    ADD COLUMN IF NOT EXISTS registration_status VARCHAR(120) NULL,
+    ADD COLUMN IF NOT EXISTS contract_type VARCHAR(80) NULL;
