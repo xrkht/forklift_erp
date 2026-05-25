@@ -1,12 +1,14 @@
 package com.example.forklift_erp;
 
 import com.example.forklift_erp.entity.ConfigItem;
+import com.example.forklift_erp.entity.ConfigValue;
 import com.example.forklift_erp.entity.MachineConfig;
 import com.example.forklift_erp.entity.MachineInventory;
 import com.example.forklift_erp.entity.PartInventory;
 import com.example.forklift_erp.entity.Role;
 import com.example.forklift_erp.entity.User;
 import com.example.forklift_erp.repository.ConfigItemRepository;
+import com.example.forklift_erp.repository.ConfigValueRepository;
 import com.example.forklift_erp.repository.MachineConfigRepository;
 import com.example.forklift_erp.repository.MachineInventoryRepository;
 import com.example.forklift_erp.repository.ModificationWorkOrderLineRepository;
@@ -68,6 +70,9 @@ class ModificationWorkOrderIntegrationTests {
     private ConfigItemRepository configItemRepository;
 
     @Autowired
+    private ConfigValueRepository configValueRepository;
+
+    @Autowired
     private PartInventoryRepository partRepository;
 
     @Autowired
@@ -86,6 +91,7 @@ class ModificationWorkOrderIntegrationTests {
     private final List<String> partsToCleanup = new ArrayList<>();
     private final List<Long> machinesToCleanup = new ArrayList<>();
     private final List<Long> configsToCleanup = new ArrayList<>();
+    private final List<Long> configValuesToCleanup = new ArrayList<>();
     private final List<Long> configItemsToCleanup = new ArrayList<>();
     private final List<Long> workOrdersToCleanup = new ArrayList<>();
     private String superToken;
@@ -110,6 +116,11 @@ class ModificationWorkOrderIntegrationTests {
             machineConfigRepository.findById(configId).ifPresent(machineConfigRepository::delete);
         }
         configsToCleanup.clear();
+
+        for (Long configValueId : configValuesToCleanup.reversed()) {
+            configValueRepository.findById(configValueId).ifPresent(configValueRepository::delete);
+        }
+        configValuesToCleanup.clear();
 
         for (Long configItemId : configItemsToCleanup.reversed()) {
             configItemRepository.findById(configItemId).ifPresent(configItemRepository::delete);
@@ -222,6 +233,83 @@ class ModificationWorkOrderIntegrationTests {
         assertThat(secondCode).matches("^CFG-\\d+$");
         assertThat(Integer.parseInt(secondCode.substring(4)))
                 .isEqualTo(Integer.parseInt(firstCode.substring(4)) + 1);
+    }
+
+    @Test
+    void modelTemplateAndManualInboundUseGeneratedNumbersAndDictionaryConfigs() throws Exception {
+        Map<String, Object> modelPayload = new LinkedHashMap<>();
+        modelPayload.put("name", "手动测试车型");
+        modelPayload.put("specificationModel", "CBY25");
+        modelPayload.put("machineType", "手动叉车");
+        modelPayload.put("modelOnly", true);
+
+        String modelResponse = mockMvc.perform(post("/api/inventory")
+                        .header("Authorization", bearer(superToken))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json(modelPayload)))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.code").value(200))
+                .andExpect(jsonPath("$.data.modelOnly").value(true))
+                .andExpect(jsonPath("$.data.inventoryCount").value(0))
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+        JsonNode model = objectMapper.readTree(modelResponse).path("data");
+        machinesToCleanup.add(model.path("id").asLong());
+        assertThat(model.path("vehicleProductNumber").asText()).startsWith("MODEL-");
+
+        ConfigItem item = new ConfigItem();
+        item.setCategory("手动叉车");
+        item.setSubCategory("货叉");
+        item.setItemName("货叉规格");
+        item.setItemCode("MAN-CFG-" + unique("config"));
+        item.setInputType("SELECT");
+        ConfigItem savedItem = configItemRepository.saveAndFlush(item);
+        configItemsToCleanup.add(savedItem.getId());
+
+        ConfigValue value = new ConfigValue();
+        value.setConfigItemId(savedItem.getId());
+        value.setValueLabel("550x1150");
+        value.setValueCode("FORK-550-1150");
+        ConfigValue savedValue = configValueRepository.saveAndFlush(value);
+        configValuesToCleanup.add(savedValue.getId());
+
+        Map<String, Object> machine = new LinkedHashMap<>();
+        machine.put("name", "手动测试车型");
+        machine.put("specificationModel", "CBY25");
+        machine.put("machineType", "手动叉车");
+        machine.put("inventoryCount", 1);
+
+        Map<String, Object> config = new LinkedHashMap<>();
+        config.put("configItemId", savedItem.getId());
+        config.put("configValueId", savedValue.getId());
+        config.put("itemName", "前端不再信任这个名称");
+        config.put("selectedValue", "前端不再信任这个值");
+
+        String inboundResponse = mockMvc.perform(post("/api/inventory/inbound")
+                        .header("Authorization", bearer(superToken))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json(Map.of(
+                                "machineInventory", machine,
+                                "configs", List.of(config)
+                        ))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(200))
+                .andExpect(jsonPath("$.data.modelOnly").value(false))
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+        JsonNode inbound = objectMapper.readTree(inboundResponse).path("data");
+        Long machineId = inbound.path("id").asLong();
+        machinesToCleanup.add(machineId);
+        assertThat(inbound.path("vehicleProductNumber").asText()).startsWith("MAN-");
+
+        List<MachineConfig> configs = machineConfigRepository.findByMachineId(machineId);
+        configs.forEach(configRow -> configsToCleanup.add(configRow.getId()));
+        assertThat(configs).singleElement().satisfies(saved -> {
+            assertThat(saved.getItemName()).isEqualTo("货叉规格");
+            assertThat(saved.getSelectedValue()).isEqualTo("550x1150");
+        });
     }
 
     private JsonNode createMachine() throws Exception {

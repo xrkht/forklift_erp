@@ -17,6 +17,8 @@ public interface MachineInventoryRepository extends JpaRepository<MachineInvento
 
     Optional<MachineInventory> findByVehicleProductNumber(String vehicleProductNumber);
 
+    boolean existsByVehicleProductNumber(String vehicleProductNumber);
+
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("select m from MachineInventory m where m.id = :id")
     Optional<MachineInventory> findByIdForUpdate(@Param("id") Long id);

@@ -3,7 +3,6 @@ package com.example.forklift_erp.dto;
 
 import com.example.forklift_erp.entity.MachineInventory;
 import jakarta.validation.Valid;
-import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import lombok.Data;
 import java.util.List;
@@ -30,10 +29,8 @@ public class InboundRequestDTO {
         @NotNull(message = "配置值ID不能为空")
         private Long configValueId;
 
-        @NotBlank(message = "配置项名称不能为空")
         private String itemName;
 
-        @NotBlank(message = "选中值不能为空")
         private String selectedValue;
 
         private Boolean isStandard;

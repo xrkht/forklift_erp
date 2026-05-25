@@ -11,7 +11,6 @@ import java.time.LocalDateTime;
 public class MachineInventoryCreateDTO {
     private Long version;
 
-    @NotBlank(message = "车号不能为空")
     private String vehicleProductNumber;
 
     @NotBlank(message = "名称不能为空")
@@ -35,6 +34,7 @@ public class MachineInventoryCreateDTO {
     private LocalDate manufacturingDate;
     private LocalDateTime inboundDate;
     private Integer inventoryCount;
+    private Boolean modelOnly;
 
     public MachineInventory toEntity() {
         MachineInventory entity = new MachineInventory();
@@ -60,6 +60,9 @@ public class MachineInventoryCreateDTO {
         entity.setManufacturingDate(this.manufacturingDate);
         entity.setInboundDate(this.inboundDate);
         entity.setInventoryCount(this.inventoryCount);
+        if (this.modelOnly != null) {
+            entity.setModelOnly(this.modelOnly);
+        }
         return entity;
     }
 
@@ -87,5 +90,8 @@ public class MachineInventoryCreateDTO {
         entity.setManufacturingDate(this.manufacturingDate);
         entity.setInboundDate(this.inboundDate);
         entity.setInventoryCount(this.inventoryCount);
+        if (this.modelOnly != null) {
+            entity.setModelOnly(this.modelOnly);
+        }
     }
 }

@@ -17,6 +17,13 @@ const state = {
     configValues: "",
     users: ""
   },
+  filters: {
+    vehicles: {
+      power: "",
+      supplier: "",
+      stock: ""
+    }
+  },
   data: {
     vehicles: [],
     parts: [],
@@ -67,8 +74,34 @@ const fields = {
     { name: "vehicleProductNumber", label: "车号", required: true },
     { name: "name", label: "车辆名称", required: true },
     { name: "specificationModel", label: "规格型号", required: true },
-    { name: "machineType", label: "车辆类型" },
-    { name: "configuration", label: "配置说明", type: "textarea", span: 2 },
+    { name: "machineType", label: "动力", type: "select", options: powerTypeOptions, allowCustom: true },
+    { name: "supplier", label: "供应商" },
+    { name: "warehouseName", label: "仓库" },
+    { name: "stockStatus", label: "库存状态", type: "select", options: stockStatusOptions(), defaultValue: "IN_STOCK" },
+    { name: "purchasePrice", label: "采购价", type: "number", coerce: "decimal", step: "0.01" },
+    { name: "salePrice", label: "销售价", type: "number", coerce: "decimal", step: "0.01" },
+    { name: "settlementPrice", label: "结算价", type: "number", coerce: "decimal", step: "0.01" },
+    { name: "engineNumber", label: "发动机号" },
+    { name: "frameNumber", label: "车架号" },
+    { name: "warrantyCardNumber", label: "保修卡号" },
+    { name: "manufacturingDate", label: "生产日期", type: "date", coerce: "date" },
+    { name: "inboundDate", label: "入库时间", type: "datetime-local", coerce: "datetime" },
+    { name: "inventoryCount", label: "库存数量", type: "number", coerce: "int", step: "1", defaultValue: 1 }
+  ],
+  vehicleModel: [
+    { name: "name", label: "车型", required: true },
+    { name: "specificationModel", label: "型号", required: true },
+    { name: "machineType", label: "动力", type: "select", options: powerTypeOptions, allowCustom: true, required: true },
+    { name: "supplier", label: "供应商" },
+    { name: "warehouseName", label: "仓库" },
+    { name: "purchasePrice", label: "采购价", type: "number", coerce: "decimal", step: "0.01" },
+    { name: "salePrice", label: "销售价", type: "number", coerce: "decimal", step: "0.01" }
+  ],
+  vehicleInbound: [
+    { name: "vehicleProductNumber", label: "车号", required: true },
+    { name: "name", label: "车型", required: true },
+    { name: "specificationModel", label: "型号", required: true },
+    { name: "machineType", label: "动力", type: "select", options: powerTypeOptions, allowCustom: true, required: true },
     { name: "supplier", label: "供应商" },
     { name: "warehouseName", label: "仓库" },
     { name: "stockStatus", label: "库存状态", type: "select", options: stockStatusOptions(), defaultValue: "IN_STOCK" },
@@ -403,10 +436,18 @@ async function loadVehicleDetail(id, shouldRender = true) {
 
 async function loadVehicleModelDetail(modelKey, selectedMachineId = null, shouldRender = true) {
   const vehicles = vehiclesForModelKey(modelKey);
+  const model = vehicleModelGroups().find(group => group.modelKey === modelKey) || { ...decodeVehicleModelKey(modelKey), modelKey, vehicles };
   const selectedId = Number(selectedMachineId || state.selectedVehicleId || vehicles[0]?.id || 0);
   const selected = vehicles.find(vehicle => Number(vehicle.id) === selectedId) || vehicles[0];
   if (!selected) {
-    state.vehicleDetail = null;
+    state.selectedVehicleId = null;
+    state.vehicleDetail = {
+      modelKey,
+      model,
+      vehicles,
+      selectedMachineId: null,
+      selectedDetail: { machine: null, configs: [], logs: [], workOrders: [] }
+    };
     if (shouldRender) renderCurrentTab();
     return;
   }
@@ -418,7 +459,7 @@ async function loadVehicleModelDetail(modelKey, selectedMachineId = null, should
   ]);
   state.vehicleDetail = {
     modelKey,
-    model: vehicleModelGroups().find(group => group.modelKey === modelKey) || { ...decodeVehicleModelKey(modelKey), modelKey, vehicles },
+    model,
     vehicles,
     selectedMachineId: Number(selected.id),
     selectedDetail: { ...detail, logs: sortById(logs), workOrders: sortById(workOrders) }
@@ -455,33 +496,37 @@ async function handleContentClick(event) {
       renderCurrentTab();
       return;
     }
+    if (action === "create-vehicle-model") {
+      await openEntityModal("vehicleModel", vehicleModelDefaults(button.dataset.powerType));
+      return;
+    }
     if (action === "create") {
       await openEntityModal(kind, defaultEntity(kind));
       return;
     }
     if (action === "model-inbound") {
       const group = vehicleModelGroups().find(item => item.modelKey === button.dataset.modelKey);
-      await openEntityModal("vehicle", vehicleDefaultsForModel(group));
+      await openEntityModal("vehicleInbound", vehicleInboundDefaultsForModel(group));
       return;
     }
     if (action === "vehicle-stock") {
       const vehicle = findEntity("vehicle", id || Number(button.dataset.machineId || ""));
-      await openEntityModal("vehicleStock", {
-        machineId: id || Number(button.dataset.machineId || ""),
+      const modalItem = {
         version: vehicle.version,
-        quantity: 1,
         direction: button.dataset.direction
-      });
+      };
+      setPrefill(modalItem, "machineId", id || Number(button.dataset.machineId || ""), `预填：${vehicleNumberLabel(vehicle)}`);
+      await openEntityModal("vehicleStock", modalItem);
       return;
     }
     if (action === "part-stock") {
       const part = state.data.parts.find(item => item.partCode === button.dataset.partCode) || {};
-      await openEntityModal("partStock", {
-        partCode: button.dataset.partCode || "",
+      const modalItem = {
         version: part.version,
-        quantity: 1,
         direction: button.dataset.direction
-      });
+      };
+      setPrefill(modalItem, "partCode", button.dataset.partCode || "", `预填：${part.partCode || ""} · ${part.partName || ""}`);
+      await openEntityModal("partStock", modalItem);
       return;
     }
     if (action === "edit") {
@@ -564,6 +609,18 @@ function handleContentInput(event) {
 }
 
 async function handleContentChange(event) {
+  const filter = event.target.closest("[data-filter-for]");
+  if (filter) {
+    const key = filter.dataset.filterFor;
+    const name = filter.dataset.filterName;
+    state.filters[key] = {
+      ...(state.filters[key] || {}),
+      [name]: filter.value
+    };
+    renderCurrentTab();
+    return;
+  }
+
   const statsSelect = event.target.closest("[data-action='select-stats-year']");
   if (statsSelect) {
     try {
@@ -590,10 +647,27 @@ function handleOverlayClick(event) {
 }
 
 function handleModalClick(event) {
+  const configAction = event.target.closest("[data-config-action]");
+  if (configAction) {
+    event.preventDefault();
+    updateConfigSelectionRows(configAction);
+    return;
+  }
   const comboOption = event.target.closest("[data-combo-option]");
   if (comboOption) {
     event.preventDefault();
     selectComboOption(comboOption);
+    return;
+  }
+  const comboToggle = event.target.closest("[data-combo-toggle]");
+  if (comboToggle) {
+    event.preventDefault();
+    toggleCombo(comboToggle.closest("[data-combo]"));
+    return;
+  }
+  const comboInput = event.target.closest("[data-combo-input]");
+  if (comboInput) {
+    openCombo(comboInput.closest("[data-combo]"), comboInput.value.trim());
     return;
   }
   if (!event.target.closest("[data-combo]")) {
@@ -623,22 +697,47 @@ function handleModalInput(event) {
     hidden.dataset.selectedLabel = "";
     hidden.dataset.selectedMeta = "";
   }
-  filterComboOptions(combo, query);
-  combo.classList.add("is-open");
+  openCombo(combo, query);
 }
 
 function handleModalFocusIn(event) {
   const input = event.target.closest("[data-combo-input]");
   if (!input) return;
-  const combo = input.closest("[data-combo]");
-  filterComboOptions(combo, input.value.trim());
-  combo.classList.add("is-open");
+  openCombo(input.closest("[data-combo]"), input.value.trim());
+}
+
+function updateConfigSelectionRows(button) {
+  if (state.modal?.kind !== "vehicleInbound") return;
+  const rows = ensureConfigSelections(state.modal.item);
+  if (button.dataset.configAction === "add") {
+    rows.push({ configItemId: "", configValueId: "" });
+  }
+  if (button.dataset.configAction === "remove") {
+    const index = Number(button.dataset.configIndex);
+    rows.splice(index, 1);
+    if (!rows.length) rows.push({ configItemId: "", configValueId: "" });
+  }
+  renderModal();
 }
 
 async function handleModalChange(event) {
   const form = event.target.closest("form");
   if (!form) return;
   const kind = form.dataset.kind;
+  if (kind === "vehicleInbound" && event.target.dataset.configField) {
+    const rows = ensureConfigSelections(state.modal.item);
+    const index = Number(event.target.dataset.configIndex);
+    const fieldName = event.target.dataset.configField;
+    rows[index] = {
+      ...(rows[index] || {}),
+      [fieldName]: event.target.value
+    };
+    if (fieldName === "configItemId") {
+      rows[index].configValueId = "";
+      renderModal();
+    }
+    return;
+  }
   if (state.modal?.item && event.target.name) {
     state.modal.item[event.target.name] = event.target.value;
   }
@@ -649,6 +748,11 @@ async function handleModalChange(event) {
 
   if (kind === "part") {
     syncPartDictionaryFields(form, event.target.name);
+  }
+
+  if (kind === "vehicleInbound" && event.target.name === "machineType") {
+    renderModal();
+    return;
   }
 
   if (kind === "modificationOrder" && event.target.name === "vehicleModelKey") {
@@ -705,7 +809,35 @@ async function handleModalSubmit(event) {
       return;
     }
 
-    if (kind === "vehicleStock") {
+    if (kind === "vehicleModel") {
+      await api(endpoints.vehicle.create, {
+        method: "POST",
+        body: {
+          ...payload,
+          modelOnly: true,
+          inventoryCount: 0,
+          stockStatus: "PENDING_INBOUND"
+        }
+      });
+      showToast("车型已新增", "success");
+    } else if (kind === "vehicleInbound") {
+      const configs = buildInboundConfigs(item);
+      if (!configs.length) {
+        showToast("请至少选择一项入库配置", "error");
+        return;
+      }
+      await api("/api/inventory/inbound", {
+        method: "POST",
+        body: {
+          machineInventory: {
+            ...payload,
+            modelOnly: false
+          },
+          configs
+        }
+      });
+      showToast("此车型入库成功", "success");
+    } else if (kind === "vehicleStock") {
       attachStockVersion(payload, "vehicle");
       await api(`/api/inventory/${payload.machineId}/${item.direction}`, {
         method: "PUT",
@@ -748,7 +880,7 @@ async function handleModalSubmit(event) {
     }
     closeModal();
     await loadAllData();
-    if (kind === "vehicle" && activeModelKey) {
+    if ((kind === "vehicle" || kind === "vehicleInbound") && activeModelKey) {
       await loadVehicleModelDetail(activeModelKey, state.selectedVehicleId, false);
     } else if ((kind === "partReplace" || kind === "modificationOrder") && payload.machineId) {
       if (activeModelKey) {
@@ -880,12 +1012,33 @@ function buildModificationOrderPayload(payload) {
   };
 }
 
+function buildInboundConfigs(item) {
+  return ensureConfigSelections(item)
+    .filter(row => row.configItemId && row.configValueId)
+    .map(row => {
+      const configItem = state.data.configItems.find(item => String(item.id) === String(row.configItemId));
+      const configValue = (state.data.configValueMap[row.configItemId] || [])
+        .find(value => String(value.id) === String(row.configValueId));
+      return {
+        configItemId: Number(row.configItemId),
+        configValueId: Number(row.configValueId),
+        itemName: configItem?.itemName || "",
+        selectedValue: configValue?.valueLabel || "",
+        isStandard: true,
+        configSource: "FACTORY_STANDARD"
+      };
+    });
+}
+
 async function openEntityModal(kind, item = {}) {
   if (kind === "configValue" && !state.data.configItems.length) {
     state.data.configItems = sortById(await api("/api/config/items"), false);
   }
 
   state.modal = { kind, item: { ...item }, context: {} };
+  if (kind === "vehicleInbound") {
+    ensureConfigSelections(state.modal.item);
+  }
   if (kind === "partReplace" || kind === "modificationOrder") {
     await preparePartReplaceContext(item.machineId || state.selectedVehicleId, item.machineConfigId, { placeholderConfig: kind === "modificationOrder" });
   }
@@ -954,6 +1107,7 @@ function renderModal() {
   if (!state.modal) return;
   const { kind, item } = state.modal;
   const title = modalTitle(kind, item);
+  const modalFields = getFields(kind, item);
   els.modalCard.innerHTML = `
     <div class="modal-head">
       <div>
@@ -965,8 +1119,9 @@ function renderModal() {
     <form data-kind="${escapeAttr(kind)}">
       <div class="modal-body">
         <div class="modal-grid">
-          ${fields[kind].map(field => renderField(field, item)).join("")}
+          ${modalFields.map(field => renderField(field, item)).join("")}
         </div>
+        ${kind === "vehicleInbound" ? renderConfigSelectionEditor(item) : ""}
       </div>
       <div class="modal-actions">
         <button class="btn btn-ghost" type="button" data-close-modal>取消</button>
@@ -1035,7 +1190,7 @@ function syncShell() {
 }
 
 function renderOverview() {
-  const vehicles = state.data.vehicles;
+  const vehicles = state.data.vehicles.filter(item => !item.modelOnly);
   const vehicleModels = vehicleModelGroups();
   const parts = state.data.parts;
   const repairs = state.data.repairs;
@@ -1075,7 +1230,7 @@ function renderOverview() {
           <button class="btn btn-ghost" type="button" data-action="refresh">${icon("refresh")}刷新数据</button>
         </div>
         <div class="surface-body toolbar-actions">
-          <button class="btn btn-primary" type="button" data-action="create" data-kind="vehicle">${icon("plus")}新增车辆</button>
+          ${hasPermission("vehicle:write") ? renderVehicleModelMenu() : ""}
           <button class="btn" type="button" data-action="create" data-kind="part">${icon("plus")}新增配件</button>
           ${hasPermission("replace:write") ? `<button class="btn" type="button" data-action="create" data-kind="modificationOrder">${icon("swap")}新建改装工单</button>` : ""}
           <button class="btn" type="button" data-action="create" data-kind="repair">${icon("plus")}新增维修</button>
@@ -1087,16 +1242,20 @@ function renderOverview() {
 }
 
 function renderVehicles() {
-  const rows = filterRows(vehicleModelGroups(), state.search.vehicles, [
+  const searchedRows = filterRows(vehicleModelGroups(), state.search.vehicles, [
     "name", "specificationModel", "machineType", "supplier", "warehouseName", "vehicleNumbers"
   ]);
+  const rows = filterVehicleRows(searchedRows);
 
   return `
     <div class="page">
       <div class="toolbar">
-        ${searchBox("vehicles", "搜索车型、型号、供应商或车号")}
+        <div class="toolbar-main">
+          ${searchBox("vehicles", "搜索车型、型号、供应商或车号")}
+          ${vehicleFilterControls()}
+        </div>
         <div class="toolbar-actions">
-          ${hasPermission("vehicle:write") ? `<button class="btn btn-primary" type="button" data-action="create" data-kind="vehicle">${icon("plus")}新增车型/单车</button>` : ""}
+          ${hasPermission("vehicle:write") ? renderVehicleModelMenu() : ""}
           <button class="btn btn-ghost" type="button" data-action="refresh">${icon("refresh")}刷新</button>
         </div>
       </div>
@@ -1457,6 +1616,7 @@ function renderVehicleModelDetail() {
   const configs = detail.selectedDetail?.configs || [];
   const logs = detail.selectedDetail?.logs || [];
   const workOrders = detail.selectedDetail?.workOrders || [];
+  const manualSelected = isManualForklift(selected.machineType || model.machineType);
   return `
     <section class="surface">
       <div class="surface-head">
@@ -1477,20 +1637,20 @@ function renderVehicleModelDetail() {
         <div class="grid-two">
           ${renderSurface("库存车号", `
             <div class="vehicle-unit-grid">
-              ${detail.vehicles.map(vehicle => renderVehicleUnitCard(vehicle, detail.modelKey, vehicle.id === selected.id)).join("")}
+              ${detail.vehicles.length ? detail.vehicles.map(vehicle => renderVehicleUnitCard(vehicle, detail.modelKey, vehicle.id === selected.id)).join("") : emptyState("此车型还没有库存车")}
             </div>
           `)}
           ${renderSurface(`当前配置 · ${escapeHtml(selected.vehicleProductNumber || "请选择车号")}`, `
             <div class="detail-grid detail-grid-compact">
               ${detailItem("车号", selected.vehicleProductNumber)}
-              ${detailItem("发动机号", selected.engineNumber)}
-              ${detailItem("车架号", selected.frameNumber)}
-              ${detailItem("保修卡号", selected.warrantyCardNumber)}
+              ${manualSelected ? "" : detailItem("发动机号", selected.engineNumber)}
+              ${manualSelected ? "" : detailItem("车架号", selected.frameNumber)}
+              ${manualSelected ? "" : detailItem("保修卡号", selected.warrantyCardNumber)}
               ${detailItem("结算价", money(selected.settlementPrice))}
               ${detailItem("库存状态", stockStatusLabel(selected.stockStatus))}
             </div>
             <div class="toolbar-actions detail-action-row">
-              ${hasPermission("replace:write") ? `<button class="btn btn-primary" type="button" data-action="create-modification-order" data-machine-id="${escapeAttr(selected.id || "")}">${icon("swap")}新建改装工单</button>` : ""}
+              ${selected.id && hasPermission("replace:write") ? `<button class="btn btn-primary" type="button" data-action="create-modification-order" data-machine-id="${escapeAttr(selected.id || "")}">${icon("swap")}新建改装工单</button>` : ""}
             </div>
             ${renderTable([
               { label: "配置项", key: "itemName" },
@@ -1524,11 +1684,12 @@ function renderVehicleModelDetail() {
 }
 
 function renderVehicleUnitCard(vehicle, modelKey, active) {
+  const manual = isManualForklift(vehicle.machineType);
   return `
     <button class="vehicle-unit-card${active ? " is-active" : ""}" type="button" data-action="select-model-vehicle" data-model-key="${escapeAttr(modelKey)}" data-machine-id="${escapeAttr(vehicle.id)}">
       <span class="vehicle-unit-title">${escapeHtml(vehicle.vehicleProductNumber || `ID ${vehicle.id}`)}</span>
-      <span class="vehicle-unit-meta">${escapeHtml(stockStatusLabel(vehicle.stockStatus))} · ${escapeHtml(vehicle.engineNumber || "未填发动机号")}</span>
-      <span class="vehicle-unit-meta">${escapeHtml(vehicle.frameNumber || "未填车架号")}</span>
+      <span class="vehicle-unit-meta">${escapeHtml(stockStatusLabel(vehicle.stockStatus))}${manual ? " · 系统车号" : ` · ${escapeHtml(vehicle.engineNumber || "未填发动机号")}`}</span>
+      ${manual ? "" : `<span class="vehicle-unit-meta">${escapeHtml(vehicle.frameNumber || "未填车架号")}</span>`}
     </button>
   `;
 }
@@ -1551,6 +1712,39 @@ function searchBox(key, placeholder) {
       <span class="search-icon">${icons.search}</span>
       <input class="input" data-search-for="${escapeAttr(key)}" value="${escapeAttr(state.search[key] || "")}" placeholder="${escapeAttr(placeholder)}">
     </label>
+  `;
+}
+
+function vehicleFilterControls() {
+  const filters = state.filters.vehicles;
+  return `
+    <div class="filter-row">
+      ${filterSelect("vehicles", "power", filters.power, "全部动力", powerTypeOptions())}
+      ${filterSelect("vehicles", "supplier", filters.supplier, "全部供应商", supplierFilterOptions())}
+      ${filterSelect("vehicles", "stock", filters.stock, "全部库存", stockFilterOptions())}
+    </div>
+  `;
+}
+
+function filterSelect(key, name, value, placeholder, options) {
+  return `
+    <select class="filter-select" data-filter-for="${escapeAttr(key)}" data-filter-name="${escapeAttr(name)}">
+      <option value="">${escapeHtml(placeholder)}</option>
+      ${options.map(option => `<option value="${escapeAttr(option.value)}"${String(option.value) === String(value) ? " selected" : ""}>${escapeHtml(option.label)}</option>`).join("")}
+    </select>
+  `;
+}
+
+function renderVehicleModelMenu() {
+  return `
+    <div class="hover-menu">
+      <button class="btn btn-primary hover-menu-trigger" type="button">${icon("plus")}新增车型</button>
+      <div class="hover-menu-panel">
+        ${powerTypeOptions().map(option => `
+          <button type="button" data-action="create-vehicle-model" data-power-type="${escapeAttr(option.value)}">${escapeHtml(`新增${option.label}`)}</button>
+        `).join("")}
+      </div>
+    </div>
   `;
 }
 
@@ -1725,11 +1919,16 @@ function userActions(row) {
 }
 
 function renderField(field, data) {
-  const rawValue = data?.[field.name] ?? defaultValue(field);
+  const rawValue = Object.prototype.hasOwnProperty.call(data || {}, field.name) ? data[field.name] : "";
+  const prefillValue = fieldPrefillValue(field, data);
   const value = toInputValue(rawValue, field);
   const span = field.span ? ` data-span="${field.span}"` : "";
-  const required = field.required ? " required" : "";
+  const required = field.required && prefillValue === undefined ? " required" : "";
   const coerce = field.coerce || field.type || "string";
+
+  if (field.type === "hidden") {
+    return `<input name="${escapeAttr(field.name)}" type="hidden" data-coerce="${escapeAttr(coerce)}" value="${escapeAttr(value)}"${renderPrefillAttrs(field, prefillValue)}>`;
+  }
 
   if (field.type === "checkbox") {
     return `
@@ -1746,12 +1945,14 @@ function renderField(field, data) {
     const displayValue = selected ? selected.label : (field.allowCustom ? value : "");
     const hiddenValue = selected ? selected.value : (field.allowCustom ? value : "");
     const placeholder = fieldPlaceholder(field, options, data);
+    const prefillAttrs = renderPrefillAttrs(field, prefillValue, options);
     return `
       <label class="field"${span}>
         <span>${escapeHtml(field.label)}</span>
         <div class="combo${options.length ? "" : " is-empty"}" data-combo data-name="${escapeAttr(field.name)}" data-allow-custom="${field.allowCustom ? "true" : "false"}" data-required="${field.required ? "true" : "false"}">
           <input class="combo-input" data-combo-input type="text" value="${escapeAttr(displayValue)}" placeholder="${escapeAttr(placeholder)}" autocomplete="off"${required}>
-          <input name="${escapeAttr(field.name)}" type="hidden" data-coerce="${escapeAttr(coerce)}" value="${escapeAttr(hiddenValue)}" data-selected-label="${escapeAttr(displayValue)}" data-selected-meta="${selected?.meta ? escapeAttr(JSON.stringify(selected.meta)) : ""}">
+          <button class="combo-toggle" type="button" data-combo-toggle aria-label="展开选项"></button>
+          <input name="${escapeAttr(field.name)}" type="hidden" data-coerce="${escapeAttr(coerce)}" value="${escapeAttr(hiddenValue)}" data-selected-label="${escapeAttr(displayValue)}" data-selected-meta="${selected?.meta ? escapeAttr(JSON.stringify(selected.meta)) : ""}"${prefillAttrs}>
           <div class="combo-menu" data-combo-menu>
             ${renderComboOptions(options, hiddenValue)}
           </div>
@@ -1764,7 +1965,7 @@ function renderField(field, data) {
     return `
       <label class="field"${span}>
         <span>${escapeHtml(field.label)}</span>
-        <textarea name="${escapeAttr(field.name)}" data-coerce="${escapeAttr(coerce)}"${required}>${escapeHtml(value)}</textarea>
+        <textarea name="${escapeAttr(field.name)}" data-coerce="${escapeAttr(coerce)}" placeholder="${escapeAttr(fieldPlaceholder(field, [], data))}"${renderPrefillAttrs(field, prefillValue)}${required}>${escapeHtml(value)}</textarea>
       </label>
     `;
   }
@@ -1772,7 +1973,53 @@ function renderField(field, data) {
   return `
     <label class="field"${span}>
       <span>${escapeHtml(field.label)}</span>
-      <input name="${escapeAttr(field.name)}" type="${escapeAttr(field.type || "text")}" data-coerce="${escapeAttr(coerce)}" value="${escapeAttr(value)}" placeholder="${escapeAttr(fieldPlaceholder(field, [], data))}"${field.step ? ` step="${escapeAttr(field.step)}"` : ""}${required}>
+      <input name="${escapeAttr(field.name)}" type="${escapeAttr(field.type || "text")}" data-coerce="${escapeAttr(coerce)}" value="${escapeAttr(value)}" placeholder="${escapeAttr(fieldPlaceholder(field, [], data))}"${renderPrefillAttrs(field, prefillValue)}${field.step ? ` step="${escapeAttr(field.step)}"` : ""}${required}>
+    </label>
+  `;
+}
+
+function renderConfigSelectionEditor(item) {
+  const rows = ensureConfigSelections(item);
+  return `
+    <section class="config-selection-editor">
+      <div class="config-editor-head">
+        <span>入库配置</span>
+        <button class="btn btn-sm" type="button" data-config-action="add">${icon("plus")}添加配置</button>
+      </div>
+      <div class="config-selection-list">
+        ${rows.map((row, index) => renderConfigSelectionRow(row, index)).join("")}
+      </div>
+    </section>
+  `;
+}
+
+function renderConfigSelectionRow(row, index) {
+  const itemOptions = configItemOptions();
+  const valueOptions = row.configItemId ? configValueOptionsForItem(row.configItemId) : [];
+  return `
+    <div class="config-selection-row" data-config-index="${index}">
+      ${renderConfigCombo("配置类型", `configItemId-${index}`, itemOptions, row.configItemId, "configItemId", index)}
+      ${renderConfigCombo("具体配置", `configValueId-${index}`, valueOptions, row.configValueId, "configValueId", index)}
+      <button class="btn btn-sm btn-danger" type="button" data-config-action="remove" data-config-index="${index}">${icon("trash")}移除</button>
+    </div>
+  `;
+}
+
+function renderConfigCombo(label, name, options, selectedValue, fieldName, index) {
+  const selected = findOptionByValue(options, selectedValue);
+  const displayValue = selected?.label || "";
+  const hiddenValue = selected?.value || "";
+  return `
+    <label class="field">
+      <span>${escapeHtml(label)}</span>
+      <div class="combo${options.length ? "" : " is-empty"}" data-combo data-name="${escapeAttr(name)}" data-required="false">
+        <input class="combo-input" data-combo-input type="text" value="${escapeAttr(displayValue)}" placeholder="${escapeAttr(options.length ? "请选择或输入筛选" : "请先选择配置类型")}" autocomplete="off">
+        <button class="combo-toggle" type="button" data-combo-toggle aria-label="展开选项"></button>
+        <input name="${escapeAttr(name)}" type="hidden" data-config-field="${escapeAttr(fieldName)}" data-config-index="${index}" value="${escapeAttr(hiddenValue)}" data-selected-label="${escapeAttr(displayValue)}">
+        <div class="combo-menu" data-combo-menu>
+          ${renderComboOptions(options, hiddenValue)}
+        </div>
+      </div>
     </label>
   `;
 }
@@ -1846,8 +2093,28 @@ function filterComboOptions(combo, query) {
   combo.classList.toggle("is-empty", visibleCount === 0);
 }
 
-function closeAllCombos() {
-  els.modalCard.querySelectorAll("[data-combo].is-open").forEach(combo => combo.classList.remove("is-open"));
+function openCombo(combo, query = "") {
+  if (!combo) return;
+  closeAllCombos(combo);
+  filterComboOptions(combo, query);
+  combo.classList.add("is-open");
+}
+
+function toggleCombo(combo) {
+  if (!combo) return;
+  if (combo.classList.contains("is-open")) {
+    combo.classList.remove("is-open");
+    return;
+  }
+  const input = combo.querySelector("[data-combo-input]");
+  openCombo(combo, input?.value.trim() || "");
+  input?.focus();
+}
+
+function closeAllCombos(except = null) {
+  els.modalCard.querySelectorAll("[data-combo].is-open").forEach(combo => {
+    if (combo !== except) combo.classList.remove("is-open");
+  });
 }
 
 function syncComboOptionsForField(form, name, options, selectedValue) {
@@ -1867,7 +2134,10 @@ function syncComboOptionsForField(form, name, options, selectedValue) {
 
 function validateCombos(form) {
   const invalid = [...form.querySelectorAll("[data-combo][data-required='true']")]
-    .find(combo => !combo.querySelector("input[type='hidden']").value.trim());
+    .find(combo => {
+      const hidden = combo.querySelector("input[type='hidden']");
+      return !hidden.value.trim() && hidden.dataset.prefillValue === undefined;
+    });
   if (!invalid) return true;
   const input = invalid.querySelector("[data-combo-input]");
   invalid.classList.add("is-open");
@@ -1881,12 +2151,33 @@ function resolveOptions(field) {
   return field.options || [];
 }
 
+function renderPrefillAttrs(field, value, options = []) {
+  if (value === undefined || value === null || value === "") return "";
+  const inputValue = toInputValue(value, field);
+  const option = findOptionByValue(options, inputValue);
+  const label = option?.label ?? inputValue;
+  return ` data-prefill-value="${escapeAttr(inputValue)}" data-prefill-label="${escapeAttr(label)}"`;
+}
+
+function fieldPrefillValue(field, data = {}) {
+  if (Object.prototype.hasOwnProperty.call(data?.__prefillValues || {}, field.name)) {
+    return data.__prefillValues[field.name];
+  }
+  if (field.placeholderValue !== undefined) {
+    return typeof field.placeholderValue === "function" ? field.placeholderValue() : field.placeholderValue;
+  }
+  if (field.defaultValue !== undefined) {
+    return typeof field.defaultValue === "function" ? field.defaultValue() : field.defaultValue;
+  }
+  return undefined;
+}
+
 function fieldPlaceholder(field, options = [], data = {}) {
   const placeholder = data?.__placeholders?.[field.name];
   if (placeholder) return placeholder;
   if (field.placeholder) return typeof field.placeholder === "function" ? field.placeholder() : field.placeholder;
-  if (field.placeholderValue !== undefined) {
-    const placeholderValue = typeof field.placeholderValue === "function" ? field.placeholderValue() : field.placeholderValue;
+  const placeholderValue = fieldPrefillValue(field, data);
+  if (placeholderValue !== undefined) {
     const option = findOptionByValue(options, placeholderValue);
     return `默认：${option?.label ?? placeholderValue}`;
   }
@@ -1895,11 +2186,14 @@ function fieldPlaceholder(field, options = [], data = {}) {
 
 function serializeForm(kind, form) {
   const payload = {};
-  for (const field of fields[kind]) {
+  for (const field of getFields(kind)) {
     const input = form.elements[field.name];
     if (!input) continue;
     const coerce = input.dataset.coerce || "string";
-    const raw = input.type === "checkbox" ? input.checked : String(input.value || "").trim();
+    let raw = input.type === "checkbox" ? input.checked : String(input.value || "").trim();
+    if (raw === "" && input.dataset.prefillValue !== undefined) {
+      raw = input.dataset.prefillValue;
+    }
     const value = coerceValue(raw, coerce, input.type);
     if (value !== null || field.required || input.type === "checkbox") {
       payload[field.name] = value;
@@ -1923,29 +2217,44 @@ function coerceValue(value, coerce, inputType) {
 
 function defaultEntity(kind) {
   const entity = {};
-  for (const field of fields[kind] || []) {
-    const value = defaultValue(field);
-    if (value !== "") entity[field.name] = value;
-  }
   if (kind === "configValue" && state.selectedConfigItemId) {
-    entity.configItemId = state.selectedConfigItemId;
+    const selectedItem = state.data.configItems.find(item => Number(item.id) === Number(state.selectedConfigItemId));
+    setPrefill(entity, "configItemId", state.selectedConfigItemId, selectedItem ? `预填：${configItemLabel(selectedItem)}` : undefined);
   }
   return entity;
 }
 
-function vehicleDefaultsForModel(group = {}) {
-  return {
-    name: group.name || "",
-    specificationModel: group.specificationModel || "",
-    machineType: group.machineType || "",
-    configuration: "",
-    supplier: group.supplier || "",
-    warehouseName: group.warehouseName || "",
-    stockStatus: "IN_STOCK",
-    purchasePrice: group.purchasePrice || "",
-    salePrice: group.salePrice || "",
-    settlementPrice: "",
-    inventoryCount: 1,
+function setPrefill(entity, name, value, placeholder) {
+  if (value === undefined || value === null || value === "") return entity;
+  entity.__prefillValues = {
+    ...(entity.__prefillValues || {}),
+    [name]: value
+  };
+  if (placeholder) {
+    entity.__placeholders = {
+      ...(entity.__placeholders || {}),
+      [name]: placeholder
+    };
+  }
+  return entity;
+}
+
+function ensureConfigSelections(item = state.modal?.item || {}) {
+  if (!Array.isArray(item.configSelections) || !item.configSelections.length) {
+    item.configSelections = [{ configItemId: "", configValueId: "" }];
+  }
+  return item.configSelections;
+}
+
+function vehicleModelDefaults(powerType) {
+  const entity = {};
+  setPrefill(entity, "machineType", normalizePowerType(powerType), `预填：${normalizePowerType(powerType)}`);
+  return entity;
+}
+
+function vehicleInboundDefaultsForModel(group = {}) {
+  const entity = {
+    configSelections: [{ configItemId: "", configValueId: "" }],
     __placeholders: {
       vehicleProductNumber: "请输入此辆整车唯一车号",
       engineNumber: "请输入发动机号",
@@ -1954,6 +2263,21 @@ function vehicleDefaultsForModel(group = {}) {
       settlementPrice: "请输入此辆整车结算价"
     }
   };
+  setPrefill(entity, "name", group.name || "", group.name ? `预填：${group.name}` : undefined);
+  setPrefill(entity, "specificationModel", group.specificationModel || "", group.specificationModel ? `预填：${group.specificationModel}` : undefined);
+  setPrefill(entity, "machineType", group.machineType || "", group.machineType ? `预填：${group.machineType}` : undefined);
+  setPrefill(entity, "supplier", group.supplier || "", group.supplier ? `预填：${group.supplier}` : undefined);
+  setPrefill(entity, "warehouseName", group.warehouseName || "", group.warehouseName ? `预填：${group.warehouseName}` : undefined);
+  setPrefill(entity, "purchasePrice", group.purchasePrice || "", group.purchasePrice ? `预填：${money(group.purchasePrice)}` : undefined);
+  setPrefill(entity, "salePrice", group.salePrice || "", group.salePrice ? `预填：${money(group.salePrice)}` : undefined);
+  if (isManualForklift(group.machineType)) {
+    entity.__placeholders = {
+      ...entity.__placeholders,
+      name: group.name ? `预填：${group.name}` : "请输入车型",
+      specificationModel: group.specificationModel ? `预填：${group.specificationModel}` : "请输入型号"
+    };
+  }
+  return entity;
 }
 
 function modificationOrderPlaceholders(machine = {}, configId = null) {
@@ -2046,6 +2370,21 @@ function defaultValue(field) {
   return "";
 }
 
+function getFields(kind, item = state.modal?.item || {}) {
+  if (kind === "vehicleInbound" && isManualForklift(fieldOrPrefillValue(item, "machineType"))) {
+    return [
+      ...fields.vehicleInbound.filter(field => ["name", "specificationModel"].includes(field.name)),
+      { name: "machineType", type: "hidden" }
+    ];
+  }
+  return fields[kind] || [];
+}
+
+function fieldOrPrefillValue(item, name) {
+  if (Object.prototype.hasOwnProperty.call(item || {}, name)) return item[name];
+  return item?.__prefillValues?.[name];
+}
+
 function nextConfigItemCode() {
   const max = state.data.configItems
     .map(item => String(item.itemCode || ""))
@@ -2073,6 +2412,8 @@ function findEntity(kind, id) {
 function modalTitle(kind, item) {
   const names = {
     vehicle: "车辆",
+    vehicleModel: "车型",
+    vehicleInbound: "车型入库",
     part: "配件",
     repair: "维修记录",
     configItem: "配置项",
@@ -2086,14 +2427,16 @@ function modalTitle(kind, item) {
     userPassword: "修改密码",
     switchUser: "切换用户"
   };
-  if (kind === "switchUser" || kind === "vehicleStock" || kind === "partStock" || kind === "partReplace" || kind === "modificationOrder" || kind === "userUsername" || kind === "userPassword") return names[kind];
-  if (kind === "configValue" || kind === "user") return `新增${names[kind]}`;
+  if (kind === "switchUser" || kind === "vehicleStock" || kind === "vehicleInbound" || kind === "partStock" || kind === "partReplace" || kind === "modificationOrder" || kind === "userUsername" || kind === "userPassword") return names[kind];
+  if (kind === "configValue" || kind === "user" || kind === "vehicleModel") return `新增${names[kind]}`;
   return item?.id ? `编辑${names[kind]}` : `新增${names[kind]}`;
 }
 
 function modalSubtitle(kind) {
   const subtitles = {
     vehicle: "填写车辆档案、价格和入库信息。",
+    vehicleModel: "只维护车型、型号和动力信息；具体配置在入库时选择。",
+    vehicleInbound: "按配置字典选择入库配置，系统会为手动叉车自动生成唯一车号。",
     part: "维护配件编码、库存和价格。",
     repair: "记录维修过程、费用与处理状态。",
     configItem: "定义可维护的车辆配置项。",
@@ -2111,17 +2454,66 @@ function modalSubtitle(kind) {
 }
 
 function configItemOptions() {
-  return state.data.configItems.map(item => ({
+  return [...state.data.configItems]
+    .sort(compareConfigItems)
+    .map(item => ({
     value: item.id,
     label: configItemLabel(item)
   }));
 }
 
+function compareConfigItems(a, b) {
+  return [
+    String(a.category || "").localeCompare(String(b.category || ""), "zh-CN"),
+    String(a.subCategory || "").localeCompare(String(b.subCategory || ""), "zh-CN"),
+    String(a.itemName || "").localeCompare(String(b.itemName || ""), "zh-CN"),
+    Number(a.sortOrder || 0) - Number(b.sortOrder || 0)
+  ].find(result => result !== 0) || 0;
+}
+
+function configValueOptionsForItem(configItemId) {
+  return (state.data.configValueMap[configItemId] || [])
+    .map(value => ({
+      value: value.id,
+      label: value.valueLabel || "-"
+    }));
+}
+
+function powerTypeOptions() {
+  return [
+    { value: "内燃叉车", label: "内燃叉车" },
+    { value: "电动叉车", label: "电动叉车" },
+    { value: "手动叉车", label: "手动叉车" }
+  ];
+}
+
+function supplierFilterOptions() {
+  return uniqueOptions(state.data.vehicles.map(item => item.supplier));
+}
+
+function stockFilterOptions() {
+  return [
+    { value: "inStock", label: "有库存" },
+    { value: "empty", label: "库存为 0" }
+  ];
+}
+
+function filterVehicleRows(rows) {
+  const filters = state.filters.vehicles || {};
+  return rows.filter(row => {
+    if (filters.power && normalizePowerType(row.machineType) !== filters.power) return false;
+    if (filters.supplier && row.supplier !== filters.supplier) return false;
+    if (filters.stock === "inStock" && Number(row.inventoryCount || 0) <= 0) return false;
+    if (filters.stock === "empty" && Number(row.inventoryCount || 0) !== 0) return false;
+    return true;
+  });
+}
+
 function vehicleCategoryOptions() {
   return uniqueOptions([
-    "电动车",
-    "手动车",
-    "内燃车",
+    "电动叉车",
+    "手动叉车",
+    "内燃叉车",
     ...state.data.configItems.map(item => item.category)
   ]);
 }
@@ -2185,19 +2577,32 @@ function uniqueOptions(values) {
     .map(value => ({ value, label: value }));
 }
 
+function normalizePowerType(machineType) {
+  const value = String(machineType || "").trim();
+  if (value.includes("手动")) return "手动叉车";
+  if (value.includes("电动") || value.toUpperCase().includes("CPD")) return "电动叉车";
+  if (value.includes("内燃") || value.includes("燃油") || value.toUpperCase().includes("CPC")) return "内燃叉车";
+  return value;
+}
+
+function isManualForklift(machineType) {
+  return normalizePowerType(machineType) === "手动叉车";
+}
+
 function vehicleModelKey(item) {
   return encodeURIComponent(JSON.stringify([
     String(item?.name || "").trim(),
-    String(item?.specificationModel || "").trim()
+    String(item?.specificationModel || "").trim(),
+    normalizePowerType(item?.machineType)
   ]));
 }
 
 function decodeVehicleModelKey(key) {
   try {
-    const [name, specificationModel] = JSON.parse(decodeURIComponent(key || ""));
-    return { name, specificationModel };
+    const [name, specificationModel, machineType] = JSON.parse(decodeURIComponent(key || ""));
+    return { name, specificationModel, machineType };
   } catch (error) {
-    return { name: "", specificationModel: "" };
+    return { name: "", specificationModel: "", machineType: "" };
   }
 }
 
@@ -2213,18 +2618,20 @@ function vehicleModelGroups() {
   const groups = new Map();
   for (const vehicle of state.data.vehicles) {
     const modelKey = vehicleModelKey(vehicle);
+    const modelOnly = Boolean(vehicle.modelOnly);
     if (!groups.has(modelKey)) {
       groups.set(modelKey, {
         id: modelKey,
         modelKey,
         name: vehicle.name,
         specificationModel: vehicle.specificationModel,
-        machineType: vehicle.machineType,
+        machineType: normalizePowerType(vehicle.machineType),
         supplier: vehicle.supplier,
         warehouseName: vehicle.warehouseName,
         purchasePrice: vehicle.purchasePrice,
         salePrice: vehicle.salePrice,
         settlementPrice: vehicle.settlementPrice,
+        modelTemplateId: modelOnly ? vehicle.id : null,
         vehicles: [],
         vehicleNumbers: "",
         unitCount: 0,
@@ -2232,6 +2639,15 @@ function vehicleModelGroups() {
       });
     }
     const group = groups.get(modelKey);
+    if (!group.supplier && vehicle.supplier) group.supplier = vehicle.supplier;
+    if (!group.warehouseName && vehicle.warehouseName) group.warehouseName = vehicle.warehouseName;
+    if (!group.purchasePrice && vehicle.purchasePrice) group.purchasePrice = vehicle.purchasePrice;
+    if (!group.salePrice && vehicle.salePrice) group.salePrice = vehicle.salePrice;
+    if (!group.settlementPrice && vehicle.settlementPrice) group.settlementPrice = vehicle.settlementPrice;
+    if (modelOnly) {
+      group.modelTemplateId = vehicle.id;
+      continue;
+    }
     group.vehicles.push(vehicle);
     group.unitCount += 1;
     group.inventoryCount += Number(vehicle.inventoryCount || 0);
@@ -2248,14 +2664,14 @@ function vehicleModelGroups() {
 function vehiclesForModelKey(modelKey) {
   if (!modelKey) return [];
   return state.data.vehicles
-    .filter(vehicle => vehicleModelKey(vehicle) === modelKey)
+    .filter(vehicle => vehicleModelKey(vehicle) === modelKey && !vehicle.modelOnly)
     .sort((a, b) => String(a.vehicleProductNumber || "").localeCompare(String(b.vehicleProductNumber || ""), "zh-CN"));
 }
 
 function vehicleModelOptions() {
   return vehicleModelGroups().map(group => ({
     value: group.modelKey,
-    label: `${vehicleModelLabel(group)}（${group.inventoryCount} 台库存）`
+    label: `${vehicleModelLabel(group)}（${group.machineType || "未分类"} / ${group.inventoryCount} 台库存）`
   }));
 }
 
@@ -2274,7 +2690,7 @@ function vehicleNumberOptions() {
 }
 
 function vehicleOptions() {
-  return state.data.vehicles.map(item => ({
+  return state.data.vehicles.filter(item => !item.modelOnly).map(item => ({
     value: item.id,
     label: vehicleNumberLabel(item)
   }));

@@ -14,6 +14,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
 import java.util.Optional;
+import java.util.UUID;
 
 @Service
 public class MachineInventoryServiceImpl implements MachineInventoryService {
@@ -80,8 +81,16 @@ public class MachineInventoryServiceImpl implements MachineInventoryService {
                 throw new BusinessException(ResultCode.NOT_FOUND, "要更新的记录不存在");
             }
         }
+        normalizeVehicleIdentity(machineInventory);
         if (machineInventory.getInventoryCount() == null) {
             machineInventory.setInventoryCount(creating ? 1 : 0);
+        }
+        if (Boolean.TRUE.equals(machineInventory.getModelOnly())) {
+            machineInventory.setInventoryCount(0);
+            machineInventory.setEngineNumber(null);
+            machineInventory.setFrameNumber(null);
+            machineInventory.setWarrantyCardNumber(null);
+            machineInventory.setInboundDate(null);
         }
         if (creating && machineInventory.getInboundDate() == null && machineInventory.getInventoryCount() > 0) {
             machineInventory.setInboundDate(java.time.LocalDateTime.now());
@@ -95,13 +104,58 @@ public class MachineInventoryServiceImpl implements MachineInventoryService {
 
         collaborationService.stampWrite(machineInventory);
         MachineInventory saved = repository.saveAndFlush(machineInventory);
-        stockLedgerService.syncBalance(
-                StockLedgerService.RESOURCE_MACHINE,
-                saved.getId(),
-                saved.getWarehouseId(),
-                saved.getInventoryCount()
-        );
+        if (!Boolean.TRUE.equals(saved.getModelOnly())) {
+            stockLedgerService.syncBalance(
+                    StockLedgerService.RESOURCE_MACHINE,
+                    saved.getId(),
+                    saved.getWarehouseId(),
+                    saved.getInventoryCount()
+            );
+        }
         return saved;
+    }
+
+    private void normalizeVehicleIdentity(MachineInventory machineInventory) {
+        if (machineInventory.getModelOnly() == null) {
+            machineInventory.setModelOnly(false);
+        }
+        String vehicleNumber = trimToNull(machineInventory.getVehicleProductNumber());
+        if (vehicleNumber != null) {
+            machineInventory.setVehicleProductNumber(vehicleNumber);
+            return;
+        }
+        if (Boolean.TRUE.equals(machineInventory.getModelOnly())) {
+            machineInventory.setVehicleProductNumber(generateVehicleNumber("MODEL"));
+            return;
+        }
+        if (isManualForklift(machineInventory.getMachineType())) {
+            machineInventory.setVehicleProductNumber(generateVehicleNumber("MAN"));
+            return;
+        }
+        throw new BusinessException(ResultCode.PARAM_ERROR, "车号不能为空");
+    }
+
+    private boolean isManualForklift(String machineType) {
+        String normalized = trimToNull(machineType);
+        return normalized != null && normalized.contains("手动");
+    }
+
+    private String trimToNull(String value) {
+        if (value == null) {
+            return null;
+        }
+        String trimmed = value.trim();
+        return trimmed.isEmpty() ? null : trimmed;
+    }
+
+    private String generateVehicleNumber(String prefix) {
+        for (int attempt = 0; attempt < 10; attempt++) {
+            String candidate = "%s-%s".formatted(prefix, UUID.randomUUID().toString().replace("-", "").substring(0, 12).toUpperCase());
+            if (!repository.existsByVehicleProductNumber(candidate)) {
+                return candidate;
+            }
+        }
+        throw new BusinessException(ResultCode.PARAM_ERROR, "系统生成车号失败，请重试");
     }
 
     @Override

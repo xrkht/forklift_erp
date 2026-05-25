@@ -44,6 +44,7 @@ public class StatisticsService {
     public StatisticsDashboardVO financeDashboard(Integer year) {
         int selectedYear = year == null ? LocalDate.now().getYear() : year;
         Map<Long, MachineInventory> machines = machineInventoryRepository.findAll().stream()
+                .filter(machine -> !Boolean.TRUE.equals(machine.getModelOnly()))
                 .collect(Collectors.toMap(MachineInventory::getId, Function.identity(), (a, b) -> a));
         Map<Long, PartInventory> parts = partInventoryRepository.findAll().stream()
                 .collect(Collectors.toMap(PartInventory::getId, Function.identity(), (a, b) -> a));

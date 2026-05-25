@@ -169,17 +169,33 @@ button {
   opacity: 0.75;
 }
 
-.combo::after {
+.combo-toggle {
+  position: absolute;
+  top: 1px;
+  right: 1px;
+  bottom: 1px;
+  width: 38px;
+  border: 0;
+  border-radius: 0 8px 8px 0;
+  background: transparent;
+  cursor: pointer;
+}
+
+.combo-toggle::before {
   content: "";
   position: absolute;
-  top: 18px;
+  top: 17px;
   right: 13px;
   width: 8px;
   height: 8px;
   border-right: 1.5px solid var(--muted);
   border-bottom: 1.5px solid var(--muted);
   transform: rotate(45deg);
-  pointer-events: none;
+}
+
+.combo.is-open .combo-toggle::before {
+  top: 20px;
+  transform: rotate(225deg);
 }
 
 .combo-menu {
@@ -410,6 +426,70 @@ button {
   align-items: center;
   gap: 10px;
   flex-wrap: wrap;
+}
+
+.toolbar-main {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+
+.filter-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.filter-select {
+  min-width: 118px;
+  padding: 10px 11px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  color: var(--text);
+  outline: none;
+}
+
+.hover-menu {
+  position: relative;
+}
+
+.hover-menu-panel {
+  position: absolute;
+  z-index: 35;
+  top: calc(100% + 6px);
+  right: 0;
+  display: none;
+  min-width: 178px;
+  padding: 6px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  box-shadow: 0 16px 32px rgba(15, 23, 42, 0.14);
+}
+
+.hover-menu:hover .hover-menu-panel,
+.hover-menu:focus-within .hover-menu-panel {
+  display: grid;
+  gap: 4px;
+}
+
+.hover-menu-panel button {
+  width: 100%;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text);
+  padding: 9px 10px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.hover-menu-panel button:hover {
+  background: var(--primary-weak);
 }
 
 .search-box {
@@ -862,6 +942,35 @@ tbody tr:hover {
   grid-column: span 2;
 }
 
+.config-selection-editor {
+  display: grid;
+  gap: 12px;
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px solid var(--line);
+}
+
+.config-editor-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  color: var(--muted);
+  font-size: 14px;
+}
+
+.config-selection-list {
+  display: grid;
+  gap: 10px;
+}
+
+.config-selection-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto;
+  align-items: end;
+  gap: 10px;
+}
+
 .checkbox-field {
   grid-template-columns: auto 1fr;
   align-items: center;
@@ -968,7 +1077,8 @@ tbody tr:hover {
   }
 
   .modal-grid,
-  .detail-grid {
+  .detail-grid,
+  .config-selection-row {
     grid-template-columns: 1fr;
   }
 
@@ -990,6 +1100,15 @@ tbody tr:hover {
 
   .search-box {
     min-width: 0;
+  }
+
+  .toolbar-main,
+  .filter-row {
+    align-items: stretch;
+  }
+
+  .filter-select {
+    flex: 1 1 140px;
   }
 
   .page-logs .table-wrap {

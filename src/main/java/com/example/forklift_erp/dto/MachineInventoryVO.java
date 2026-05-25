@@ -29,6 +29,7 @@ public class MachineInventoryVO {
     private LocalDate manufacturingDate;
     private LocalDateTime inboundDate;
     private Integer inventoryCount;
+    private Boolean modelOnly;
     // 排除审计字段
 
     public static MachineInventoryVO fromEntity(MachineInventory entity) {
@@ -53,6 +54,7 @@ public class MachineInventoryVO {
         vo.setManufacturingDate(entity.getManufacturingDate());
         vo.setInboundDate(entity.getInboundDate());
         vo.setInventoryCount(entity.getInventoryCount());
+        vo.setModelOnly(Boolean.TRUE.equals(entity.getModelOnly()));
         return vo;
     }
 }

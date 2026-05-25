@@ -3,10 +3,14 @@ package com.example.forklift_erp.controller;
 import com.example.forklift_erp.common.Result;
 import com.example.forklift_erp.common.ResultCode;
 import com.example.forklift_erp.dto.*;
+import com.example.forklift_erp.entity.ConfigItem;
+import com.example.forklift_erp.entity.ConfigValue;
 import com.example.forklift_erp.entity.MachineConfig;
 import com.example.forklift_erp.entity.MachineInventory;
 import com.example.forklift_erp.entity.StockOperationLog;
 import com.example.forklift_erp.exception.BusinessException;
+import com.example.forklift_erp.repository.ConfigItemRepository;
+import com.example.forklift_erp.repository.ConfigValueRepository;
 import com.example.forklift_erp.repository.StockOperationLogRepository;
 import com.example.forklift_erp.service.CollaborationService;
 import com.example.forklift_erp.service.MachineConfigService;
@@ -39,6 +43,12 @@ public class MachineInventoryController {
 
     @Autowired
     private StockOperationLogRepository stockOperationLogRepository;
+
+    @Autowired
+    private ConfigItemRepository configItemRepository;
+
+    @Autowired
+    private ConfigValueRepository configValueRepository;
 
     @Autowired
     private OperationAuditService operationAuditService;
@@ -104,8 +114,9 @@ public class MachineInventoryController {
         if (quantity > 0) {
             saveStockLog(saved, "INITIAL", quantity, 0, quantity, null, "Initial machine stock");
         }
+        String summary = Boolean.TRUE.equals(saved.getModelOnly()) ? "新增车型模板" : "新增整车档案";
         operationAuditService.record("整车档案", "CREATE", "MACHINE", saved.getId(),
-                saved.getVehicleProductNumber(), saved.getName(), "新增整车档案", null, saved.getRemarks());
+                saved.getVehicleProductNumber(), saved.getName(), summary, null, saved.getRemarks());
         return Result.success("新增成功", MachineInventoryVO.fromEntity(saved));
     }
 
@@ -175,12 +186,19 @@ public class MachineInventoryController {
         if (request.getConfigs() != null && !request.getConfigs().isEmpty()) {
             List<MachineConfig> configList = new ArrayList<>();
             for (InboundRequestDTO.ConfigSelection config : request.getConfigs()) {
+                ConfigItem item = configItemRepository.findById(config.getConfigItemId())
+                        .orElseThrow(() -> new BusinessException(ResultCode.NOT_FOUND, "配置类型不存在"));
+                ConfigValue value = configValueRepository.findById(config.getConfigValueId())
+                        .orElseThrow(() -> new BusinessException(ResultCode.NOT_FOUND, "具体配置不存在"));
+                if (!item.getId().equals(value.getConfigItemId())) {
+                    throw new BusinessException(ResultCode.PARAM_ERROR, "具体配置不属于所选配置类型");
+                }
                 MachineConfig mc = new MachineConfig();
                 mc.setMachineId(machineId);
-                mc.setConfigItemId(config.getConfigItemId());
-                mc.setConfigValueId(config.getConfigValueId());
-                mc.setItemName(config.getItemName());
-                mc.setSelectedValue(config.getSelectedValue());
+                mc.setConfigItemId(item.getId());
+                mc.setConfigValueId(value.getId());
+                mc.setItemName(item.getItemName());
+                mc.setSelectedValue(value.getValueLabel());
                 String configSource = config.getConfigSource() == null || config.getConfigSource().isBlank()
                         ? "FACTORY_STANDARD"
                         : config.getConfigSource();

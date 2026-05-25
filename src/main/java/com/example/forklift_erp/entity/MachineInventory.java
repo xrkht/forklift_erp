@@ -110,6 +110,9 @@ public class MachineInventory implements CollaborativeResource {
     @Column(name = "inventory_count")
     private Integer inventoryCount; // 库存数
 
+    @Column(name = "model_only")
+    private Boolean modelOnly = false; // 是否仅为车型模板，不代表一台实际库存车
+
     // 以下几个“去向”字段，可以用多个字段，也可以未来单独建表，我们先简单处理
     @Column(name = "destination1", length = 255)
     private String destination1;
