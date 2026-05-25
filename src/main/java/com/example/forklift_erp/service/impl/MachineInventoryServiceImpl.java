@@ -87,6 +87,7 @@ public class MachineInventoryServiceImpl implements MachineInventoryService {
         }
         if (Boolean.TRUE.equals(machineInventory.getModelOnly())) {
             machineInventory.setInventoryCount(0);
+            machineInventory.setStockStatus("PENDING_INBOUND");
             machineInventory.setEngineNumber(null);
             machineInventory.setFrameNumber(null);
             machineInventory.setWarrantyCardNumber(null);

@@ -251,6 +251,7 @@ class ModificationWorkOrderIntegrationTests {
                 .andExpect(jsonPath("$.code").value(200))
                 .andExpect(jsonPath("$.data.modelOnly").value(true))
                 .andExpect(jsonPath("$.data.inventoryCount").value(0))
+                .andExpect(jsonPath("$.data.stockStatus").value("PENDING_INBOUND"))
                 .andReturn()
                 .getResponse()
                 .getContentAsString();
