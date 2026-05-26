@@ -611,6 +611,10 @@ button {
   overflow: hidden;
 }
 
+#vehicleDetailSurface {
+  scroll-margin-top: 92px;
+}
+
 .surface + .surface {
   margin-top: 16px;
 }

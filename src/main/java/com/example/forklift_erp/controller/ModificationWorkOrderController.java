@@ -30,6 +30,9 @@ public class ModificationWorkOrderController {
         if (paged) {
             List<ModificationWorkOrderVO> filtered = ListPageSupport.filter(list, keyword, row -> ListPageSupport.text(
                     row.getWorkOrderNo(),
+                    row.getMachineProductNumber(),
+                    row.getMachineName(),
+                    row.getSpecificationModel(),
                     row.getCustomerName(),
                     row.getSalesOrderNo(),
                     row.getStatus(),

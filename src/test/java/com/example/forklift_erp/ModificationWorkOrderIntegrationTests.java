@@ -37,6 +37,7 @@ import java.util.Set;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -185,8 +186,22 @@ class ModificationWorkOrderIntegrationTests {
         JsonNode createdOrder = objectMapper.readTree(createResponse).path("data");
         Long workOrderId = createdOrder.path("id").asLong();
         workOrdersToCleanup.add(workOrderId);
+        assertThat(createdOrder.path("machineProductNumber").asText())
+                .isEqualTo(machine.path("vehicleProductNumber").asText());
+        assertThat(createdOrder.path("machineName").asText()).isEqualTo("Work order test forklift");
+        assertThat(createdOrder.path("specificationModel").asText()).isEqualTo("CPCD30");
         assertThat(machineRepository.findById(machineId).orElseThrow().getStockStatus())
                 .isEqualTo("PENDING_MODIFICATION");
+
+        mockMvc.perform(get("/api/modification-work-orders")
+                        .header("Authorization", bearer(superToken))
+                        .param("paged", "true")
+                        .param("page", "0")
+                        .param("size", "5")
+                        .param("keyword", machine.path("vehicleProductNumber").asText()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.content[0].id").value(workOrderId))
+                .andExpect(jsonPath("$.data.content[0].machineProductNumber").value(machine.path("vehicleProductNumber").asText()));
 
         Map<String, Object> action = Map.of(
                 "version", createdOrder.path("version").asLong(),

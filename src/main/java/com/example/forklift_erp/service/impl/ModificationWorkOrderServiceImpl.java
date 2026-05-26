@@ -337,9 +337,13 @@ public class ModificationWorkOrderServiceImpl implements ModificationWorkOrderSe
     }
 
     private ModificationWorkOrderVO toVO(ModificationWorkOrder workOrder) {
+        MachineInventory machine = workOrder.getMachineId() == null
+                ? null
+                : machineRepository.findById(workOrder.getMachineId()).orElse(null);
         return ModificationWorkOrderVO.fromEntity(
                 workOrder,
-                lineRepository.findByWorkOrderIdOrderByIdAsc(workOrder.getId())
+                lineRepository.findByWorkOrderIdOrderByIdAsc(workOrder.getId()),
+                machine
         );
     }
 

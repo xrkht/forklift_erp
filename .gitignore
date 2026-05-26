@@ -2,6 +2,8 @@ HELP.md
 target/
 logs/
 .codebuddy/
+__pycache__/
+*.py[cod]
 /config/
 src/main/resources/application-local.yml
 src/main/resources/certs/*.p12

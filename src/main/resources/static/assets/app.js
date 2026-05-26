@@ -341,6 +341,10 @@ const pagedTabs = {
   users: { endpoint: endpoints.user.list, dataKey: "users", searchKey: "users", permission: "user:read", sortDesc: true }
 };
 
+const activeTabPageKeys = {
+  modifications: "modificationOrders"
+};
+
 let els;
 let searchReloadTimer = null;
 
@@ -445,10 +449,15 @@ function logout(message) {
 }
 
 async function loadAllData(options = {}) {
+  const activeModelKey = state.vehicleDetail?.modelKey;
   await ensureConfigData();
   await loadCurrentTab({ force: options.force !== false });
   if (state.selectedVehicleId) {
-    await loadVehicleDetail(state.selectedVehicleId, false);
+    if (activeModelKey) {
+      await loadVehicleModelDetail(activeModelKey, state.selectedVehicleId, false);
+    } else {
+      await loadVehicleDetail(state.selectedVehicleId, false);
+    }
   }
 }
 
@@ -470,8 +479,13 @@ async function loadCurrentTab(options = {}) {
     await ensureConfigData(true);
     return;
   }
-  if (pagedTabs[tab]) {
-    await loadPagedTab(tab, options);
+  if (tab === "vehicles" && isVehicleModelView()) {
+    await loadVehicleModelData(options);
+    return;
+  }
+  const pagedTab = activePagedTab();
+  if (pagedTab) {
+    await loadPagedTab(pagedTab, options);
   }
 }
 
@@ -496,6 +510,12 @@ async function loadOverviewData() {
   ]);
 }
 
+async function loadVehicleModelData(options = {}) {
+  if (options.force === false && state.reference.vehiclesLoaded) return;
+  state.data.vehicles = sortById(await api(endpoints.vehicle.list));
+  state.reference.vehiclesLoaded = true;
+}
+
 async function loadPagedTab(tab, options = {}) {
   const config = pagedTabs[tab];
   if (!config) return;
@@ -516,6 +536,7 @@ async function loadPagedTab(tab, options = {}) {
 
   if (tab === "vehicles" && hasPermission("stock:adjust")) {
     state.data.outboundOrders = sortById(await api(endpoints.outboundOrder.list));
+    state.reference.outboundOrdersLoaded = true;
   }
 }
 
@@ -631,6 +652,11 @@ async function handleContentClick(event) {
       const tab = control.dataset.pageTab;
       if (!pagedTabs[tab]) return;
       state.pages[tab].page = Math.max(0, Number(control.dataset.page || 0));
+      if (tab === "vehicles" && isVehicleModelView()) {
+        renderCurrentTab();
+        scrollToWorkspaceTop();
+        return;
+      }
       els.content.innerHTML = renderLoading();
       await loadPagedTab(tab, { force: true });
       renderCurrentTab();
@@ -646,6 +672,9 @@ async function handleContentClick(event) {
         ...state.filters.vehicles,
         view: control.dataset.view === "ledger" ? "ledger" : "model"
       };
+      resetPage(state.pages.vehicles);
+      els.content.innerHTML = renderLoading();
+      await loadCurrentTab({ force: true });
       renderCurrentTab();
       return;
     }
@@ -744,13 +773,16 @@ async function handleContentClick(event) {
     if (action === "detail-vehicle") {
       if (control.dataset.modelKey) {
         await loadVehicleModelDetail(control.dataset.modelKey);
+        scrollToVehicleDetail();
       } else {
         await loadVehicleDetail(id);
+        scrollToVehicleDetail();
       }
       return;
     }
     if (action === "select-model-vehicle") {
       await loadVehicleModelDetail(control.dataset.modelKey, Number(control.dataset.machineId || 0));
+      scrollToVehicleDetail();
       return;
     }
     if (action === "select-config-item") {
@@ -808,8 +840,17 @@ function handleContentInput(event) {
     state.visibleLogRows = LOG_PAGE_SIZE;
   }
   const tab = tabForSearchKey(input.dataset.searchFor);
-  if (tab && tab === state.activeTab) {
+  if (tab && tab === activePagedTab()) {
     resetPage(state.pages[tab]);
+    if (tab === "vehicles" && isVehicleModelView()) {
+      renderCurrentTab();
+      const nextInput = els.content.querySelector(`[data-search-for="${input.dataset.searchFor}"]`);
+      if (nextInput) {
+        nextInput.focus();
+        nextInput.setSelectionRange(input.value.length, input.value.length);
+      }
+      return;
+    }
     schedulePagedReload(tab);
     return;
   }
@@ -824,6 +865,10 @@ function handleContentInput(event) {
 function tabForSearchKey(key) {
   return Object.entries(pagedTabs)
     .find(([, config]) => config.searchKey === key)?.[0] || null;
+}
+
+function activePagedTab() {
+  return activeTabPageKeys[state.activeTab] || (pagedTabs[state.activeTab] ? state.activeTab : null);
 }
 
 function schedulePagedReload(tab) {
@@ -1045,7 +1090,7 @@ async function handleModalSubmit(event) {
   const kind = form.dataset.kind;
   if (!validateCombos(form)) return;
   const item = state.modal?.item || {};
-  const activeModelKey = state.vehicleDetail?.modelKey;
+  const activeModelKey = state.vehicleDetail?.modelKey || item.__modelKey || "";
 
   if (kind === "invoiceUpload") {
     try {
@@ -1092,16 +1137,16 @@ async function handleModalSubmit(event) {
       showToast("车型已新增", "success");
     } else if (kind === "vehicleInbound") {
       const configs = buildInboundConfigs(item);
-      await api("/api/inventory/inbound", {
+      const savedVehicle = await api("/api/inventory/inbound", {
         method: "POST",
         body: {
-          machineInventory: {
-            ...payload,
-            modelOnly: false
-          },
+          machineInventory: buildVehicleInboundPayload(payload, item),
           configs
         }
       });
+      if (savedVehicle?.id) {
+        state.selectedVehicleId = Number(savedVehicle.id);
+      }
       showToast("此车型入库成功", "success");
     } else if (kind === "vehicleOutbound") {
       const machine = findEntity("vehicle", Number(payload.machineId || 0));
@@ -1194,6 +1239,7 @@ async function handleModalSubmit(event) {
       showToast("新增成功", "success");
     }
     closeModal();
+    resetPageAfterMutation(kind);
     markReferenceDataStale(referenceKindsForMutation(kind));
     await loadAllData();
     if ((kind === "vehicle" || kind === "vehicleInbound" || kind === "vehicleOutbound") && activeModelKey) {
@@ -1347,6 +1393,17 @@ function buildInboundConfigs(item) {
         configSource: "FACTORY_STANDARD"
       };
     });
+}
+
+function buildVehicleInboundPayload(payload, item = {}) {
+  const model = item.__modelIdentity || {};
+  return {
+    ...payload,
+    name: model.name || payload.name,
+    specificationModel: model.specificationModel || payload.specificationModel,
+    machineType: model.machineType || payload.machineType,
+    modelOnly: false
+  };
 }
 
 async function ensureVehicleOutboundCustomer(payload) {
@@ -1587,6 +1644,23 @@ function referenceKindsForMutation(kind) {
   return mapping[kind] || [];
 }
 
+function resetPageAfterMutation(kind) {
+  const mapping = {
+    vehicle: "vehicles",
+    vehicleModel: "vehicles",
+    vehicleInbound: "vehicles",
+    modificationOrder: "modificationOrders",
+    part: "parts",
+    customer: "customers",
+    repair: "repairs",
+    outboundOrder: "outboundOrders"
+  };
+  const tab = mapping[kind];
+  if (tab && state.pages[tab]) {
+    resetPage(state.pages[tab]);
+  }
+}
+
 function closeModal() {
   state.modal = null;
   els.modalOverlay.classList.add("is-hidden");
@@ -1717,6 +1791,13 @@ function scrollToWorkspaceTop() {
   window.scrollTo({ top: 0, behavior: "smooth" });
 }
 
+function scrollToVehicleDetail() {
+  requestAnimationFrame(() => {
+    const target = document.getElementById("vehicleDetailSurface");
+    if (target) target.scrollIntoView({ block: "start", behavior: "smooth" });
+  });
+}
+
 function syncShell() {
   if (!canAccessTab(state.activeTab)) {
     state.activeTab = "overview";
@@ -1799,9 +1880,10 @@ function renderOverview() {
 
 function renderVehicles() {
   const view = state.filters.vehicles?.view === "ledger" ? "ledger" : "model";
-  const modelRows = filterVehicleRows(filterRows(vehicleModelGroups(), state.search.vehicles, [
+  const modelBaseRows = filterVehicleRows(filterRows(vehicleModelGroups(), state.search.vehicles, [
     "name", "specificationModel", "configuration", "machineType", "supplier", "warehouseName", "vehicleNumbers"
   ]));
+  const modelRows = view === "model" ? paginateClientRows("vehicles", modelBaseRows) : modelBaseRows;
   const ledgerBaseRows = filterVehicleRows(filterRows(vehicleLedgerRows(), state.search.vehicles, [
     "vehicleProductNumber", "name", "specificationModel", "configuration", "supplier", "warehouseName",
     "applicationNumber", "materialNumber", "customerName", "destinationText", "paymentRemark", "invoiceStatus", "invoiceOriginalName", "remarks"
@@ -1823,15 +1905,34 @@ function renderVehicles() {
           <button class="btn btn-ghost" type="button" data-action="refresh">${icon("refresh")}刷新</button>
         </div>
       </div>
+      ${view === "model" ? renderVehicleDetail() : ""}
       ${view === "ledger" ? renderVehicleLedgerPanel(ledgerRows, ledgerBaseRows) : renderVehicleModelPanel(modelRows)}
       ${renderPagination("vehicles")}
-      ${renderVehicleDetail()}
+      ${view === "ledger" ? renderVehicleDetail() : ""}
     </div>
   `;
 }
 
 function pageTotal(tab, fallback) {
   return state.pages[tab]?.loaded ? state.pages[tab].totalElements : fallback;
+}
+
+function paginateClientRows(tab, rows) {
+  const page = state.pages[tab];
+  const size = Math.max(1, Number(page?.size || LIST_PAGE_SIZE));
+  const totalElements = rows.length;
+  const totalPages = Math.ceil(totalElements / size);
+  const maxPage = Math.max(0, totalPages - 1);
+  page.page = Math.min(Math.max(0, Number(page.page || 0)), maxPage);
+  page.size = size;
+  page.totalElements = totalElements;
+  page.totalPages = totalPages;
+  page.first = page.page <= 0;
+  page.last = totalPages === 0 || page.page >= maxPage;
+  page.loaded = true;
+  page.loading = false;
+  const start = page.page * size;
+  return rows.slice(start, start + size);
 }
 
 function renderVehicleViewToggle(view) {
@@ -2124,7 +2225,7 @@ function renderParts() {
 
 function renderModificationOrders() {
   const rows = filterRows(state.data.modificationOrders, state.search.modificationOrders, [
-    "workOrderNo", "customerName", "salesOrderNo", "status", "operator", "remark"
+    "workOrderNo", "machineProductNumber", "machineName", "specificationModel", "customerName", "salesOrderNo", "status", "operator", "remark"
   ]);
 
   return `
@@ -2138,7 +2239,7 @@ function renderModificationOrders() {
       </div>
       ${renderSurface("改装工单列表", renderTable([
         { label: "工单号", key: "workOrderNo" },
-        { label: "车辆ID", key: "machineId" },
+        { label: "车辆", html: true, render: row => modificationOrderMachineSummary(row) },
         { label: "客户", key: "customerName" },
         { label: "销售单", key: "salesOrderNo" },
         { label: "状态", html: true, render: row => modificationStatusBadge(row.status) },
@@ -2147,6 +2248,15 @@ function renderModificationOrders() {
         { label: "操作", html: true, render: row => modificationOrderActions(row) }
       ], rows))}
       ${renderPagination("modificationOrders")}
+    </div>
+  `;
+}
+
+function modificationOrderMachineSummary(row) {
+  return `
+    <div class="cell-stack">
+      <strong>${escapeHtml(row.machineProductNumber || `ID ${row.machineId || "-"}`)}</strong>
+      <span class="helper-inline">${escapeHtml([row.machineName, row.specificationModel].filter(Boolean).join(" / ") || "-")}</span>
     </div>
   `;
 }
@@ -2602,7 +2712,7 @@ function renderVehicleDetail() {
   const workOrders = state.vehicleDetail.workOrders || [];
   const order = latestVehicleOutboundOrder(machine.id);
   return `
-    <section class="surface">
+    <section class="surface" id="vehicleDetailSurface">
       <div class="surface-head">
         <h2 class="surface-title">车辆详情 · ${escapeHtml(machine.vehicleProductNumber || "")}</h2>
         <div class="toolbar-actions">
@@ -2658,7 +2768,7 @@ function renderVehicleModelDetail() {
   const manualSelected = isManualForklift(selected.machineType || model.machineType);
   const order = latestVehicleOutboundOrder(selected.id);
   return `
-    <section class="surface">
+    <section class="surface" id="vehicleDetailSurface">
       <div class="surface-head">
         <h2 class="surface-title">车型详情 · ${escapeHtml(vehicleModelLabel(model))}</h2>
         <div class="toolbar-actions">
@@ -3429,6 +3539,12 @@ function vehicleModelDefaults(powerType) {
 
 function vehicleInboundDefaultsForModel(group = {}) {
   const entity = {
+    __modelKey: group.modelKey || "",
+    __modelIdentity: {
+      name: group.name || "",
+      specificationModel: group.specificationModel || "",
+      machineType: group.machineType || ""
+    },
     configSelections: [{ configItemId: "", configValueId: "" }],
     __placeholders: {
       vehicleProductNumber: "请输入此辆整车唯一车号",
@@ -3790,6 +3906,10 @@ function filterVehicleRows(rows, options = {}) {
     if (includeWorkflow && filters.workflow && Object.prototype.hasOwnProperty.call(row, "orderId") && !matchesVehicleWorkflow(row, filters.workflow)) return false;
     return true;
   });
+}
+
+function isVehicleModelView() {
+  return state.filters.vehicles?.view !== "ledger";
 }
 
 function vehicleCategoryOptions() {
