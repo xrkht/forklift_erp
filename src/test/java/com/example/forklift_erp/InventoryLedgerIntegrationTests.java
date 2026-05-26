@@ -31,6 +31,7 @@ import java.util.Set;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -99,6 +100,18 @@ class InventoryLedgerIntegrationTests {
         Long partId = created.path("id").asLong();
         Long warehouseId = created.path("warehouseId").asLong();
         Long version = created.path("version").asLong();
+
+        mockMvc.perform(get("/api/parts")
+                        .header("Authorization", bearer(superToken))
+                        .param("paged", "true")
+                        .param("keyword", partCode)
+                        .param("page", "0")
+                        .param("size", "5"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.page").value(0))
+                .andExpect(jsonPath("$.data.size").value(5))
+                .andExpect(jsonPath("$.data.totalElements").value(1))
+                .andExpect(jsonPath("$.data.content[0].partCode").value(partCode));
 
         assertBalance(partId, warehouseId, 3);
         assertMovementLine(partId, 3, 0, 3);

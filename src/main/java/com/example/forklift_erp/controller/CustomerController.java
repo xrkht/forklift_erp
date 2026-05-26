@@ -4,6 +4,7 @@ import com.example.forklift_erp.common.Result;
 import com.example.forklift_erp.dto.CustomerDTO;
 import com.example.forklift_erp.dto.CustomerVO;
 import com.example.forklift_erp.service.CustomerService;
+import com.example.forklift_erp.util.ListPageSupport;
 import jakarta.validation.Valid;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
@@ -20,8 +21,23 @@ public class CustomerController {
     private CustomerService service;
 
     @GetMapping
-    public Result<List<CustomerVO>> getAll() {
-        return Result.success(service.findAll());
+    public Result<?> getAll(@RequestParam(defaultValue = "false") boolean paged,
+                            @RequestParam(required = false) String keyword,
+                            @RequestParam(required = false) Integer page,
+                            @RequestParam(required = false) Integer size) {
+        List<CustomerVO> list = service.findAll();
+        if (paged) {
+            List<CustomerVO> filtered = ListPageSupport.filter(list, keyword, row -> ListPageSupport.text(
+                    row.getCompanyName(),
+                    row.getAddress(),
+                    row.getContactName(),
+                    row.getContactPhone(),
+                    row.getTaxOrIdNumber(),
+                    row.getRemarks()
+            ));
+            return Result.success(ListPageSupport.page(filtered, page, size));
+        }
+        return Result.success(list);
     }
 
     @GetMapping("/{id}")

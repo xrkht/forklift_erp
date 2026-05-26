@@ -7,6 +7,7 @@ import com.example.forklift_erp.dto.OutboundOrderVO;
 import com.example.forklift_erp.dto.PartOutboundOrderCreateDTO;
 import com.example.forklift_erp.dto.VehicleOutboundOrderCreateDTO;
 import com.example.forklift_erp.service.OutboundOrderService;
+import com.example.forklift_erp.util.ListPageSupport;
 import jakarta.validation.Valid;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.core.io.Resource;
@@ -31,8 +32,33 @@ public class OutboundOrderController {
 
     @GetMapping
     @PreAuthorize("@permissionService.hasPermission(authentication, 'stock:adjust')")
-    public Result<List<OutboundOrderVO>> getAll() {
-        return Result.success(service.findAll());
+    public Result<?> getAll(@RequestParam(defaultValue = "false") boolean paged,
+                            @RequestParam(required = false) String keyword,
+                            @RequestParam(required = false) Integer page,
+                            @RequestParam(required = false) Integer size) {
+        List<OutboundOrderVO> list = service.findAll();
+        if (paged) {
+            List<OutboundOrderVO> filtered = ListPageSupport.filter(list, keyword, row -> ListPageSupport.text(
+                    row.getOrderNo(),
+                    row.getResourceType(),
+                    row.getResourceCode(),
+                    row.getResourceName(),
+                    row.getSpecificationModel(),
+                    row.getCustomerName(),
+                    row.getCustomerAddress(),
+                    row.getContactName(),
+                    row.getContactPhone(),
+                    row.getOperator(),
+                    row.getPaymentRemark(),
+                    row.getInvoiceStatus(),
+                    row.getInvoiceOriginalName(),
+                    row.getRegistrationStatus(),
+                    row.getContractType(),
+                    row.getOrderRemark()
+            ));
+            return Result.success(ListPageSupport.page(filtered, page, size));
+        }
+        return Result.success(list);
     }
 
     @GetMapping("/{id}")

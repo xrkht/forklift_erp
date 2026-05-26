@@ -189,7 +189,7 @@ class AuthIntegrationTests {
     }
 
     @Test
-    void loginResponseIncludesPermissionsAndUserRoleCannotReadAdminModules() throws Exception {
+    void normalUserKeepsBusinessPermissionsButCannotReadAdminModules() throws Exception {
         String adminUsername = uniqueUsername("admin");
         String userUsername = uniqueUsername("user");
 
@@ -209,10 +209,51 @@ class AuthIntegrationTests {
         assertThat(superPermissions).contains("user:admin", "user:write", "log:read");
         assertThat(adminPermissions).contains("user:write", "log:read");
         assertThat(adminPermissions).doesNotContain("user:admin");
+        assertThat(userPermissions).contains(
+                "vehicle:write",
+                "part:write",
+                "repair:write",
+                "config:write",
+                "replace:write",
+                "stock:adjust"
+        );
         assertThat(userPermissions).doesNotContain("log:read", "user:read", "user:write", "user:admin");
 
         String userToken = userLogin.path("token").asText();
+        mockMvc.perform(get("/api/inventory")
+                        .header("Authorization", bearer(userToken)))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(get("/api/parts")
+                        .header("Authorization", bearer(userToken)))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(get("/api/repairs")
+                        .header("Authorization", bearer(userToken)))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(get("/api/customers")
+                        .header("Authorization", bearer(userToken)))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(get("/api/outbound-orders")
+                        .header("Authorization", bearer(userToken)))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(get("/api/modification-work-orders")
+                        .header("Authorization", bearer(userToken)))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(get("/api/config/items")
+                        .header("Authorization", bearer(userToken)))
+                .andExpect(status().isOk());
+
         mockMvc.perform(get("/api/logs")
+                        .header("Authorization", bearer(userToken)))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value(403));
+
+        mockMvc.perform(get("/api/statistics/finance")
                         .header("Authorization", bearer(userToken)))
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.code").value(403));

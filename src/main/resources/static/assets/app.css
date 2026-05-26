@@ -748,6 +748,28 @@ button {
   padding: 14px 0 0;
 }
 
+.pagination-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 2px 0;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.pagination-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.pagination-actions .btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
 .compact-table table {
   min-width: 0;
 }
@@ -1358,6 +1380,15 @@ tbody tr.table-row-selectable:focus-visible {
 
   .filter-select {
     flex: 1 1 140px;
+  }
+
+  .pagination-bar {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .pagination-actions .btn {
+    flex: 1 1 92px;
   }
 
   .page-logs .table-wrap {

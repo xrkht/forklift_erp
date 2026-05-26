@@ -1,6 +1,9 @@
 import { clearSession, createApiClient, readStoredToken, readStoredUser, saveSession } from "./modules/session.js";
+import { endpoints } from "./modules/routes.js";
+import { assignPageState, createPageState, pageContent, pageUrl, resetPage } from "./modules/paging.js";
 
 const LOG_PAGE_SIZE = 120;
+const LIST_PAGE_SIZE = 20;
 
 const state = {
   token: readStoredToken(),
@@ -41,6 +44,22 @@ const state = {
     configValues: [],
     configValueMap: {},
     users: []
+  },
+  pages: {
+    vehicles: createPageState(LIST_PAGE_SIZE),
+    parts: createPageState(LIST_PAGE_SIZE),
+    modificationOrders: createPageState(LIST_PAGE_SIZE),
+    outboundOrders: createPageState(LIST_PAGE_SIZE),
+    customers: createPageState(LIST_PAGE_SIZE),
+    repairs: createPageState(LIST_PAGE_SIZE),
+    logs: createPageState(LOG_PAGE_SIZE),
+    users: createPageState(LIST_PAGE_SIZE)
+  },
+  reference: {
+    vehiclesLoaded: false,
+    partsLoaded: false,
+    customersLoaded: false,
+    outboundOrdersLoaded: false
   },
   selectedVehicleId: null,
   vehicleDetail: null,
@@ -311,67 +330,19 @@ const fields = {
   ]
 };
 
-const endpoints = {
-  vehicle: {
-    create: "/api/inventory",
-    update: id => `/api/inventory/${id}`,
-    delete: id => `/api/inventory/${id}`
-  },
-  part: {
-    create: "/api/parts",
-    update: id => `/api/parts/${id}`,
-    delete: id => `/api/parts/${id}`
-  },
-  repair: {
-    create: "/api/repairs",
-    update: id => `/api/repairs/${id}`,
-    delete: id => `/api/repairs/${id}`
-  },
-  configItem: {
-    create: "/api/config/items",
-    update: id => `/api/config/items/${id}`,
-    delete: id => `/api/config/items/${id}`
-  },
-  configValue: {
-    create: "/api/config/values",
-    delete: id => `/api/config/values/${id}`
-  },
-  partReplace: {
-    create: "/api/replace/part"
-  },
-  modificationOrder: {
-    list: "/api/modification-work-orders",
-    create: "/api/modification-work-orders",
-    complete: id => `/api/modification-work-orders/${id}/complete`,
-    cancel: id => `/api/modification-work-orders/${id}/cancel`
-  },
-  outboundOrder: {
-    list: "/api/outbound-orders",
-    vehicle: "/api/outbound-orders/vehicle",
-    part: "/api/outbound-orders/part",
-    update: id => `/api/outbound-orders/${id}`,
-    lock: id => `/api/outbound-orders/${id}/lock`,
-    uploadInvoice: id => `/api/outbound-orders/${id}/invoice`,
-    downloadInvoice: id => `/api/outbound-orders/${id}/invoice`
-  },
-  customer: {
-    list: "/api/customers",
-    create: "/api/customers",
-    update: id => `/api/customers/${id}`,
-    delete: id => `/api/customers/${id}`
-  },
-  user: {
-    list: "/api/auth/users",
-    create: "/api/auth/register",
-    updateUsername: id => `/api/auth/users/${id}/username`,
-    updatePassword: id => `/api/auth/users/${id}/password`,
-    delete: id => `/api/auth/users/${id}`
-  },
-  logs: "/api/logs",
-  statistics: "/api/statistics/finance"
+const pagedTabs = {
+  vehicles: { endpoint: endpoints.vehicle.list, dataKey: "vehicles", searchKey: "vehicles", permission: null, sortDesc: true },
+  parts: { endpoint: endpoints.part.list, dataKey: "parts", searchKey: "parts", permission: null, sortDesc: true },
+  modificationOrders: { endpoint: endpoints.modificationOrder.list, dataKey: "modificationOrders", searchKey: "modificationOrders", permission: "replace:write", sortDesc: true },
+  outboundOrders: { endpoint: endpoints.outboundOrder.list, dataKey: "outboundOrders", searchKey: "outboundOrders", permission: "stock:adjust", sortDesc: true },
+  customers: { endpoint: endpoints.customer.list, dataKey: "customers", searchKey: "customers", permission: null, sortDesc: false },
+  repairs: { endpoint: endpoints.repair.list, dataKey: "repairs", searchKey: "repairs", permission: null, sortDesc: true },
+  logs: { endpoint: endpoints.logs, dataKey: "operationLogs", searchKey: "logs", permission: "log:read", sortDesc: false },
+  users: { endpoint: endpoints.user.list, dataKey: "users", searchKey: "users", permission: "user:read", sortDesc: true }
 };
 
 let els;
+let searchReloadTimer = null;
 
 document.addEventListener("DOMContentLoaded", () => {
   els = {
@@ -473,42 +444,78 @@ function logout(message) {
   if (message) showToast(message, "info");
 }
 
-async function loadAllData() {
-  const [vehicles, parts, repairs, configItems, modificationOrders, outboundOrders, customers] = await Promise.all([
-    api("/api/inventory"),
-    api("/api/parts"),
-    api("/api/repairs"),
-    api("/api/config/items"),
-    hasPermission("replace:write") ? api(endpoints.modificationOrder.list) : Promise.resolve([]),
-    hasPermission("stock:adjust") ? api(endpoints.outboundOrder.list) : Promise.resolve([]),
-    hasAnyPermission("stock:adjust", "vehicle:write") ? api(endpoints.customer.list) : Promise.resolve([])
-  ]);
+async function loadAllData(options = {}) {
+  await ensureConfigData();
+  await loadCurrentTab({ force: options.force !== false });
+  if (state.selectedVehicleId) {
+    await loadVehicleDetail(state.selectedVehicleId, false);
+  }
+}
 
-  state.data.vehicles = sortById(vehicles);
-  state.data.parts = sortById(parts);
-  state.data.repairs = sortById(repairs);
-  state.data.configItems = sortById(configItems, false);
-  state.data.modificationOrders = sortById(modificationOrders);
-  state.data.outboundOrders = sortById(outboundOrders);
-  state.data.customers = sortById(customers, false);
+async function loadCurrentTab(options = {}) {
+  const tab = state.activeTab;
+  if (tab === "overview") {
+    await loadOverviewData(options);
+    return;
+  }
+  if (tab === "stats") {
+    if (hasPermission("log:read")) {
+      await loadStatistics(state.selectedStatsYear);
+    } else {
+      state.data.statistics = null;
+    }
+    return;
+  }
+  if (tab === "configs") {
+    await ensureConfigData(true);
+    return;
+  }
+  if (pagedTabs[tab]) {
+    await loadPagedTab(tab, options);
+  }
+}
+
+async function ensureConfigData(force = false) {
+  if (!force && state.data.configItems.length) return;
+  state.data.configItems = sortById(await api(endpoints.configItem.list), false);
   await loadConfigValueCache(state.data.configItems);
-
   if (!state.selectedConfigItemId && state.data.configItems.length) {
     state.selectedConfigItemId = state.data.configItems[0].id;
   }
   if (state.selectedConfigItemId) {
     state.data.configValues = sortById(state.data.configValueMap[state.selectedConfigItemId] || await fetchConfigValues(state.selectedConfigItemId), false);
   }
-  const [users, operationLogs, statistics] = await Promise.all([
-    hasPermission("user:read") ? api(endpoints.user.list) : Promise.resolve([]),
-    hasPermission("log:read") ? api(endpoints.logs) : Promise.resolve([]),
-    hasPermission("log:read") ? api(`${endpoints.statistics}?year=${state.selectedStatsYear}`) : Promise.resolve(null)
+}
+
+async function loadOverviewData() {
+  await Promise.all([
+    loadPagedTab("vehicles", { force: true, silent: true }),
+    loadPagedTab("parts", { force: true, silent: true }),
+    loadPagedTab("repairs", { force: true, silent: true }),
+    loadPagedTab("outboundOrders", { force: true, silent: true })
   ]);
-  state.data.users = sortById(users);
-  state.data.operationLogs = sortLogs(operationLogs);
-  state.data.statistics = statistics;
-  if (state.selectedVehicleId) {
-    await loadVehicleDetail(state.selectedVehicleId, false);
+}
+
+async function loadPagedTab(tab, options = {}) {
+  const config = pagedTabs[tab];
+  if (!config) return;
+  if (config.permission && !hasPermission(config.permission)) {
+    state.data[config.dataKey] = [];
+    assignPageState(state.pages[tab], { content: [], page: 0, size: state.pages[tab].size, totalElements: 0, totalPages: 0, first: true, last: true });
+    return;
+  }
+
+  const pageState = state.pages[tab];
+  pageState.loading = true;
+  const payload = await api(pageUrl(config.endpoint, pageState, state.search[config.searchKey] || ""));
+  const rows = pageContent(payload);
+  state.data[config.dataKey] = config.dataKey === "operationLogs"
+    ? sortLogs(rows)
+    : sortById(rows, config.sortDesc !== false);
+  assignPageState(pageState, payload);
+
+  if (tab === "vehicles" && hasPermission("stock:adjust")) {
+    state.data.outboundOrders = sortById(await api(endpoints.outboundOrder.list));
   }
 }
 
@@ -590,11 +597,17 @@ async function loadVehicleModelDetail(modelKey, selectedMachineId = null, should
   if (shouldRender) renderCurrentTab();
 }
 
-function handleNav(event) {
+async function handleNav(event) {
   const button = event.target.closest("[data-tab]");
   if (!button) return;
   state.activeTab = button.dataset.tab;
-  renderCurrentTab();
+  els.content.innerHTML = renderLoading();
+  try {
+    await loadCurrentTab({ force: true });
+    renderCurrentTab();
+  } catch (error) {
+    handleActionError(error);
+  }
   scrollToWorkspaceTop();
 }
 
@@ -612,6 +625,15 @@ async function handleContentClick(event) {
       await loadAllData();
       renderCurrentTab();
       showToast("数据已刷新", "success");
+      return;
+    }
+    if (action === "page-list") {
+      const tab = control.dataset.pageTab;
+      if (!pagedTabs[tab]) return;
+      state.pages[tab].page = Math.max(0, Number(control.dataset.page || 0));
+      els.content.innerHTML = renderLoading();
+      await loadPagedTab(tab, { force: true });
+      renderCurrentTab();
       return;
     }
     if (action === "load-more-logs") {
@@ -785,12 +807,40 @@ function handleContentInput(event) {
   if (input.dataset.searchFor === "logs") {
     state.visibleLogRows = LOG_PAGE_SIZE;
   }
+  const tab = tabForSearchKey(input.dataset.searchFor);
+  if (tab && tab === state.activeTab) {
+    resetPage(state.pages[tab]);
+    schedulePagedReload(tab);
+    return;
+  }
   renderCurrentTab();
   const nextInput = els.content.querySelector(`[data-search-for="${input.dataset.searchFor}"]`);
   if (nextInput) {
     nextInput.focus();
     nextInput.setSelectionRange(input.value.length, input.value.length);
   }
+}
+
+function tabForSearchKey(key) {
+  return Object.entries(pagedTabs)
+    .find(([, config]) => config.searchKey === key)?.[0] || null;
+}
+
+function schedulePagedReload(tab) {
+  window.clearTimeout(searchReloadTimer);
+  searchReloadTimer = window.setTimeout(async () => {
+    try {
+      await loadPagedTab(tab, { force: true });
+      renderCurrentTab();
+      const input = els.content.querySelector(`[data-search-for="${pagedTabs[tab].searchKey}"]`);
+      if (input) {
+        input.focus();
+        input.setSelectionRange(input.value.length, input.value.length);
+      }
+    } catch (error) {
+      handleActionError(error);
+    }
+  }, 250);
 }
 
 async function handleContentChange(event) {
@@ -1001,6 +1051,7 @@ async function handleModalSubmit(event) {
     try {
       await uploadInvoiceForOrder(item, form);
       closeModal();
+      markReferenceDataStale(referenceKindsForMutation(kind));
       await loadAllData();
       renderCurrentTab();
     } catch (error) {
@@ -1143,6 +1194,7 @@ async function handleModalSubmit(event) {
       showToast("新增成功", "success");
     }
     closeModal();
+    markReferenceDataStale(referenceKindsForMutation(kind));
     await loadAllData();
     if ((kind === "vehicle" || kind === "vehicleInbound" || kind === "vehicleOutbound") && activeModelKey) {
       await loadVehicleModelDetail(activeModelKey, state.selectedVehicleId, false);
@@ -1166,6 +1218,7 @@ async function deleteEntity(kind, id) {
   if (!confirm(message)) return;
   await api(withVersion(endpoints[kind].delete(id), item), { method: "DELETE" });
   showToast("删除成功", "success");
+  markReferenceDataStale(referenceKindsForMutation(kind));
   if (kind === "configValue") {
     await loadConfigValues(state.selectedConfigItemId);
   } else {
@@ -1184,6 +1237,7 @@ async function completeModificationOrder(id) {
     body: { version: order.version }
   });
   showToast("改装工单已完成", "success");
+  markReferenceDataStale(["vehicle", "part"]);
   await loadAllData();
   if (state.selectedVehicleId) {
     if (activeModelKey) {
@@ -1205,6 +1259,7 @@ async function cancelModificationOrder(id) {
     body: { version: order.version }
   });
   showToast("改装工单已取消", "success");
+  markReferenceDataStale(["vehicle", "part"]);
   await loadAllData();
   if (state.selectedVehicleId) {
     if (activeModelKey) {
@@ -1397,6 +1452,7 @@ async function toggleOutboundOrderStatus(id, field) {
     body: buildOutboundOrderStatusPayload(order, overrides)
   });
   showToast("订单状态已更新", "success");
+  markReferenceDataStale(["vehicle", "outboundOrder"]);
   await loadAllData();
   renderCurrentTab();
 }
@@ -1410,6 +1466,7 @@ async function toggleOutboundOrderLock(id, locked) {
   }
   await api(`${endpoints.outboundOrder.lock(order.id)}?${params.toString()}`, { method: "PUT" });
   showToast(locked ? "订单已锁定，关联记录仅管理员可见" : "订单已解锁", "success");
+  markReferenceDataStale(["vehicle", "part", "outboundOrder"]);
   await loadAllData();
   renderCurrentTab();
 }
@@ -1464,8 +1521,9 @@ function buildOutboundOrderStatusPayload(order, overrides) {
 }
 
 async function openEntityModal(kind, item = {}) {
+  await ensureModalDependencies(kind);
   if (kind === "configValue" && !state.data.configItems.length) {
-    state.data.configItems = sortById(await api("/api/config/items"), false);
+    state.data.configItems = sortById(await api(endpoints.configItem.list), false);
   }
 
   state.modal = { kind, item: { ...item }, context: {} };
@@ -1476,6 +1534,57 @@ async function openEntityModal(kind, item = {}) {
     await preparePartReplaceContext(item.machineId || state.selectedVehicleId, item.machineConfigId, { placeholderConfig: kind === "modificationOrder" });
   }
   renderModal();
+}
+
+async function ensureModalDependencies(kind) {
+  const needsVehicles = ["vehicleStock", "vehicleOutbound", "partReplace", "modificationOrder", "vehicleInbound"].includes(kind);
+  const needsParts = ["part", "partStock", "partReplace", "modificationOrder"].includes(kind);
+  const needsCustomers = ["vehicleOutbound", "partStock", "partOutbound", "customer"].includes(kind);
+  const requests = [];
+  if (needsVehicles && !state.reference.vehiclesLoaded) {
+    requests.push(api(endpoints.vehicle.list).then(rows => {
+      state.data.vehicles = sortById(rows);
+      state.reference.vehiclesLoaded = true;
+    }));
+  }
+  if (needsParts && !state.reference.partsLoaded) {
+    requests.push(api(endpoints.part.list).then(rows => {
+      state.data.parts = sortById(rows);
+      state.reference.partsLoaded = true;
+    }));
+  }
+  if (needsCustomers && !state.reference.customersLoaded && hasAnyPermission("stock:adjust", "vehicle:write")) {
+    requests.push(api(endpoints.customer.list).then(rows => {
+      state.data.customers = sortById(rows, false);
+      state.reference.customersLoaded = true;
+    }));
+  }
+  await Promise.all(requests);
+}
+
+function markReferenceDataStale(kinds = []) {
+  if (!kinds.length || kinds.includes("vehicle")) state.reference.vehiclesLoaded = false;
+  if (!kinds.length || kinds.includes("part")) state.reference.partsLoaded = false;
+  if (!kinds.length || kinds.includes("customer")) state.reference.customersLoaded = false;
+  if (!kinds.length || kinds.includes("outboundOrder")) state.reference.outboundOrdersLoaded = false;
+}
+
+function referenceKindsForMutation(kind) {
+  const mapping = {
+    vehicle: ["vehicle"],
+    vehicleModel: ["vehicle"],
+    vehicleInbound: ["vehicle"],
+    vehicleOutbound: ["vehicle", "customer", "outboundOrder"],
+    vehicleStock: ["vehicle"],
+    part: ["part"],
+    partStock: ["part", "customer", "outboundOrder"],
+    partReplace: ["vehicle", "part"],
+    modificationOrder: ["vehicle", "part"],
+    outboundOrder: ["vehicle", "part", "outboundOrder"],
+    customer: ["customer"],
+    invoiceUpload: ["outboundOrder"]
+  };
+  return mapping[kind] || [];
 }
 
 function closeModal() {
@@ -1636,14 +1745,18 @@ function renderOverview() {
   const pendingRepairs = repairs.filter(item => item.status !== "COMPLETED").length;
   const lowParts = parts.filter(item => Number(item.quantity || 0) <= 0).length;
   const unsettledOrders = state.data.outboundOrders.filter(item => !item.paymentSettled).length;
+  const vehicleTotal = pageTotal("vehicles", vehicles.length);
+  const partTotal = pageTotal("parts", parts.length);
+  const orderTotal = pageTotal("outboundOrders", state.data.outboundOrders.length);
+  const repairTotal = pageTotal("repairs", repairs.length);
 
   return `
     <div class="page">
       <section class="summary-grid">
-        ${summaryCard("车辆库存", vehicles.length, "台整车档案")}
-        ${summaryCard("配件库存", parts.length, `${lowParts} 项库存不足`)}
-        ${summaryCard("出库订单", state.data.outboundOrders.length, `${unsettledOrders} 单车款未结清`)}
-        ${summaryCard("维修记录", repairs.length, `${pendingRepairs} 单待跟进`)}
+        ${summaryCard("车辆库存", vehicleTotal, "台整车档案")}
+        ${summaryCard("配件库存", partTotal, `${lowParts} 项库存不足`)}
+        ${summaryCard("出库订单", orderTotal, `${unsettledOrders} 单车款未结清`)}
+        ${summaryCard("维修记录", repairTotal, `${pendingRepairs} 单待跟进`)}
       </section>
 
       <section class="grid-three">
@@ -1711,9 +1824,14 @@ function renderVehicles() {
         </div>
       </div>
       ${view === "ledger" ? renderVehicleLedgerPanel(ledgerRows, ledgerBaseRows) : renderVehicleModelPanel(modelRows)}
+      ${renderPagination("vehicles")}
       ${renderVehicleDetail()}
     </div>
   `;
+}
+
+function pageTotal(tab, fallback) {
+  return state.pages[tab]?.loaded ? state.pages[tab].totalElements : fallback;
 }
 
 function renderVehicleViewToggle(view) {
@@ -1999,6 +2117,7 @@ function renderParts() {
         { label: "来源", key: "source" },
         { label: "操作", html: true, render: row => rowActions("part", row, ["stockIn", "stockOut", "edit", "delete"]) }
       ], rows))}
+      ${renderPagination("parts")}
     </div>
   `;
 }
@@ -2027,6 +2146,7 @@ function renderModificationOrders() {
         { label: "创建时间", key: "createdAt", formatter: dateTime },
         { label: "操作", html: true, render: row => modificationOrderActions(row) }
       ], rows))}
+      ${renderPagination("modificationOrders")}
     </div>
   `;
 }
@@ -2069,6 +2189,7 @@ function renderOutboundOrders() {
         { label: "订单备注", key: "orderRemark" },
         { label: "操作", html: true, render: row => outboundOrderActions(row) }
       ], rows))}
+      ${renderPagination("outboundOrders")}
     </div>
   `;
 }
@@ -2179,6 +2300,7 @@ function renderCustomers() {
         { label: "备注", key: "remarks" },
         { label: "操作", html: true, render: row => rowActions("customer", row, ["edit", "delete"]) }
       ], rows))}
+      ${renderPagination("customers")}
     </div>
   `;
 }
@@ -2200,6 +2322,7 @@ function renderRepairs() {
         { label: "总费用", key: "totalFee", formatter: money },
         { label: "操作", html: true, render: row => rowActions("repair", row, ["edit", "delete"]) }
       ], rows))}
+      ${renderPagination("repairs")}
     </div>
   `;
 }
@@ -2327,6 +2450,7 @@ function renderOperationLogs() {
         { label: "备注", key: "remark" }
       ], visibleRows))}
       ${hiddenCount ? `<div class="load-more-row"><button class="btn" type="button" data-action="load-more-logs">加载更多 ${escapeHtml(Math.min(LOG_PAGE_SIZE, hiddenCount))} 条</button></div>` : ""}
+      ${renderPagination("logs")}
     </div>
   `;
 }
@@ -2400,6 +2524,7 @@ function renderUsers() {
         { label: "创建时间", key: "createdAt", formatter: dateTime },
         { label: "操作", html: true, render: row => userActions(row) }
       ], rows))}
+      ${renderPagination("users")}
     </div>
   `;
 }
@@ -2755,6 +2880,24 @@ function renderTable(columns, rows, options = {}) {
           }).join("")}
         </tbody>
       </table>
+    </div>
+  `;
+}
+
+function renderPagination(tab) {
+  const page = state.pages[tab];
+  if (!page?.loaded) return "";
+  const current = page.totalPages ? page.page + 1 : 0;
+  const totalPages = page.totalPages || 0;
+  return `
+    <div class="pagination-bar">
+      <div class="pagination-meta">共 ${escapeHtml(page.totalElements)} 条 · 第 ${escapeHtml(current)} / ${escapeHtml(totalPages)} 页</div>
+      <div class="pagination-actions">
+        <button class="btn btn-sm" type="button" data-action="page-list" data-page-tab="${escapeAttr(tab)}" data-page="0"${page.first ? " disabled" : ""}>首页</button>
+        <button class="btn btn-sm" type="button" data-action="page-list" data-page-tab="${escapeAttr(tab)}" data-page="${escapeAttr(Math.max(0, page.page - 1))}"${page.first ? " disabled" : ""}>上一页</button>
+        <button class="btn btn-sm" type="button" data-action="page-list" data-page-tab="${escapeAttr(tab)}" data-page="${escapeAttr(page.page + 1)}"${page.last ? " disabled" : ""}>下一页</button>
+        <button class="btn btn-sm" type="button" data-action="page-list" data-page-tab="${escapeAttr(tab)}" data-page="${escapeAttr(Math.max(0, totalPages - 1))}"${page.last ? " disabled" : ""}>末页</button>
+      </div>
     </div>
   `;
 }
@@ -4005,7 +4148,14 @@ function defaultPermissionsForRoles(roles = []) {
       "user:read",
       "user:write"
     ],
-    USER: []
+    USER: [
+      "vehicle:write",
+      "part:write",
+      "repair:write",
+      "config:write",
+      "replace:write",
+      "stock:adjust"
+    ]
   };
   return [...new Set(roles.flatMap(role => permissionMap[role] || []))];
 }

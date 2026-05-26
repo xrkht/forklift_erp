@@ -17,6 +17,7 @@ import com.example.forklift_erp.service.MachineConfigService;
 import com.example.forklift_erp.service.MachineInventoryService;
 import com.example.forklift_erp.service.OperationAuditService;
 import com.example.forklift_erp.service.StockLedgerService;
+import com.example.forklift_erp.util.ListPageSupport;
 import jakarta.validation.Valid;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -61,11 +62,35 @@ public class MachineInventoryController {
 
     // 查询所有车辆
     @GetMapping
-    public Result<List<MachineInventoryVO>> getAll() {
+    public Result<?> getAll(@RequestParam(defaultValue = "false") boolean paged,
+                            @RequestParam(required = false) String keyword,
+                            @RequestParam(required = false) Integer page,
+                            @RequestParam(required = false) Integer size) {
         log.info("查询所有车辆");
         List<MachineInventoryVO> list = service.findAll().stream()
                 .map(MachineInventoryVO::fromEntity)
                 .collect(Collectors.toList());
+        if (paged) {
+            List<MachineInventoryVO> filtered = ListPageSupport.filter(list, keyword, row -> ListPageSupport.text(
+                    row.getVehicleProductNumber(),
+                    row.getName(),
+                    row.getSpecificationModel(),
+                    row.getConfiguration(),
+                    row.getMachineType(),
+                    row.getSupplier(),
+                    row.getWarehouseName(),
+                    row.getApplicationNumber(),
+                    row.getMaterialNumber(),
+                    row.getStockStatus(),
+                    row.getDestination1(),
+                    row.getDestination2(),
+                    row.getDestination3(),
+                    row.getDestination4(),
+                    row.getDestination5(),
+                    row.getRemarks()
+            ));
+            return Result.success(ListPageSupport.page(filtered, page, size));
+        }
         return Result.success(list);
     }
 

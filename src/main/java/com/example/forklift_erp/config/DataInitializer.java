@@ -52,7 +52,14 @@ public class DataInitializer implements CommandLineRunner {
                     PermissionCodes.USER_READ,
                     PermissionCodes.USER_WRITE
             ),
-            "USER", Set.of()
+            "USER", Set.of(
+                    PermissionCodes.VEHICLE_WRITE,
+                    PermissionCodes.PART_WRITE,
+                    PermissionCodes.REPAIR_WRITE,
+                    PermissionCodes.CONFIG_WRITE,
+                    PermissionCodes.REPLACE_WRITE,
+                    PermissionCodes.STOCK_ADJUST
+            )
     );
 
     static {
@@ -119,12 +126,16 @@ public class DataInitializer implements CommandLineRunner {
             if (role == null) {
                 return;
             }
-            boolean changed = permissionCodes.stream()
+            boolean removed = false;
+            if ("USER".equals(roleName)) {
+                removed = role.getPermissions().removeIf(permission -> !permissionCodes.contains(permission.getCode()));
+            }
+            boolean added = permissionCodes.stream()
                     .map(permissions::get)
                     .filter(permission -> permission != null && !role.getPermissions().contains(permission))
                     .peek(role.getPermissions()::add)
                     .count() > 0;
-            if (changed) {
+            if (added || removed) {
                 roleRepository.save(role);
             }
         });

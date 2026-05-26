@@ -316,9 +316,9 @@ class OutboundOrderIntegrationTests {
         String adminUsername = unique("admin");
         createUserDirectly(adminUsername, "ADMIN");
         String adminToken = login(adminUsername);
-        String stockUsername = unique("stock");
-        createUserWithPermissions(stockUsername, unique("stock_role"), "stock:adjust");
-        String stockToken = login(stockUsername);
+        String userUsername = unique("user");
+        createUserDirectly(userUsername, "USER");
+        String userToken = login(userUsername);
 
         JsonNode customer = createCustomer("Codex 锁定客户有限公司");
         JsonNode machine = createMachine();
@@ -326,13 +326,13 @@ class OutboundOrderIntegrationTests {
         String vehicleNumber = machine.path("vehicleProductNumber").asText();
         String vehicleOrderNo = vehicleOrder.path("orderNo").asText();
 
-        String stockOrdersBefore = mockMvc.perform(get("/api/outbound-orders")
-                        .header("Authorization", bearer(stockToken)))
+        String userOrdersBefore = mockMvc.perform(get("/api/outbound-orders")
+                        .header("Authorization", bearer(userToken)))
                 .andExpect(status().isOk())
                 .andReturn()
                 .getResponse()
                 .getContentAsString();
-        assertThat(stockOrdersBefore).contains(vehicleOrderNo);
+        assertThat(userOrdersBefore).contains(vehicleOrderNo);
 
         String vehicleLockResponse = mockMvc.perform(put("/api/outbound-orders/{id}/lock", vehicleOrder.path("id").asLong())
                         .param("locked", "true")
@@ -346,21 +346,21 @@ class OutboundOrderIntegrationTests {
         JsonNode lockedVehicleOrder = objectMapper.readTree(vehicleLockResponse).path("data");
         assertThat(machineRepository.findById(machine.path("id").asLong()).orElseThrow().getIsLocked()).isTrue();
 
-        String stockOrdersAfterLock = mockMvc.perform(get("/api/outbound-orders")
-                        .header("Authorization", bearer(stockToken)))
+        String userOrdersAfterLock = mockMvc.perform(get("/api/outbound-orders")
+                        .header("Authorization", bearer(userToken)))
                 .andExpect(status().isOk())
                 .andReturn()
                 .getResponse()
                 .getContentAsString();
-        assertThat(stockOrdersAfterLock).doesNotContain(vehicleOrderNo);
+        assertThat(userOrdersAfterLock).doesNotContain(vehicleOrderNo);
 
-        String stockInventoryAfterLock = mockMvc.perform(get("/api/inventory")
-                        .header("Authorization", bearer(stockToken)))
+        String userInventoryAfterLock = mockMvc.perform(get("/api/inventory")
+                        .header("Authorization", bearer(userToken)))
                 .andExpect(status().isOk())
                 .andReturn()
                 .getResponse()
                 .getContentAsString();
-        assertThat(stockInventoryAfterLock).doesNotContain(vehicleNumber);
+        assertThat(userInventoryAfterLock).doesNotContain(vehicleNumber);
 
         String adminInventoryAfterLock = mockMvc.perform(get("/api/inventory")
                         .header("Authorization", bearer(adminToken)))
@@ -382,13 +382,13 @@ class OutboundOrderIntegrationTests {
                 .andExpect(jsonPath("$.data.isLocked").value(true));
         assertThat(partRepository.findByPartCode(partCode).orElseThrow().getIsLocked()).isTrue();
 
-        String stockPartsAfterLock = mockMvc.perform(get("/api/parts")
-                        .header("Authorization", bearer(stockToken)))
+        String userPartsAfterLock = mockMvc.perform(get("/api/parts")
+                        .header("Authorization", bearer(userToken)))
                 .andExpect(status().isOk())
                 .andReturn()
                 .getResponse()
                 .getContentAsString();
-        assertThat(stockPartsAfterLock).doesNotContain(partCode);
+        assertThat(userPartsAfterLock).doesNotContain(partCode);
 
         String adminPartsAfterLock = mockMvc.perform(get("/api/parts")
                         .header("Authorization", bearer(adminToken)))
@@ -406,13 +406,13 @@ class OutboundOrderIntegrationTests {
                 .andExpect(jsonPath("$.data.isLocked").value(false));
         assertThat(machineRepository.findById(machine.path("id").asLong()).orElseThrow().getIsLocked()).isFalse();
 
-        String stockInventoryAfterUnlock = mockMvc.perform(get("/api/inventory")
-                        .header("Authorization", bearer(stockToken)))
+        String userInventoryAfterUnlock = mockMvc.perform(get("/api/inventory")
+                        .header("Authorization", bearer(userToken)))
                 .andExpect(status().isOk())
                 .andReturn()
                 .getResponse()
                 .getContentAsString();
-        assertThat(stockInventoryAfterUnlock).contains(vehicleNumber);
+        assertThat(userInventoryAfterUnlock).contains(vehicleNumber);
     }
 
     private JsonNode createVehicleOrder(JsonNode customer, JsonNode machine) throws Exception {

@@ -2,6 +2,41 @@
 
 本项目遵循 [语义化版本](https://semver.org/lang/zh-CN/) 和 [Keep a Changelog](https://keepachangelog.com/zh-CN/) 规范。
 
+## [0.1.28] - 2026-05-26 - xrkht
+
+### 修改
+- **前端结构整理与列表按需加载**
+  - 将前端接口路由与分页工具拆分到 `assets/modules/routes.js` 和 `assets/modules/paging.js`，主应用保留页面状态、渲染和业务动作。
+  - 车辆、配件、改装工单、出库订单、客户、维修、日志和用户列表改为进入页面时按需加载，并支持分页切换与关键字筛选。
+  - 新建/编辑/出库等弹窗只在打开时补拉所需的完整引用数据，避免登录后一次性加载所有业务列表。
+  - Service Worker 缓存版本升级为 `forklift-erp-client-v21`，并缓存新增前端模块。
+- **列表接口分页与筛选**
+  - `/api/inventory`、`/api/parts`、`/api/modification-work-orders`、`/api/outbound-orders`、`/api/customers`、`/api/repairs`、`/api/logs`、`/api/auth/users` 支持 `paged=true&page=&size=&keyword=`。
+  - 未传 `paged=true` 时保持原列表返回结构，兼容现有弹窗下拉、脚本和旧调用。
+
+### 验证
+- 内置 Node：`node --check src\main\resources\static\assets\app.js`、`assets\modules\paging.js`、`assets\modules\routes.js` 通过。
+- Java 21：`.\mvnw.cmd test` 通过，累计 `16` 个测试通过。
+- Java 21：`.\mvnw.cmd package -DskipTests` 通过。
+- API 验证：`http://127.0.0.1:8092` 登录后分页检查库存、配件、维修、客户、出库订单、日志和用户接口均返回 `page=0`、`size=5` 的分页结构；新增前端模块和 `sw.js` 静态资源均返回 `200`。
+
+## [0.1.27] - 2026-05-26 - xrkht
+
+### 修改
+- **普通用户业务权限开放**
+  - 新增 Flyway `V13__standard_user_business_permissions.sql`，为 `USER` 角色授予车辆、配件、维修、配置、改装和库存/出库等业务权限。
+  - 普通用户仍不能访问“用户管理”“统计财报”“日志查看”，也不能查看管理员锁定的订单及其关联库存记录。
+  - 前端普通用户兜底权限同步更新，业务菜单和操作按钮按新权限正常显示；Service Worker 缓存版本升级为 `forklift-erp-client-v20`。
+
+### 验证
+- 内置 Node：`node --check src\main\resources\static\assets\app.js` 通过。
+- 内置 Node：`node --check src\main\resources\static\sw.js` 通过。
+- Git：`git diff --check` 通过，仅有 Windows 换行提示。
+- Java 21：`.\mvnw.cmd "-Dtest=AuthIntegrationTests,OutboundOrderIntegrationTests" test` 通过，累计 `9` 个测试通过。
+- Java 21：`.\mvnw.cmd test` 通过，累计 `16` 个测试通过。
+- Java 21：`.\mvnw.cmd package -DskipTests` 通过。
+- API 验证：`http://127.0.0.1:8091` 创建临时 `USER` 并登录后，车辆库存、配件库存、维修、客户、出库订单、改装和配置字典接口均返回 `200`；用户管理、统计财报和日志查看接口均返回 `403`；临时账号已删除。
+
 ## [0.1.26] - 2026-05-26 - xrkht
 
 ### 修复

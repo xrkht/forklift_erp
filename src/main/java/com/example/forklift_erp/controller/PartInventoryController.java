@@ -13,6 +13,7 @@ import com.example.forklift_erp.service.CollaborationService;
 import com.example.forklift_erp.service.OperationAuditService;
 import com.example.forklift_erp.service.PartInventoryService;
 import com.example.forklift_erp.service.StockLedgerService;
+import com.example.forklift_erp.util.ListPageSupport;
 import jakarta.validation.Valid;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -45,10 +46,26 @@ public class PartInventoryController {
     private StockLedgerService stockLedgerService;
 
     @GetMapping
-    public Result<List<PartInventoryVO>> getAll() {
+    public Result<?> getAll(@RequestParam(defaultValue = "false") boolean paged,
+                            @RequestParam(required = false) String keyword,
+                            @RequestParam(required = false) Integer page,
+                            @RequestParam(required = false) Integer size) {
         List<PartInventoryVO> list = partService.findAll().stream()
                 .map(PartInventoryVO::fromEntity)
                 .collect(Collectors.toList());
+        if (paged) {
+            List<PartInventoryVO> filtered = ListPageSupport.filter(list, keyword, row -> ListPageSupport.text(
+                    row.getPartCode(),
+                    row.getPartName(),
+                    row.getPartBrand(),
+                    row.getSpecification(),
+                    row.getPartCategory(),
+                    row.getApplicableModels(),
+                    row.getSource(),
+                    row.getRemarks()
+            ));
+            return Result.success(ListPageSupport.page(filtered, page, size));
+        }
         return Result.success(list);
     }
 

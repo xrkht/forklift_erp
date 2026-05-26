@@ -9,6 +9,7 @@ import com.example.forklift_erp.exception.BusinessException;
 import com.example.forklift_erp.service.CollaborationService;
 import com.example.forklift_erp.service.OperationAuditService;
 import com.example.forklift_erp.service.RepairRecordService;
+import com.example.forklift_erp.util.ListPageSupport;
 import jakarta.validation.Valid;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -37,7 +38,11 @@ public class RepairRecordController {
     private CollaborationService collaborationService;
 
     @GetMapping
-    public Result<List<RepairRecordVO>> getAll(
+    public Result<?> getAll(
+            @RequestParam(defaultValue = "false") boolean paged,
+            @RequestParam(required = false) String keyword,
+            @RequestParam(required = false) Integer page,
+            @RequestParam(required = false) Integer size,
             @RequestParam(required = false) Long machineId,
             @RequestParam(required = false) String repairPerson,
             @RequestParam(required = false) String status,
@@ -59,6 +64,20 @@ public class RepairRecordController {
         List<RepairRecordVO> list = records.stream()
                 .map(RepairRecordVO::fromEntity)
                 .collect(Collectors.toList());
+        if (paged) {
+            List<RepairRecordVO> filtered = ListPageSupport.filter(list, keyword, row -> ListPageSupport.text(
+                    row.getVehicleNumber(),
+                    row.getCustomerName(),
+                    row.getCustomerAddress(),
+                    row.getRepairPerson(),
+                    row.getStatus(),
+                    row.getFaultDescription(),
+                    row.getRepairContent(),
+                    row.getUsedParts(),
+                    row.getRemarks()
+            ));
+            return Result.success(ListPageSupport.page(filtered, page, size));
+        }
         return Result.success(list);
     }
 

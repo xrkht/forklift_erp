@@ -5,6 +5,7 @@ import com.example.forklift_erp.dto.ModificationWorkOrderActionDTO;
 import com.example.forklift_erp.dto.ModificationWorkOrderCreateDTO;
 import com.example.forklift_erp.dto.ModificationWorkOrderVO;
 import com.example.forklift_erp.service.ModificationWorkOrderService;
+import com.example.forklift_erp.util.ListPageSupport;
 import jakarta.validation.Valid;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
@@ -21,8 +22,23 @@ public class ModificationWorkOrderController {
     private ModificationWorkOrderService service;
 
     @GetMapping
-    public Result<List<ModificationWorkOrderVO>> getAll() {
-        return Result.success(service.findAll());
+    public Result<?> getAll(@RequestParam(defaultValue = "false") boolean paged,
+                            @RequestParam(required = false) String keyword,
+                            @RequestParam(required = false) Integer page,
+                            @RequestParam(required = false) Integer size) {
+        List<ModificationWorkOrderVO> list = service.findAll();
+        if (paged) {
+            List<ModificationWorkOrderVO> filtered = ListPageSupport.filter(list, keyword, row -> ListPageSupport.text(
+                    row.getWorkOrderNo(),
+                    row.getCustomerName(),
+                    row.getSalesOrderNo(),
+                    row.getStatus(),
+                    row.getOperator(),
+                    row.getRemark()
+            ));
+            return Result.success(ListPageSupport.page(filtered, page, size));
+        }
+        return Result.success(list);
     }
 
     @GetMapping("/{id}")

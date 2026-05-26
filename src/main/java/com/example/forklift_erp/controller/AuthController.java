@@ -12,6 +12,7 @@ import com.example.forklift_erp.security.PermissionCodes;
 import com.example.forklift_erp.security.PermissionService;
 import com.example.forklift_erp.service.CollaborationService;
 import com.example.forklift_erp.service.OperationAuditService;
+import com.example.forklift_erp.util.ListPageSupport;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import lombok.Data;
@@ -170,7 +171,10 @@ public class AuthController {
 
     @GetMapping("/users")
     @PreAuthorize("@permissionService.hasPermission(authentication, 'user:read')")
-    public Result<List<UserSummaryResponse>> listUsers() {
+    public Result<?> listUsers(@RequestParam(defaultValue = "false") boolean paged,
+                               @RequestParam(required = false) String keyword,
+                               @RequestParam(required = false) Integer page,
+                               @RequestParam(required = false) Integer size) {
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
         boolean canManagePrivilegedUsers = permissionService.hasPermission(authentication, PermissionCodes.USER_ADMIN);
 
@@ -180,6 +184,14 @@ public class AuthController {
                 .sorted(Comparator.comparing(User::getId).reversed())
                 .map(user -> UserSummaryResponse.fromEntity(user, permissionService.findPermissionCodes(user)))
                 .toList();
+        if (paged) {
+            List<UserSummaryResponse> filtered = ListPageSupport.filter(users, keyword, row -> ListPageSupport.text(
+                    row.getUsername(),
+                    String.join(" ", row.getRoles()),
+                    String.join(" ", row.getPermissions())
+            ));
+            return Result.success(ListPageSupport.page(filtered, page, size));
+        }
         return Result.success(users);
     }
 

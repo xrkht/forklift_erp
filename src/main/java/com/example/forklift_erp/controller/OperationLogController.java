@@ -7,9 +7,11 @@ import com.example.forklift_erp.repository.ConfigReplaceLogRepository;
 import com.example.forklift_erp.repository.OperationAuditLogRepository;
 import com.example.forklift_erp.repository.RepairRecordRepository;
 import com.example.forklift_erp.repository.StockOperationLogRepository;
+import com.example.forklift_erp.util.ListPageSupport;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -37,7 +39,10 @@ public class OperationLogController {
 
     @GetMapping
     @PreAuthorize("@permissionService.hasPermission(authentication, 'log:read')")
-    public Result<List<OperationLogVO>> getAll() {
+    public Result<?> getAll(@RequestParam(defaultValue = "false") boolean paged,
+                            @RequestParam(required = false) String keyword,
+                            @RequestParam(required = false) Integer page,
+                            @RequestParam(required = false) Integer size) {
         List<OperationAuditLog> auditLogs = operationAuditLogRepository.findAllByOrderByCreatedAtDesc();
         Set<String> auditedSources = new HashSet<>();
         auditLogs.stream()
@@ -59,6 +64,17 @@ public class OperationLogController {
                 .flatMap(stream -> stream)
                 .sorted(Comparator.comparing(OperationLogVO::getCreatedAt, Comparator.nullsLast(Comparator.reverseOrder())))
                 .toList();
+        if (paged) {
+            List<OperationLogVO> filtered = ListPageSupport.filter(logs, keyword, row -> ListPageSupport.text(
+                    row.getCategory(),
+                    row.getAction(),
+                    row.getTarget(),
+                    row.getSummary(),
+                    row.getOperator(),
+                    row.getRemark()
+            ));
+            return Result.success(ListPageSupport.page(filtered, page, size));
+        }
         return Result.success(logs);
     }
 
