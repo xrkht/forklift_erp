@@ -650,6 +650,101 @@ button {
   gap: 16px;
 }
 
+.overview-workbench {
+  display: grid;
+  grid-template-columns: minmax(0, 1.6fr) minmax(300px, 0.85fr);
+  gap: 16px;
+}
+
+.overview-stage-grid {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(120px, 1fr));
+  gap: 10px;
+}
+
+.overview-stage {
+  display: grid;
+  gap: 6px;
+  min-height: 78px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--panel);
+  color: inherit;
+  cursor: pointer;
+  text-align: left;
+}
+
+.overview-stage:hover {
+  border-color: var(--primary);
+  box-shadow: var(--shadow);
+}
+
+.overview-stage span {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.overview-stage strong {
+  font-size: 24px;
+  line-height: 1;
+}
+
+.overview-stage.warn strong {
+  color: var(--warning);
+}
+
+.overview-stage.danger strong {
+  color: var(--danger);
+}
+
+.overview-stage.teal strong {
+  color: var(--teal);
+}
+
+.overview-side,
+.overview-task-list,
+.overview-shortcuts,
+.overview-attachment-list {
+  display: grid;
+  gap: 10px;
+}
+
+.overview-task-row,
+.overview-attachment-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.overview-task-row:last-child,
+.overview-attachment-row:last-child {
+  border-bottom: 0;
+}
+
+.overview-task-main {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.overview-task-main strong {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.overview-task-main .helper-inline {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .finance-bars {
   display: grid;
   gap: 10px;
@@ -917,6 +1012,24 @@ tbody tr.table-row-selectable:focus-visible {
   border-color: #a7f3d0;
   background: var(--accent-weak);
   color: var(--accent);
+}
+
+.status-toggle.warn {
+  border-color: #fed7aa;
+  background: var(--warn-weak);
+  color: var(--warn);
+}
+
+.status-toggle.danger {
+  border-color: #fecaca;
+  background: var(--danger-weak);
+  color: var(--danger);
+}
+
+.status-toggle-group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
 }
 
 .status-toggle:hover {
@@ -1275,8 +1388,13 @@ tbody tr.table-row-selectable:focus-visible {
 @media (max-width: 1180px) {
   .summary-grid,
   .grid-three,
+  .overview-stage-grid,
   .config-layout,
   .grid-two {
+    grid-template-columns: 1fr;
+  }
+
+  .overview-workbench {
     grid-template-columns: 1fr;
   }
 

@@ -11,6 +11,7 @@ import com.example.forklift_erp.repository.OutboundOrderRepository;
 import com.example.forklift_erp.repository.PartInventoryRepository;
 import com.example.forklift_erp.repository.PermissionRepository;
 import com.example.forklift_erp.repository.RoleRepository;
+import com.example.forklift_erp.repository.RentalRecordRepository;
 import com.example.forklift_erp.repository.StockMovementRepository;
 import com.example.forklift_erp.repository.UserRepository;
 import com.fasterxml.jackson.databind.JsonNode;
@@ -59,10 +60,12 @@ class OutboundOrderIntegrationTests {
 
     private static final String PASSWORD = "CodexTest123!";
     private static final Path INVOICE_STORAGE_DIR = Paths.get("target", "invoice-test-files", UUID.randomUUID().toString());
+    private static final Path CONTRACT_STORAGE_DIR = Paths.get("target", "contract-test-files", UUID.randomUUID().toString());
 
     @DynamicPropertySource
     static void registerInvoiceStorage(DynamicPropertyRegistry registry) {
         registry.add("forklift-erp.invoice-storage-dir", () -> INVOICE_STORAGE_DIR.toString());
+        registry.add("forklift-erp.contract-storage-dir", () -> CONTRACT_STORAGE_DIR.toString());
     }
 
     @Autowired
@@ -84,6 +87,9 @@ class OutboundOrderIntegrationTests {
     private OutboundOrderRepository outboundOrderRepository;
 
     @Autowired
+    private RentalRecordRepository rentalRecordRepository;
+
+    @Autowired
     private MachineInventoryRepository machineRepository;
 
     @Autowired
@@ -100,6 +106,7 @@ class OutboundOrderIntegrationTests {
 
     private final List<String> usersToCleanup = new ArrayList<>();
     private final List<Long> ordersToCleanup = new ArrayList<>();
+    private final List<Long> rentalsToCleanup = new ArrayList<>();
     private final List<Long> customersToCleanup = new ArrayList<>();
     private final List<Long> machinesToCleanup = new ArrayList<>();
     private final List<String> partsToCleanup = new ArrayList<>();
@@ -116,6 +123,11 @@ class OutboundOrderIntegrationTests {
 
     @AfterEach
     void tearDown() {
+        for (Long rentalId : rentalsToCleanup.reversed()) {
+            rentalRecordRepository.findById(rentalId).ifPresent(rentalRecordRepository::delete);
+        }
+        rentalsToCleanup.clear();
+
         for (Long orderId : ordersToCleanup.reversed()) {
             outboundOrderRepository.findById(orderId).ifPresent(outboundOrderRepository::delete);
         }
@@ -200,6 +212,61 @@ class OutboundOrderIntegrationTests {
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.code").value(4001));
 
+        MockMultipartFile earlyContract = new MockMultipartFile(
+                "file",
+                "early-contract.pdf",
+                "application/pdf",
+                "contract".getBytes(StandardCharsets.UTF_8)
+        );
+        String earlyContractResponse = mockMvc.perform(multipart("/api/outbound-orders/{id}/contract", orderId)
+                        .file(earlyContract)
+                        .header("Authorization", bearer(superToken)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.contractOriginalName").value("early-contract.pdf"))
+                .andExpect(jsonPath("$.data.contractFileAvailable").value(true))
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+        JsonNode contractUploadedOrder = objectMapper.readTree(earlyContractResponse).path("data");
+
+        Map<String, Object> invoiceAppliedPayload = new LinkedHashMap<>();
+        invoiceAppliedPayload.put("version", contractUploadedOrder.path("version").asLong());
+        invoiceAppliedPayload.put("salesDate", "2026-05-20");
+        invoiceAppliedPayload.put("settlementPrice", "128000.00");
+        invoiceAppliedPayload.put("salePrice", "136000.00");
+        invoiceAppliedPayload.put("paymentSettled", false);
+        invoiceAppliedPayload.put("salesReported", false);
+        invoiceAppliedPayload.put("invoiceApplied", true);
+        invoiceAppliedPayload.put("invoiceApplicationDate", "2026-05-25");
+        invoiceAppliedPayload.put("invoiceStatus", "含税已申请发票");
+        invoiceAppliedPayload.put("orderRemark", "已申请发票，待上传文件");
+
+        mockMvc.perform(put("/api/outbound-orders/{id}", orderId)
+                        .header("Authorization", bearer(superToken))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json(invoiceAppliedPayload)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.invoiceApplied").value(true))
+                .andExpect(jsonPath("$.data.invoiceApplicationDate").value("2026-05-25"));
+
+        byte[] appliedInvoiceBytes = "%PDF-1.4 applied invoice".getBytes(StandardCharsets.UTF_8);
+        MockMultipartFile appliedInvoice = new MockMultipartFile(
+                "file",
+                "invoice-applied.pdf",
+                "application/pdf",
+                appliedInvoiceBytes
+        );
+        String appliedInvoiceResponse = mockMvc.perform(multipart("/api/outbound-orders/{id}/invoice", orderId)
+                        .file(appliedInvoice)
+                        .header("Authorization", bearer(superToken)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.invoiceOriginalName").value("invoice-applied.pdf"))
+                .andExpect(jsonPath("$.data.invoiceFileAvailable").value(true))
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+        JsonNode invoiceAppliedUploadedOrder = objectMapper.readTree(appliedInvoiceResponse).path("data");
+
         MachineInventory adjustedMachine = machineRepository.findById(machine.path("id").asLong()).orElseThrow();
         assertThat(adjustedMachine.getInventoryCount()).isZero();
         assertThat(adjustedMachine.getStockStatus()).isEqualTo("OUTBOUND");
@@ -211,7 +278,7 @@ class OutboundOrderIntegrationTests {
                 .hasSizeGreaterThanOrEqualTo(1);
 
         Map<String, Object> updatePayload = new LinkedHashMap<>();
-        updatePayload.put("version", order.path("version").asLong());
+        updatePayload.put("version", invoiceAppliedUploadedOrder.path("version").asLong());
         updatePayload.put("salesDate", "2026-05-21");
         updatePayload.put("settlementPrice", "129500.00");
         updatePayload.put("salePrice", "137500.00");
@@ -270,6 +337,31 @@ class OutboundOrderIntegrationTests {
                 .andExpect(header().string(HttpHeaders.CONTENT_DISPOSITION, containsString("invoice-test.pdf")))
                 .andExpect(content().bytes(invoiceBytes));
 
+        byte[] contractBytes = "%PDF-1.4 Codex contract".getBytes(StandardCharsets.UTF_8);
+        MockMultipartFile contractFile = new MockMultipartFile(
+                "file",
+                "contract-test.pdf",
+                "application/pdf",
+                contractBytes
+        );
+        mockMvc.perform(multipart("/api/outbound-orders/{id}/contract", orderId)
+                        .file(contractFile)
+                        .header("Authorization", bearer(superToken)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(200))
+                .andExpect(jsonPath("$.data.contractOriginalName").value("contract-test.pdf"))
+                .andExpect(jsonPath("$.data.contractContentType").value("application/pdf"))
+                .andExpect(jsonPath("$.data.contractFileSize").value(contractBytes.length))
+                .andExpect(jsonPath("$.data.contractFileAvailable").value(true))
+                .andExpect(jsonPath("$.data.contractUploadedAt").exists());
+
+        mockMvc.perform(get("/api/outbound-orders/{id}/contract", orderId)
+                        .header("Authorization", bearer(superToken)))
+                .andExpect(status().isOk())
+                .andExpect(header().string(HttpHeaders.CONTENT_TYPE, containsString("application/pdf")))
+                .andExpect(header().string(HttpHeaders.CONTENT_DISPOSITION, containsString("contract-test.pdf")))
+                .andExpect(content().bytes(contractBytes));
+
         MachineInventory reportedMachine = machineRepository.findById(machine.path("id").asLong()).orElseThrow();
         assertThat(reportedMachine.getIsSalesReported()).isEqualTo("是");
         assertThat(reportedMachine.getIsInvoiceApplied()).isEqualTo("是");
@@ -309,6 +401,93 @@ class OutboundOrderIntegrationTests {
 
         PartInventory adjustedPart = partRepository.findByPartCode(part.path("partCode").asText()).orElseThrow();
         assertThat(adjustedPart.getQuantity()).isEqualTo(3);
+    }
+
+    @Test
+    void rentalRecordTracksVehicleDestinationPriceAndFeedsStatistics() throws Exception {
+        JsonNode customer = createCustomer("Codex 租赁后销售客户有限公司");
+        JsonNode machine = createMachine();
+
+        Map<String, Object> rentalPayload = new LinkedHashMap<>();
+        rentalPayload.put("machineId", machine.path("id").asLong());
+        rentalPayload.put("machineVersion", machine.path("version").asLong());
+        rentalPayload.put("customerId", customer.path("id").asLong());
+        rentalPayload.put("destination", "佛山禅城工地 A 区");
+        rentalPayload.put("monthlyRentalPrice", "8800.00");
+        rentalPayload.put("startDate", "2026-05-27");
+        rentalPayload.put("operator", "rental-test");
+        rentalPayload.put("remark", "租赁主路径集成测试");
+
+        String rentalResponse = mockMvc.perform(post("/api/rentals")
+                        .header("Authorization", bearer(superToken))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json(rentalPayload)))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.code").value(200))
+                .andExpect(jsonPath("$.data.vehicleNumber").value(machine.path("vehicleProductNumber").asText()))
+                .andExpect(jsonPath("$.data.customerId").value(customer.path("id").asLong()))
+                .andExpect(jsonPath("$.data.destination").value("佛山禅城工地 A 区"))
+                .andExpect(jsonPath("$.data.monthlyRentalPrice").value(8800.00))
+                .andExpect(jsonPath("$.data.rentalPrice").value(8800.00))
+                .andExpect(jsonPath("$.data.status").value("ACTIVE"))
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+        JsonNode rental = objectMapper.readTree(rentalResponse).path("data");
+        rentalsToCleanup.add(rental.path("id").asLong());
+
+        mockMvc.perform(get("/api/statistics/finance")
+                        .param("year", "2026")
+                        .header("Authorization", bearer(superToken)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.annualSummary.rentalIncome").value(8800.00))
+                .andExpect(jsonPath("$.data.annualSummary.rentalOrders").value(1))
+                .andExpect(jsonPath("$.data.topRentals[0].destination").value("佛山禅城工地 A 区"));
+
+        Map<String, Object> outboundWhileRented = new LinkedHashMap<>();
+        outboundWhileRented.put("machineId", machine.path("id").asLong());
+        outboundWhileRented.put("machineVersion", machine.path("version").asLong());
+        outboundWhileRented.put("customerId", customer.path("id").asLong());
+        outboundWhileRented.put("salesDate", "2026-05-28");
+        outboundWhileRented.put("settlementPrice", "120000.00");
+        outboundWhileRented.put("operator", "rental-test");
+
+        mockMvc.perform(post("/api/outbound-orders/vehicle")
+                        .header("Authorization", bearer(superToken))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json(outboundWhileRented)))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value(409));
+
+        Map<String, Object> returnedPayload = new LinkedHashMap<>();
+        returnedPayload.put("version", rental.path("version").asLong());
+        returnedPayload.put("customerId", customer.path("id").asLong());
+        returnedPayload.put("destination", "佛山禅城工地 A 区");
+        returnedPayload.put("monthlyRentalPrice", "8800.00");
+        returnedPayload.put("startDate", "2026-05-27");
+        returnedPayload.put("endDate", "2026-05-29");
+        returnedPayload.put("status", "RETURNED");
+        returnedPayload.put("operator", "rental-test");
+        returnedPayload.put("remark", "已归还");
+
+        mockMvc.perform(put("/api/rentals/{id}", rental.path("id").asLong())
+                        .header("Authorization", bearer(superToken))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json(returnedPayload)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.status").value("RETURNED"))
+                .andExpect(jsonPath("$.data.endDate").value("2026-05-29"));
+
+        String orderResponse = mockMvc.perform(post("/api/outbound-orders/vehicle")
+                        .header("Authorization", bearer(superToken))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json(outboundWhileRented)))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.data.resourceType").value("MACHINE"))
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+        ordersToCleanup.add(objectMapper.readTree(orderResponse).path("data").path("id").asLong());
     }
 
     @Test

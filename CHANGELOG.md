@@ -2,6 +2,127 @@
 
 本项目遵循 [语义化版本](https://semver.org/lang/zh-CN/) 和 [Keep a Changelog](https://keepachangelog.com/zh-CN/) 规范。
 
+## [0.1.38] - 2026-05-27 - Codex
+
+### 修复
+- **总览与车辆库存数据加载稳定性**
+  - 修复总览并发加载分页出库订单、租赁记录和车辆台账全量引用时，`outboundOrders` / `rentals` 前端状态被相互覆盖的问题，避免总览统计、车辆台账阶段和销售/租赁按钮在大数据量下随机不一致。
+  - 修复未租赁车辆进入总览和车辆台账时，前端把空租赁记录传给 `rentalMonthlyPrice()` 导致 `Cannot read properties of null (reading 'monthlyRentalPrice')` 的问题。
+  - 车辆库存页统一通过 `loadVehicleFlowReferences()` 补齐全量出库订单与租赁引用；总览先保留分页总数，再补齐车辆流转引用，避免分页数据和全量引用抢写同一状态。
+  - Service Worker 缓存版本升级为 `forklift-erp-client-v33`，避免浏览器继续使用旧版总览/车辆库存脚本。
+
+### 验证
+- 内置 Node：`node --check src\main\resources\static\assets\app.js` 通过。
+- Java 21：`.\mvnw.cmd test` 通过，累计 `17` 个测试通过。
+- 本地接口验证：`http://127.0.0.1:8102/` 可登录并成功访问总览/车辆库存依赖接口，`/api/inventory`、`/api/parts`、`/api/repairs`、`/api/outbound-orders`、`/api/rentals` 均返回正常分页或列表数据。
+
+## [0.1.37] - 2026-05-27 - Codex
+
+### 新增
+- **车辆租赁管理**
+  - 新增 `rental_record` 租赁记录表与 `/api/rentals` 接口，可按具体车号登记租赁去向、月租价格、开始/结束日期、经办人、备注和租赁状态。
+  - 租赁去向改为关联客户列表，后端保存时同步快照客户名称/地址；未填写具体去向时自动使用客户地址或公司名称。
+  - 前端新增“租赁管理”页，支持新增、编辑、删除租赁记录；车辆台账会标记“租赁中”，并显示租赁去向、月租价格和起租日期。
+  - 租赁中的车辆会从销售出库下拉中排除，后端也会阻止活跃租赁车辆创建整车销售出库订单；租赁状态改为“已归还”后可继续销售出库。
+- **维修记录录入优化**
+  - 维修记录移除手填车辆 ID 和工时录入，车号改为从车辆库存可搜索下拉选择，租赁中的车辆在列表和维修记录中显示“租赁中”标记。
+  - 维修客户从客户列表选择，使用配件从配件库存选择；维修人员从普通用户列表选择并排除管理员/超级管理员，同时保留“其他”选项表示外部人员维修。
+  - 维修状态改为按钮式切换；维修费和配件费填写后自动计算总费用，后端保存时也会重新按两项费用合计。
+
+### 统计
+- **租赁收入纳入财报**
+  - `/api/statistics/finance` 新增租赁收入、租赁单数和年度租赁收入 TOP，年度总收入同步包含出库、维修和租赁收入。
+  - 统计页新增租赁收入汇总、月度/年度租赁字段和租赁收入排行。
+
+### 验证
+- 内置 Node：`node --check src\main\resources\static\assets\app.js` 与 `node --check src\main\resources\static\assets\modules\routes.js` 通过。
+- Java 21：`.\mvnw.cmd test` 与 `.\mvnw.cmd package -DskipTests` 通过，覆盖租赁记录创建、统计收入、租赁中禁止销售出库和归还后允许出库。
+- 本地 jar：`http://127.0.0.1:8102/` 返回 `200`，`/assets/app.js` 包含 `monthlyRentalPrice`、`repairPersonChoice`、`repairPartOptions`、`status-toggle-group`、`repairVehicleSummary` 和 `rentalMonthlyPrice`，`/assets/modules/routes.js` 包含 `repair-users`，`/sw.js` 包含 `forklift-erp-client-v30`。
+- Service Worker 缓存版本升级为 `forklift-erp-client-v30`。
+
+## [0.1.36] - 2026-05-27 - Codex
+
+### 新增
+- **订单合同附件入口**
+  - 标记为“有合同”的订单在订单列表、车辆台账和整车详情中显示“上传合同”按钮；上传后显示“下载合同”，可像发票一样替换和下载原文件。
+  - 总览新增“订单附件”待办区，将待上传发票和待上传合同集中展示，并可直接打开对应上传弹窗。
+
+### 优化
+- **总览可用性**
+  - 总览新增销售闭环阶段按钮，按在库待销售、待收款、待报销售、待申请发票、待上传合同、维修跟进和配件预警快速跳转到对应业务页。
+  - 订单列表的发票/合同上传下载统一保留在操作列，发票跟进和上牌/合同列只显示状态与文件信息，避免按钮挤压重叠。
+  - Service Worker 缓存版本升级为 `forklift-erp-client-v28`。
+
+### 验证
+- 内置 Node：`node --check src\main\resources\static\assets\app.js` 与 `node --check src\main\resources\static\sw.js` 通过。
+- Java 21：`.\mvnw.cmd -Dtest=OutboundOrderIntegrationTests test`、`.\mvnw.cmd test`、`.\mvnw.cmd package -DskipTests` 均通过。
+- 本地 jar：`http://127.0.0.1:8101/` 返回 `200`，`/assets/app.js` 与 `/assets/app.css` 包含合同上传入口、总览阶段按钮和附件待办样式，`/sw.js` 包含 `forklift-erp-client-v28`。
+
+## [0.1.35] - 2026-05-27 - Codex
+
+### 新增
+- **启动自动补齐演示测试数据**
+  - 新增 `DemoDataInitializer`，本地启动时幂等补齐改装工单演示数据：演示客户、演示整车 `DEMO-MOD-001`、轮胎配置字典、实心胎库存配件和一张待处理改装工单。
+  - 新增 `forklift.seed-demo-data.enabled` 配置，默认本地开启，可通过 `FORKLIFT_ERP_SEED_DEMO_DATA=false` 关闭；测试环境显式关闭，避免污染集成测试库。
+
+### 修复
+- **改装工单预填与库存详情操作**
+  - 修复改装工单灰色预填项在级联下拉中只显示、不参与校验/提交的问题；车型、车号、原配置保留灰色提示时也会作为有效 payload 提交。
+  - 修复车辆库存详情/车型详情中的改装工单“完成”“取消”按钮依赖全局工单列表的问题，改为从当前详情卡片读取工单并按对应车辆刷新详情。
+  - Service Worker 缓存版本升级为 `forklift-erp-client-v26`。
+
+### 验证
+- 内置 Node：`node --check src\main\resources\static\assets\app.js` 与 `node --check src\main\resources\static\sw.js` 通过。
+- Java 21：`.\mvnw.cmd -Dtest=ModificationWorkOrderIntegrationTests test`、`.\mvnw.cmd test`、`.\mvnw.cmd package -DskipTests` 均通过。
+- 启动验证：`java -jar target\forklift-erp-0.0.1-SNAPSHOT.jar --spring.main.web-application-type=none --forklift.seed-demo-data.enabled=true` 成功连接 `forklift_erp` 并完成幂等初始化。
+
+## [0.1.34] - 2026-05-27 - Codex
+
+### 修复
+- **测试运行隔离业务库**
+  - 新增 `src/test/resources/application.yml`，让 `mvnw test` 默认连接 `forklift_erp_test`，避免管理员清库集成测试误清平时使用的 `forklift_erp` 业务库。
+  - 测试配置补齐独立 JWT 参数，并显式关闭 Flyway clean，保留迁移验证能力但隔离破坏性测试数据。
+
+### 数据
+- **补充系统测试数据**
+  - 未执行业务数据 reset，直接通过真实 API 复用或补齐 `D:\erp\00整机进出库管理明细表.xlsx` 的整车、客户和整车出库订单数据。
+  - 补充库存/配置/配件测试数据，将在库整车补到 `260` 台，为 `1450` 台整车写入配置，并新增 `24` 项常用配件样例。
+
+### 验证
+- Java 21：`.\mvnw.cmd test` 通过，累计 `16` 个测试通过；启动日志确认测试库为 `jdbc:mysql://localhost:3306/forklift_erp_test`。
+- API 导入：`scripts\import_workbook_full_data.py --base-url http://127.0.0.1:8080` 完成，最终 `1450` 台整车、`445` 个客户、`1290` 条整车出库订单。
+- API 种子：`scripts\seed_inventory_test_data.py --base-url http://127.0.0.1:8080 --target-instock 260` 完成，最终 `1450` 台整车、`260` 台在库、`24` 项配件、配件总库存 `586`。
+
+## [0.1.33] - 2026-05-26 - Codex
+
+### 新增
+- **整车详情新增配件**
+  - 具体整车详情和车型详情选中单车后新增“新增配件”入口，打开配件档案弹窗时自动带入来源车辆、适配车型、来源说明和默认数量。
+  - 整车详情新增“关联配件”区块，按来源车辆显示已关联的配件编码、名称、分类和库存，并可直接编辑对应配件档案。
+
+### 修复
+- **订单发票上传入口**
+  - 订单列表中点击发票跟进切换为“已申请发票”后立即显示“上传发票”按钮。
+  - 后端发票上传校验同步调整为“已申请发票或已开票”均可上传，避免前端出现入口后接口仍拒绝。
+  - Service Worker 缓存版本升级为 `forklift-erp-client-v24`。
+
+### 验证
+- 内置 Node：`node --check src\main\resources\static\assets\app.js` 与 `node --check src\main\resources\static\sw.js` 通过。
+- Java 21：`.\mvnw.cmd -Dtest=OutboundOrderIntegrationTests test`、`.\mvnw.cmd test`、`.\mvnw.cmd package -DskipTests` 均通过。
+- 本地 jar：`https://127.0.0.1:8097/` 返回 `200`，`/assets/app.js` 包含 `create-vehicle-part` 与 `isInvoiceUploadReady`，`/sw.js` 包含 `forklift-erp-client-v24`。
+
+## [0.1.32] - 2026-05-26 - xrkht
+
+### 新增
+- **龙工配件采购明细导入**
+  - 新增 `scripts/import_parts_purchase_workbook.py`，可读取 `D:\erp\龙工配件采购明细2024.xlsx` 的 `配件对账单明细`，按物料号汇总采购数量并通过真实 API 写入配件库存。
+  - 导入时以物料号作为配件编码，自动带入项目名称、规格/型号、单位、采购均价、最近入库日期和采购备注；重复运行时会复用或更新已有配件，避免重复建档。
+
+### 验证
+- 内置 Python：`python -m py_compile scripts\import_parts_purchase_workbook.py` 通过。
+- API 恢复：在 `https://127.0.0.1:8080` 从 `00整机进出库管理明细表.xlsx` 恢复 `1450` 台车辆、`445` 个客户、`1290` 条整车出库订单；从 `龙工配件采购明细2024.xlsx` 恢复 `172` 个配件，配件库存总数量 `4232`。
+- API 复核：`/api/inventory` 返回 `1450` 条，`/api/parts` 返回 `172` 条，`/api/customers` 返回 `445` 条，`/api/outbound-orders` 返回 `1290` 条，`/api/logs` 返回 `6204` 条。
+
 ## [0.1.31] - 2026-05-26 - xrkht
 
 ### 修复

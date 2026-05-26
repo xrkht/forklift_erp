@@ -50,6 +50,9 @@ public class RepairRecord implements CollaborativeResource {
     @Column(name = "vehicle_number", length = 100)
     private String vehicleNumber;
 
+    @Column(name = "customer_id")
+    private Long customerId;
+
     /**
      * 客户名称
      */
@@ -84,11 +87,20 @@ public class RepairRecord implements CollaborativeResource {
     @Column(name = "repair_person", length = 50)
     private String repairPerson;
 
+    @Column(name = "repair_person_user_id")
+    private Long repairPersonUserId;
+
+    @Column(name = "repair_external")
+    private Boolean repairExternal = false;
+
     /**
      * 使用的配件（可用于关联配件出库）
      */
     @Column(name = "used_parts", length = 500)
     private String usedParts;
+
+    @Column(name = "used_part_ids", length = 500)
+    private String usedPartIds;
 
     /**
      * 工时（小时）

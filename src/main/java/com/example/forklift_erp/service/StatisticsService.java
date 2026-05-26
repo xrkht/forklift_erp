@@ -4,10 +4,12 @@ import com.example.forklift_erp.dto.StatisticsDashboardVO;
 import com.example.forklift_erp.entity.MachineInventory;
 import com.example.forklift_erp.entity.PartInventory;
 import com.example.forklift_erp.entity.RepairRecord;
+import com.example.forklift_erp.entity.RentalRecord;
 import com.example.forklift_erp.entity.StockOperationLog;
 import com.example.forklift_erp.repository.MachineInventoryRepository;
 import com.example.forklift_erp.repository.PartInventoryRepository;
 import com.example.forklift_erp.repository.RepairRecordRepository;
+import com.example.forklift_erp.repository.RentalRecordRepository;
 import com.example.forklift_erp.repository.StockOperationLogRepository;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
@@ -41,6 +43,9 @@ public class StatisticsService {
     @Autowired
     private RepairRecordRepository repairRecordRepository;
 
+    @Autowired
+    private RentalRecordRepository rentalRecordRepository;
+
     public StatisticsDashboardVO financeDashboard(Integer year) {
         int selectedYear = year == null ? LocalDate.now().getYear() : year;
         Map<Long, MachineInventory> machines = machineInventoryRepository.findAll().stream()
@@ -50,15 +55,17 @@ public class StatisticsService {
                 .collect(Collectors.toMap(PartInventory::getId, Function.identity(), (a, b) -> a));
         List<StockOperationLog> stockLogs = stockOperationLogRepository.findAllByOrderByCreatedAtDesc();
         List<RepairRecord> repairs = repairRecordRepository.findAll();
+        List<RentalRecord> rentals = rentalRecordRepository.findAllByOrderByCreatedAtDesc();
 
         StatisticsDashboardVO dashboard = new StatisticsDashboardVO();
         dashboard.setSelectedYear(selectedYear);
         dashboard.setGeneratedAt(LocalDateTime.now());
-        dashboard.setMonthlyFinance(buildMonthlyRows(selectedYear, stockLogs, repairs, machines, parts));
-        dashboard.setYearlyFinance(buildYearlyRows(stockLogs, repairs, machines, parts));
+        dashboard.setMonthlyFinance(buildMonthlyRows(selectedYear, stockLogs, repairs, rentals, machines, parts));
+        dashboard.setYearlyFinance(buildYearlyRows(stockLogs, repairs, rentals, machines, parts));
         dashboard.setAnnualSummary(sumRows(String.valueOf(selectedYear), dashboard.getMonthlyFinance()));
         dashboard.setResourceFlows(buildResourceFlows(selectedYear, stockLogs, machines, parts));
         dashboard.setTopOutbounds(buildTopOutbounds(selectedYear, stockLogs, machines, parts));
+        dashboard.setTopRentals(buildTopRentals(selectedYear, rentals));
         dashboard.setStockValues(buildStockValues(machines.values().stream().toList(), parts.values().stream().toList()));
         dashboard.setLowStocks(buildLowStocks(machines.values().stream().toList(), parts.values().stream().toList()));
         return dashboard;
@@ -68,6 +75,7 @@ public class StatisticsService {
             int selectedYear,
             List<StockOperationLog> stockLogs,
             List<RepairRecord> repairs,
+            List<RentalRecord> rentals,
             Map<Long, MachineInventory> machines,
             Map<Long, PartInventory> parts
     ) {
@@ -90,6 +98,13 @@ public class StatisticsService {
             }
             addRepairToFinancial(rows.get(YearMonth.from(repair.getRepairDate()).toString()), repair);
         }
+        for (RentalRecord rental : rentals) {
+            LocalDate rentalDate = rentalDate(rental);
+            if (rentalDate == null || rentalDate.getYear() != selectedYear) {
+                continue;
+            }
+            addRentalToFinancial(rows.get(YearMonth.from(rentalDate).toString()), rental);
+        }
         rows.values().forEach(this::finishFinancialRow);
         return rows.values().stream().toList();
     }
@@ -97,6 +112,7 @@ public class StatisticsService {
     private List<StatisticsDashboardVO.FinancialRow> buildYearlyRows(
             List<StockOperationLog> stockLogs,
             List<RepairRecord> repairs,
+            List<RentalRecord> rentals,
             Map<Long, MachineInventory> machines,
             Map<Long, PartInventory> parts
     ) {
@@ -120,6 +136,17 @@ public class StatisticsService {
                     this::newFinancialRow
             );
             addRepairToFinancial(row, repair);
+        }
+        for (RentalRecord rental : rentals) {
+            LocalDate rentalDate = rentalDate(rental);
+            if (rentalDate == null) {
+                continue;
+            }
+            StatisticsDashboardVO.FinancialRow row = rows.computeIfAbsent(
+                    String.valueOf(rentalDate.getYear()),
+                    this::newFinancialRow
+            );
+            addRentalToFinancial(row, rental);
         }
         rows.values().forEach(this::finishFinancialRow);
         return rows.values().stream()
@@ -202,6 +229,31 @@ public class StatisticsService {
                 .toList();
     }
 
+    private List<StatisticsDashboardVO.TopRentalRow> buildTopRentals(
+            int selectedYear,
+            List<RentalRecord> rentals
+    ) {
+        return rentals.stream()
+                .filter(rental -> {
+                    LocalDate rentalDate = rentalDate(rental);
+                    return rentalDate != null && rentalDate.getYear() == selectedYear;
+                })
+                .sorted(Comparator.comparing(this::rentalAmount, Comparator.nullsLast(Comparator.naturalOrder())).reversed())
+                .limit(8)
+                .map(rental -> {
+                    StatisticsDashboardVO.TopRentalRow row = new StatisticsDashboardVO.TopRentalRow();
+                    row.setRentalNo(rental.getRentalNo());
+                    row.setVehicleNumber(rental.getVehicleNumber());
+                    row.setMachineName(rental.getMachineName());
+                    row.setSpecificationModel(rental.getSpecificationModel());
+                    row.setDestination(rental.getDestination());
+                    row.setStatus(rental.getStatus());
+                    row.setRentalPrice(rentalAmount(rental));
+                    return row;
+                })
+                .toList();
+    }
+
     private List<StatisticsDashboardVO.StockValueRow> buildStockValues(
             List<MachineInventory> machines,
             List<PartInventory> parts
@@ -275,10 +327,12 @@ public class StatisticsService {
             sum.setOutboundCost(sum.getOutboundCost().add(row.getOutboundCost()));
             sum.setGrossProfit(sum.getGrossProfit().add(row.getGrossProfit()));
             sum.setRepairIncome(sum.getRepairIncome().add(row.getRepairIncome()));
+            sum.setRentalIncome(sum.getRentalIncome().add(row.getRentalIncome()));
             sum.setTotalIncome(sum.getTotalIncome().add(row.getTotalIncome()));
             sum.setInboundQuantity(sum.getInboundQuantity() + row.getInboundQuantity());
             sum.setOutboundQuantity(sum.getOutboundQuantity() + row.getOutboundQuantity());
             sum.setRepairOrders(sum.getRepairOrders() + row.getRepairOrders());
+            sum.setRentalOrders(sum.getRentalOrders() + row.getRentalOrders());
         }
         return sum;
     }
@@ -321,8 +375,30 @@ public class StatisticsService {
         row.setRepairOrders(row.getRepairOrders() + 1);
     }
 
+    private void addRentalToFinancial(StatisticsDashboardVO.FinancialRow row, RentalRecord rental) {
+        if (row == null) {
+            return;
+        }
+        row.setRentalIncome(row.getRentalIncome().add(rentalAmount(rental)));
+        row.setRentalOrders(row.getRentalOrders() + 1);
+    }
+
+    private BigDecimal rentalAmount(RentalRecord rental) {
+        if (rental.getMonthlyRentalPrice() != null) {
+            return rental.getMonthlyRentalPrice();
+        }
+        return rental.getRentalPrice() == null ? BigDecimal.ZERO : rental.getRentalPrice();
+    }
+
     private void finishFinancialRow(StatisticsDashboardVO.FinancialRow row) {
-        row.setTotalIncome(row.getOutboundRevenue().add(row.getRepairIncome()));
+        row.setTotalIncome(row.getOutboundRevenue().add(row.getRepairIncome()).add(row.getRentalIncome()));
+    }
+
+    private LocalDate rentalDate(RentalRecord rental) {
+        if (rental.getStartDate() != null) {
+            return rental.getStartDate();
+        }
+        return rental.getCreatedAt() == null ? null : rental.getCreatedAt().toLocalDate();
     }
 
     private Price priceFor(

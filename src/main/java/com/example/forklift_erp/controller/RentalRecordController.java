@@ -1,0 +1,82 @@
+package com.example.forklift_erp.controller;
+
+import com.example.forklift_erp.common.Result;
+import com.example.forklift_erp.dto.RentalRecordCreateDTO;
+import com.example.forklift_erp.dto.RentalRecordUpdateDTO;
+import com.example.forklift_erp.dto.RentalRecordVO;
+import com.example.forklift_erp.service.RentalRecordService;
+import com.example.forklift_erp.util.ListPageSupport;
+import jakarta.validation.Valid;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.HttpStatus;
+import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.web.bind.annotation.DeleteMapping;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.ResponseStatus;
+import org.springframework.web.bind.annotation.RestController;
+
+import java.util.List;
+
+@RestController
+@RequestMapping("/api/rentals")
+public class RentalRecordController {
+    @Autowired
+    private RentalRecordService service;
+
+    @GetMapping
+    @PreAuthorize("@permissionService.hasPermission(authentication, 'stock:adjust')")
+    public Result<?> getAll(@RequestParam(defaultValue = "false") boolean paged,
+                            @RequestParam(required = false) String keyword,
+                            @RequestParam(required = false) Integer page,
+                            @RequestParam(required = false) Integer size) {
+        List<RentalRecordVO> list = service.findAll();
+        if (paged) {
+            List<RentalRecordVO> filtered = ListPageSupport.filter(list, keyword, row -> ListPageSupport.text(
+                    row.getRentalNo(),
+                    row.getVehicleNumber(),
+                    row.getMachineName(),
+                    row.getSpecificationModel(),
+                    row.getCustomerName(),
+                    row.getCustomerAddress(),
+                    row.getDestination(),
+                    row.getStatus(),
+                    row.getOperator(),
+                    row.getRemark()
+            ));
+            return Result.success(ListPageSupport.page(filtered, page, size));
+        }
+        return Result.success(list);
+    }
+
+    @GetMapping("/{id}")
+    @PreAuthorize("@permissionService.hasPermission(authentication, 'stock:adjust')")
+    public Result<RentalRecordVO> getById(@PathVariable Long id) {
+        return Result.success(service.findById(id));
+    }
+
+    @PostMapping
+    @ResponseStatus(HttpStatus.CREATED)
+    @PreAuthorize("@permissionService.hasPermission(authentication, 'stock:adjust')")
+    public Result<RentalRecordVO> create(@Valid @RequestBody RentalRecordCreateDTO request) {
+        return Result.success("租赁记录创建成功", service.create(request));
+    }
+
+    @PutMapping("/{id}")
+    @PreAuthorize("@permissionService.hasPermission(authentication, 'stock:adjust')")
+    public Result<RentalRecordVO> update(@PathVariable Long id, @Valid @RequestBody RentalRecordUpdateDTO request) {
+        return Result.success("租赁记录更新成功", service.update(id, request));
+    }
+
+    @DeleteMapping("/{id}")
+    @PreAuthorize("@permissionService.hasPermission(authentication, 'stock:adjust')")
+    public Result<Void> delete(@PathVariable Long id, @RequestParam(required = false) Long version) {
+        service.delete(id, version);
+        return Result.success("租赁记录删除成功", null);
+    }
+}

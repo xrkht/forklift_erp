@@ -16,6 +16,7 @@ public class StatisticsDashboardVO {
     private List<FinancialRow> yearlyFinance = new ArrayList<>();
     private List<ResourceFlowRow> resourceFlows = new ArrayList<>();
     private List<TopOutboundRow> topOutbounds = new ArrayList<>();
+    private List<TopRentalRow> topRentals = new ArrayList<>();
     private List<StockValueRow> stockValues = new ArrayList<>();
     private List<LowStockRow> lowStocks = new ArrayList<>();
 
@@ -27,10 +28,12 @@ public class StatisticsDashboardVO {
         private BigDecimal outboundCost = BigDecimal.ZERO;
         private BigDecimal grossProfit = BigDecimal.ZERO;
         private BigDecimal repairIncome = BigDecimal.ZERO;
+        private BigDecimal rentalIncome = BigDecimal.ZERO;
         private BigDecimal totalIncome = BigDecimal.ZERO;
         private Integer inboundQuantity = 0;
         private Integer outboundQuantity = 0;
         private Integer repairOrders = 0;
+        private Integer rentalOrders = 0;
     }
 
     @Data
@@ -53,6 +56,17 @@ public class StatisticsDashboardVO {
         private BigDecimal revenue = BigDecimal.ZERO;
         private BigDecimal cost = BigDecimal.ZERO;
         private BigDecimal grossProfit = BigDecimal.ZERO;
+    }
+
+    @Data
+    public static class TopRentalRow {
+        private String rentalNo;
+        private String vehicleNumber;
+        private String machineName;
+        private String specificationModel;
+        private String destination;
+        private String status;
+        private BigDecimal rentalPrice = BigDecimal.ZERO;
     }
 
     @Data

@@ -108,21 +108,7 @@ public class RepairRecordController {
                 .orElseThrow(() -> new BusinessException(ResultCode.NOT_FOUND, "维修记录不存在"));
         // 由于 update 权限通常允许修改所有字段，这里直接覆盖属性
         collaborationService.validateWrite(record, dto.getVersion());
-        record.setRepairDate(dto.getRepairDate());
-        record.setMachineId(dto.getMachineId());
-        record.setVehicleNumber(dto.getVehicleNumber());
-        record.setCustomerName(dto.getCustomerName());
-        record.setCustomerAddress(dto.getCustomerAddress());
-        record.setFaultDescription(dto.getFaultDescription());
-        record.setRepairContent(dto.getRepairContent());
-        record.setRepairPerson(dto.getRepairPerson());
-        record.setUsedParts(dto.getUsedParts());
-        record.setWorkHours(dto.getWorkHours());
-        record.setRepairFee(dto.getRepairFee());
-        record.setPartsFee(dto.getPartsFee());
-        record.setTotalFee(dto.getTotalFee());
-        record.setStatus(dto.getStatus());
-        record.setRemarks(dto.getRemarks());
+        dto.applyToEntity(record);
         RepairRecord saved = repairService.save(record);
         operationAuditService.record("维修工单", "UPDATE", "REPAIR", saved.getId(),
                 saved.getVehicleNumber(), saved.getCustomerName(), "更新维修工单：" + saved.getStatus(),

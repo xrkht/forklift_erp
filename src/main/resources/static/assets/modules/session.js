@@ -40,7 +40,9 @@ export function createApiClient(getToken) {
 
     const payload = await response.json().catch(() => null);
     if (response.status === 401 || payload?.code === 401) {
-      throw new Error("未登录或登录已过期");
+      const error = new Error("未登录或登录已过期");
+      error.authExpired = true;
+      throw error;
     }
     if (!response.ok) {
       throw new Error(payload?.message || `请求失败：${response.status}`);

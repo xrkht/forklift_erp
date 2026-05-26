@@ -25,4 +25,8 @@ public interface OutboundOrderService {
     OutboundOrderVO uploadInvoice(Long id, MultipartFile file);
 
     OutboundInvoiceDownload downloadInvoice(Long id);
+
+    OutboundOrderVO uploadContract(Long id, MultipartFile file);
+
+    OutboundInvoiceDownload downloadContract(Long id);
 }

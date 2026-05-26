@@ -195,6 +195,19 @@ public class AuthController {
         return Result.success(users);
     }
 
+    @GetMapping("/repair-users")
+    @PreAuthorize("@permissionService.hasPermission(authentication, 'repair:write')")
+    public Result<List<UserSummaryResponse>> listRepairUsers() {
+        List<UserSummaryResponse> users = userRepository.findAll().stream()
+                .filter(User::isEnabled)
+                .filter(user -> user.getRoles().stream()
+                        .noneMatch(role -> "ADMIN".equals(role.getName()) || "SUPER_ADMIN".equals(role.getName())))
+                .sorted(Comparator.comparing(User::getId).reversed())
+                .map(user -> UserSummaryResponse.fromEntity(user, permissionService.findPermissionCodes(user)))
+                .toList();
+        return Result.success(users);
+    }
+
     @PostMapping("/register")
     @PreAuthorize("@permissionService.hasPermission(authentication, 'user:write')")
     public Result<?> register(@Valid @RequestBody RegisterRequest request) {

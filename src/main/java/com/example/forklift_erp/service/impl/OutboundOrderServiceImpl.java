@@ -16,6 +16,7 @@ import com.example.forklift_erp.repository.CustomerRepository;
 import com.example.forklift_erp.repository.MachineInventoryRepository;
 import com.example.forklift_erp.repository.OutboundOrderRepository;
 import com.example.forklift_erp.repository.PartInventoryRepository;
+import com.example.forklift_erp.repository.RentalRecordRepository;
 import com.example.forklift_erp.repository.StockOperationLogRepository;
 import com.example.forklift_erp.service.CollaborationService;
 import com.example.forklift_erp.service.OperationAuditService;
@@ -58,8 +59,12 @@ public class OutboundOrderServiceImpl implements OutboundOrderService {
     private static final String SOURCE_TYPE = "OUTBOUND_ORDER";
     private static final DateTimeFormatter ORDER_NO_TIME = DateTimeFormatter.ofPattern("yyyyMMddHHmmssSSS");
     private static final long MAX_INVOICE_FILE_SIZE = 20L * 1024 * 1024;
+    private static final long MAX_CONTRACT_FILE_SIZE = 20L * 1024 * 1024;
     private static final Set<String> ALLOWED_INVOICE_EXTENSIONS = new HashSet<>(Arrays.asList(
             "pdf", "ofd", "jpg", "jpeg", "png", "webp"
+    ));
+    private static final Set<String> ALLOWED_CONTRACT_EXTENSIONS = new HashSet<>(Arrays.asList(
+            "pdf", "ofd", "doc", "docx", "jpg", "jpeg", "png", "webp"
     ));
 
     @Autowired
@@ -75,6 +80,9 @@ public class OutboundOrderServiceImpl implements OutboundOrderService {
     private PartInventoryRepository partRepository;
 
     @Autowired
+    private RentalRecordRepository rentalRecordRepository;
+
+    @Autowired
     private StockOperationLogRepository stockOperationLogRepository;
 
     @Autowired
@@ -88,6 +96,9 @@ public class OutboundOrderServiceImpl implements OutboundOrderService {
 
     @Value("${forklift-erp.invoice-storage-dir:${FORKLIFT_ERP_INVOICE_STORAGE_DIR:uploads/invoices}}")
     private String invoiceStorageDir;
+
+    @Value("${forklift-erp.contract-storage-dir:${FORKLIFT_ERP_CONTRACT_STORAGE_DIR:uploads/contracts}}")
+    private String contractStorageDir;
 
     @Override
     @Transactional(readOnly = true)
@@ -121,6 +132,9 @@ public class OutboundOrderServiceImpl implements OutboundOrderService {
         int before = machine.getInventoryCount() == null ? 0 : machine.getInventoryCount();
         if (before < 1) {
             throw new BusinessException(ResultCode.INSUFFICIENT_STOCK, "整车不在库，不能出库");
+        }
+        if (rentalRecordRepository.existsByMachineIdAndStatus(machine.getId(), "ACTIVE")) {
+            throw new BusinessException(ResultCode.CONFLICT, "车辆正在租赁中，不能创建销售出库订单");
         }
 
         Customer customer = findCustomer(request.getCustomerId());
@@ -391,6 +405,73 @@ public class OutboundOrderServiceImpl implements OutboundOrderService {
         }
     }
 
+    @Override
+    @Transactional
+    public OutboundOrderVO uploadContract(Long id, MultipartFile file) {
+        OutboundOrder order = outboundOrderRepository.findByIdForUpdate(id)
+                .orElseThrow(() -> new BusinessException(ResultCode.NOT_FOUND, "出库订单不存在"));
+        ensureOrderVisible(order);
+        validateContractUpload(order, file);
+
+        String originalName = cleanOriginalContractName(file.getOriginalFilename());
+        String extension = Objects.requireNonNull(StringUtils.getFilenameExtension(originalName)).toLowerCase(Locale.ROOT);
+        String storedFileName = "order-" + order.getId() + "-" + UUID.randomUUID()
+                .toString()
+                .replace("-", "")
+                + "." + extension;
+        Path target = contractStorageRoot().resolve(storedFileName).normalize();
+        String previousFileName = order.getContractStoredFileName();
+
+        try {
+            Files.createDirectories(contractStorageRoot());
+            try (InputStream inputStream = file.getInputStream()) {
+                Files.copy(inputStream, target, StandardCopyOption.REPLACE_EXISTING);
+            }
+        } catch (IOException e) {
+            throw new BusinessException(ResultCode.SYSTEM_ERROR, "合同文件保存失败");
+        }
+
+        order.setContractStoredFileName(storedFileName);
+        order.setContractOriginalName(originalName);
+        order.setContractContentType(firstNonBlank(file.getContentType(), probeContentType(target), "application/octet-stream"));
+        order.setContractFileSize(file.getSize());
+        order.setContractUploadedAt(LocalDateTime.now());
+        collaborationService.stampWrite(order);
+
+        OutboundOrder saved = outboundOrderRepository.saveAndFlush(order);
+        deleteStoredContract(previousFileName);
+        operationAuditService.record("订单列表", "UPLOAD_CONTRACT", "OUTBOUND_ORDER", saved.getId(),
+                saved.getOrderNo(), saved.getCustomerName(), "上传订单合同 " + originalName,
+                saved.getOperator(), saved.getOrderRemark(), SOURCE_TYPE, saved.getId());
+        return OutboundOrderVO.fromEntity(saved);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public OutboundInvoiceDownload downloadContract(Long id) {
+        OutboundOrder order = visibleOrderById(id)
+                .orElseThrow(() -> new BusinessException(ResultCode.NOT_FOUND, "出库订单不存在"));
+        if (order.getContractStoredFileName() == null || order.getContractStoredFileName().isBlank()) {
+            throw new BusinessException(ResultCode.NOT_FOUND, "该订单尚未上传合同");
+        }
+
+        Path filePath = resolveContractFile(order.getContractStoredFileName());
+        if (!Files.isRegularFile(filePath)) {
+            throw new BusinessException(ResultCode.NOT_FOUND, "合同文件不存在");
+        }
+        try {
+            Resource resource = new UrlResource(filePath.toUri());
+            return new OutboundInvoiceDownload(
+                    resource,
+                    firstNonBlank(order.getContractOriginalName(), "contract-" + order.getOrderNo()),
+                    firstNonBlank(order.getContractContentType(), "application/octet-stream"),
+                    Files.size(filePath)
+            );
+        } catch (IOException e) {
+            throw new BusinessException(ResultCode.SYSTEM_ERROR, "合同文件读取失败");
+        }
+    }
+
     private Optional<OutboundOrder> visibleOrderById(Long id) {
         if (SecurityUtils.isAdminOrSuperAdmin()) {
             return outboundOrderRepository.findById(id);
@@ -554,8 +635,8 @@ public class OutboundOrderServiceImpl implements OutboundOrderService {
     }
 
     private void validateInvoiceUpload(OutboundOrder order, MultipartFile file) {
-        if (!isInvoiceIssued(order)) {
-            throw new BusinessException(ResultCode.PARAM_ERROR, "订单尚未登记为已开票，请先填写开票日期或开票情况");
+        if (!isInvoiceUploadReady(order)) {
+            throw new BusinessException(ResultCode.PARAM_ERROR, "订单尚未申请发票，请先将发票跟进改为已申请发票");
         }
         if (file == null || file.isEmpty()) {
             throw new BusinessException(ResultCode.PARAM_ERROR, "请先选择发票文件");
@@ -570,7 +651,27 @@ public class OutboundOrderServiceImpl implements OutboundOrderService {
         }
     }
 
-    private boolean isInvoiceIssued(OutboundOrder order) {
+    private void validateContractUpload(OutboundOrder order, MultipartFile file) {
+        if (!isContractUploadReady(order)) {
+            throw new BusinessException(ResultCode.PARAM_ERROR, "订单尚未标记为有合同，请先将合同状态改为有合同");
+        }
+        if (file == null || file.isEmpty()) {
+            throw new BusinessException(ResultCode.PARAM_ERROR, "请先选择合同文件");
+        }
+        if (file.getSize() > MAX_CONTRACT_FILE_SIZE) {
+            throw new BusinessException(ResultCode.PARAM_ERROR, "合同文件不能超过20MB");
+        }
+        String originalName = cleanOriginalContractName(file.getOriginalFilename());
+        String extension = StringUtils.getFilenameExtension(originalName);
+        if (extension == null || !ALLOWED_CONTRACT_EXTENSIONS.contains(extension.toLowerCase(Locale.ROOT))) {
+            throw new BusinessException(ResultCode.PARAM_ERROR, "仅支持 PDF、OFD、DOC、DOCX、JPG、PNG、WEBP 合同文件");
+        }
+    }
+
+    private boolean isInvoiceUploadReady(OutboundOrder order) {
+        if (Boolean.TRUE.equals(order.getInvoiceApplied())) {
+            return true;
+        }
         if (order.getInvoiceIssuedDate() != null) {
             return true;
         }
@@ -587,6 +688,25 @@ public class OutboundOrderServiceImpl implements OutboundOrderService {
                 || lowerStatus.contains("invoiced");
     }
 
+    private boolean isContractUploadReady(OutboundOrder order) {
+        String contractType = blankToNull(order.getContractType());
+        if (contractType == null) {
+            return false;
+        }
+        String lower = contractType.toLowerCase(Locale.ROOT);
+        if (lower.startsWith("no") || lower.startsWith("none") || lower.startsWith("false")) {
+            return false;
+        }
+        if (contractType.startsWith("否")
+                || contractType.startsWith("无")
+                || contractType.startsWith("未")
+                || contractType.startsWith("不")
+                || contractType.contains("无合同")) {
+            return false;
+        }
+        return true;
+    }
+
     private String cleanOriginalInvoiceName(String originalFilename) {
         String originalName = StringUtils.cleanPath(Objects.requireNonNullElse(originalFilename, "invoice.pdf")).trim();
         if (originalName.isBlank() || originalName.contains("..") || originalName.contains("/") || originalName.contains("\\")) {
@@ -595,8 +715,20 @@ public class OutboundOrderServiceImpl implements OutboundOrderService {
         return originalName;
     }
 
+    private String cleanOriginalContractName(String originalFilename) {
+        String originalName = StringUtils.cleanPath(Objects.requireNonNullElse(originalFilename, "contract.pdf")).trim();
+        if (originalName.isBlank() || originalName.contains("..") || originalName.contains("/") || originalName.contains("\\")) {
+            throw new BusinessException(ResultCode.PARAM_ERROR, "合同文件名不合法");
+        }
+        return originalName;
+    }
+
     private Path invoiceStorageRoot() {
         return Paths.get(invoiceStorageDir).toAbsolutePath().normalize();
+    }
+
+    private Path contractStorageRoot() {
+        return Paths.get(contractStorageDir).toAbsolutePath().normalize();
     }
 
     private Path resolveInvoiceFile(String storedFileName) {
@@ -604,6 +736,15 @@ public class OutboundOrderServiceImpl implements OutboundOrderService {
         Path filePath = root.resolve(storedFileName).normalize();
         if (!filePath.startsWith(root)) {
             throw new BusinessException(ResultCode.PARAM_ERROR, "发票文件路径不合法");
+        }
+        return filePath;
+    }
+
+    private Path resolveContractFile(String storedFileName) {
+        Path root = contractStorageRoot();
+        Path filePath = root.resolve(storedFileName).normalize();
+        if (!filePath.startsWith(root)) {
+            throw new BusinessException(ResultCode.PARAM_ERROR, "合同文件路径不合法");
         }
         return filePath;
     }
@@ -624,6 +765,17 @@ public class OutboundOrderServiceImpl implements OutboundOrderService {
             Files.deleteIfExists(resolveInvoiceFile(storedFileName));
         } catch (IOException e) {
             log.warn("删除旧发票文件失败: {}", storedFileName, e);
+        }
+    }
+
+    private void deleteStoredContract(String storedFileName) {
+        if (storedFileName == null || storedFileName.isBlank()) {
+            return;
+        }
+        try {
+            Files.deleteIfExists(resolveContractFile(storedFileName));
+        } catch (IOException e) {
+            log.warn("删除旧合同文件失败: {}", storedFileName, e);
         }
     }
 

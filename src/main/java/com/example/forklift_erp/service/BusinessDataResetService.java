@@ -10,6 +10,7 @@ import com.example.forklift_erp.repository.OperationAuditLogRepository;
 import com.example.forklift_erp.repository.OutboundOrderRepository;
 import com.example.forklift_erp.repository.PartInventoryRepository;
 import com.example.forklift_erp.repository.RepairRecordRepository;
+import com.example.forklift_erp.repository.RentalRecordRepository;
 import com.example.forklift_erp.repository.StockBalanceRepository;
 import com.example.forklift_erp.repository.StockMovementLineRepository;
 import com.example.forklift_erp.repository.StockMovementRepository;
@@ -43,6 +44,9 @@ public class BusinessDataResetService {
 
     @Autowired
     private OutboundOrderRepository outboundOrderRepository;
+
+    @Autowired
+    private RentalRecordRepository rentalRecordRepository;
 
     @Autowired
     private MachineConfigRepository machineConfigRepository;
@@ -81,6 +85,7 @@ public class BusinessDataResetService {
         summary.put("configReplaceLogs", deleteAll(configReplaceLogRepository));
         summary.put("stockOperationLogs", deleteAll(stockOperationLogRepository));
         summary.put("outboundOrders", deleteAll(outboundOrderRepository));
+        summary.put("rentalRecords", deleteAll(rentalRecordRepository));
         summary.put("machineConfigs", deleteAll(machineConfigRepository));
         summary.put("stockMovementLines", deleteAll(stockMovementLineRepository));
         summary.put("stockMovements", deleteAll(stockMovementRepository));

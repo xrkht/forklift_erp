@@ -43,7 +43,15 @@ export const endpoints = {
     update: id => `/api/outbound-orders/${id}`,
     lock: id => `/api/outbound-orders/${id}/lock`,
     uploadInvoice: id => `/api/outbound-orders/${id}/invoice`,
-    downloadInvoice: id => `/api/outbound-orders/${id}/invoice`
+    downloadInvoice: id => `/api/outbound-orders/${id}/invoice`,
+    uploadContract: id => `/api/outbound-orders/${id}/contract`,
+    downloadContract: id => `/api/outbound-orders/${id}/contract`
+  },
+  rental: {
+    list: "/api/rentals",
+    create: "/api/rentals",
+    update: id => `/api/rentals/${id}`,
+    delete: id => `/api/rentals/${id}`
   },
   customer: {
     list: "/api/customers",
@@ -53,6 +61,7 @@ export const endpoints = {
   },
   user: {
     list: "/api/auth/users",
+    repairers: "/api/auth/repair-users",
     create: "/api/auth/register",
     updateUsername: id => `/api/auth/users/${id}/username`,
     updatePassword: id => `/api/auth/users/${id}/password`,

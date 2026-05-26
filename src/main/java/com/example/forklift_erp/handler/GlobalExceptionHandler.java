@@ -26,6 +26,7 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.multipart.MaxUploadSizeExceededException;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 import org.springframework.web.servlet.NoHandlerFoundException;
+import org.springframework.web.servlet.resource.NoResourceFoundException;
 
 // 注意：使用 jakarta.validation.ConstraintViolationException
 import jakarta.validation.ConstraintViolation;
@@ -191,6 +192,13 @@ public class GlobalExceptionHandler {
     public Result<Void> handleNoHandlerFoundException(NoHandlerFoundException e) {
         log.warn("请求地址不存在: {}", e.getMessage());
         return Result.error(ResultCode.NOT_FOUND);
+    }
+
+    @ExceptionHandler(NoResourceFoundException.class)
+    @ResponseStatus(HttpStatus.NOT_FOUND)
+    public Result<Void> handleNoResourceFoundException(NoResourceFoundException e) {
+        log.warn("请求资源不存在: {}", e.getMessage());
+        return Result.error(ResultCode.NOT_FOUND, "接口或资源不存在，请确认后端已更新并重启");
     }
 
     /**

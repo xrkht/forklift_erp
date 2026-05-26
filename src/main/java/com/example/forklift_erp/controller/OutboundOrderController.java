@@ -54,6 +54,7 @@ public class OutboundOrderController {
                     row.getInvoiceOriginalName(),
                     row.getRegistrationStatus(),
                     row.getContractType(),
+                    row.getContractOriginalName(),
                     row.getOrderRemark()
             ));
             return Result.success(ListPageSupport.page(filtered, page, size));
@@ -107,6 +108,23 @@ public class OutboundOrderController {
     @PreAuthorize("@permissionService.hasPermission(authentication, 'stock:adjust')")
     public ResponseEntity<Resource> downloadInvoice(@PathVariable Long id) {
         OutboundInvoiceDownload invoice = service.downloadInvoice(id);
+        return fileResponse(invoice);
+    }
+
+    @PostMapping(value = "/{id}/contract", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    @PreAuthorize("@permissionService.hasPermission(authentication, 'stock:adjust')")
+    public Result<OutboundOrderVO> uploadContract(@PathVariable Long id, @RequestPart("file") MultipartFile file) {
+        return Result.success("合同上传成功", service.uploadContract(id, file));
+    }
+
+    @GetMapping("/{id}/contract")
+    @PreAuthorize("@permissionService.hasPermission(authentication, 'stock:adjust')")
+    public ResponseEntity<Resource> downloadContract(@PathVariable Long id) {
+        OutboundInvoiceDownload contract = service.downloadContract(id);
+        return fileResponse(contract);
+    }
+
+    private ResponseEntity<Resource> fileResponse(OutboundInvoiceDownload invoice) {
         MediaType mediaType = MediaType.APPLICATION_OCTET_STREAM;
         if (invoice.contentType() != null && !invoice.contentType().isBlank()) {
             mediaType = MediaType.parseMediaType(invoice.contentType());

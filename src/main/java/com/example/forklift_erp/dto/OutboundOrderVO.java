@@ -43,6 +43,11 @@ public class OutboundOrderVO {
     private Boolean invoiceFileAvailable;
     private String registrationStatus;
     private String contractType;
+    private String contractOriginalName;
+    private String contractContentType;
+    private Long contractFileSize;
+    private LocalDateTime contractUploadedAt;
+    private Boolean contractFileAvailable;
     private String orderRemark;
     private String operator;
     private Long stockOperationLogId;
@@ -87,6 +92,11 @@ public class OutboundOrderVO {
         vo.setInvoiceFileAvailable(entity.getInvoiceStoredFileName() != null && !entity.getInvoiceStoredFileName().isBlank());
         vo.setRegistrationStatus(entity.getRegistrationStatus());
         vo.setContractType(entity.getContractType());
+        vo.setContractOriginalName(entity.getContractOriginalName());
+        vo.setContractContentType(entity.getContractContentType());
+        vo.setContractFileSize(entity.getContractFileSize());
+        vo.setContractUploadedAt(entity.getContractUploadedAt());
+        vo.setContractFileAvailable(entity.getContractStoredFileName() != null && !entity.getContractStoredFileName().isBlank());
         vo.setOrderRemark(entity.getOrderRemark());
         vo.setOperator(entity.getOperator());
         vo.setStockOperationLogId(entity.getStockOperationLogId());

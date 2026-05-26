@@ -9,6 +9,8 @@ import jakarta.validation.constraints.Size;
 import lombok.Data;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.List;
 
 @Data
 public class RepairRecordCreateDTO {
@@ -22,7 +24,8 @@ public class RepairRecordCreateDTO {
     @Size(max = 100)
     private String vehicleNumber;
 
-    @NotBlank(message = "客户名称不能为空")
+    private Long customerId;
+
     @Size(max = 100)
     private String customerName;
 
@@ -39,8 +42,16 @@ public class RepairRecordCreateDTO {
     @Size(max = 50)
     private String repairPerson;
 
+    private String repairPersonChoice;
+
+    private Long repairPersonUserId;
+
+    private Boolean repairExternal;
+
     @Size(max = 500)
     private String usedParts;
+
+    private List<Long> usedPartIds = new ArrayList<>();
 
     private BigDecimal workHours;
     private BigDecimal repairFee;
@@ -55,21 +66,58 @@ public class RepairRecordCreateDTO {
 
     public RepairRecord toEntity() {
         RepairRecord entity = new RepairRecord();
+        applyToEntity(entity);
+        return entity;
+    }
+
+    public void applyToEntity(RepairRecord entity) {
         entity.setRepairDate(this.repairDate);
         entity.setMachineId(this.machineId);
         entity.setVehicleNumber(this.vehicleNumber);
+        entity.setCustomerId(this.customerId);
         entity.setCustomerName(this.customerName);
         entity.setCustomerAddress(this.customerAddress);
         entity.setFaultDescription(this.faultDescription);
         entity.setRepairContent(this.repairContent);
         entity.setRepairPerson(this.repairPerson);
+        applyRepairPerson(entity);
         entity.setUsedParts(this.usedParts);
-        entity.setWorkHours(this.workHours);
+        entity.setUsedPartIds(joinIds(this.usedPartIds));
+        entity.setWorkHours(null);
         entity.setRepairFee(this.repairFee);
         entity.setPartsFee(this.partsFee);
         entity.setTotalFee(this.totalFee);
         entity.setStatus(this.status);
         entity.setRemarks(this.remarks);
-        return entity;
+    }
+
+    private void applyRepairPerson(RepairRecord entity) {
+        String choice = repairPersonChoice == null ? "" : repairPersonChoice.trim();
+        if ("OTHER".equalsIgnoreCase(choice)) {
+            entity.setRepairPersonUserId(null);
+            entity.setRepairExternal(true);
+            entity.setRepairPerson("其他");
+            return;
+        }
+        if (!choice.isBlank()) {
+            try {
+                entity.setRepairPersonUserId(Long.parseLong(choice));
+            } catch (NumberFormatException ignored) {
+                entity.setRepairPersonUserId(this.repairPersonUserId);
+            }
+        } else {
+            entity.setRepairPersonUserId(this.repairPersonUserId);
+        }
+        entity.setRepairExternal(Boolean.TRUE.equals(this.repairExternal));
+    }
+
+    private String joinIds(List<Long> ids) {
+        if (ids == null || ids.isEmpty()) {
+            return null;
+        }
+        return ids.stream()
+                .filter(id -> id != null && id > 0)
+                .map(String::valueOf)
+                .collect(java.util.stream.Collectors.joining(","));
     }
 }

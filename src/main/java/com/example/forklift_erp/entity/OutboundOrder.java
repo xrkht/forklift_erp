@@ -119,6 +119,21 @@ public class OutboundOrder implements CollaborativeResource {
     @Column(name = "contract_type", length = 80)
     private String contractType;
 
+    @Column(name = "contract_stored_file_name", length = 255)
+    private String contractStoredFileName;
+
+    @Column(name = "contract_original_name", length = 255)
+    private String contractOriginalName;
+
+    @Column(name = "contract_content_type", length = 120)
+    private String contractContentType;
+
+    @Column(name = "contract_file_size")
+    private Long contractFileSize;
+
+    @Column(name = "contract_uploaded_at")
+    private LocalDateTime contractUploadedAt;
+
     @Column(name = "order_remark", length = 500)
     private String orderRemark;
 
