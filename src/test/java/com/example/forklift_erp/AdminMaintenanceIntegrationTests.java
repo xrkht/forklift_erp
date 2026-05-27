@@ -30,6 +30,7 @@ import java.util.Set;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -129,6 +130,24 @@ class AdminMaintenanceIntegrationTests {
         assertThat(stockOperationLogRepository.count()).isZero();
         assertThat(operationAuditLogRepository.count()).isZero();
         assertThat(userRepository.existsByUsername(superUsername)).isTrue();
+    }
+
+    @Test
+    void exportVehiclesReturnsExcelAttachment() throws Exception {
+        createMachine();
+
+        byte[] content = mockMvc.perform(get("/api/export/vehicles")
+                        .header("Authorization", bearer(superToken)))
+                .andExpect(status().isOk())
+                .andExpect(result -> assertThat(result.getResponse().getContentType())
+                        .isEqualTo("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"))
+                .andExpect(result -> assertThat(result.getResponse().getHeader("Content-Disposition"))
+                        .contains("attachment"))
+                .andReturn()
+                .getResponse()
+                .getContentAsByteArray();
+
+        assertThat(content).startsWith(new byte[] { 'P', 'K' });
     }
 
     private JsonNode createCustomer() throws Exception {

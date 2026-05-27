@@ -706,6 +706,10 @@ async function handleContentClick(event) {
       showToast("数据已刷新", "success");
       return;
     }
+    if (action === "export-excel") {
+      await downloadExcel(control.dataset.exportType);
+      return;
+    }
     if (action === "page-list") {
       const tab = control.dataset.pageTab;
       if (!pagedTabs[tab]) return;
@@ -1700,6 +1704,54 @@ async function downloadContract(order) {
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
+async function downloadExcel(type) {
+  const url = endpoints.export?.[type];
+  if (!url) {
+    showToast("暂不支持该列表导出", "error");
+    return;
+  }
+  await downloadProtectedFile(url, `${exportFileLabel(type)}-${todayInputDate()}.xlsx`);
+  showToast("导出已开始", "success");
+}
+
+async function downloadProtectedFile(url, fallbackName) {
+  const headers = {};
+  if (state.token) {
+    headers.Authorization = `Bearer ${state.token}`;
+  }
+  const response = await fetch(url, { headers });
+  if (response.status === 401) {
+    const error = new Error("未登录或登录已过期");
+    error.authExpired = true;
+    throw error;
+  }
+  if (!response.ok) {
+    const payload = await response.json().catch(() => null);
+    throw new Error(payload?.message || `下载失败：${response.status}`);
+  }
+  const blob = await response.blob();
+  const filename = filenameFromDisposition(response.headers.get("Content-Disposition")) || fallbackName;
+  const objectUrl = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = objectUrl;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  setTimeout(() => URL.revokeObjectURL(objectUrl), 1000);
+}
+
+function exportFileLabel(type) {
+  return {
+    vehicles: "车辆库存",
+    parts: "配件库存",
+    customers: "客户档案",
+    outboundOrders: "出库订单",
+    rentals: "租赁记录",
+    repairs: "维修记录"
+  }[type] || "导出数据";
+}
+
 function filenameFromDisposition(disposition = "") {
   const encodedMatch = /filename\*=UTF-8''([^;]+)/i.exec(disposition);
   if (encodedMatch) {
@@ -2370,6 +2422,7 @@ function renderVehicles() {
         </div>
         <div class="toolbar-actions">
           ${hasPermission("vehicle:write") ? renderVehicleModelMenu() : ""}
+          ${exportButton("vehicles")}
           <button class="btn btn-ghost" type="button" data-action="refresh">${icon("refresh")}刷新</button>
         </div>
       </div>
@@ -2403,7 +2456,7 @@ function paginateClientRows(tab, rows) {
 }
 
 function renderVehicleModelPanel(rows) {
-  return renderSurface("车型库存列表", renderTable([
+  return renderExportableSurface("车型库存列表", "vehicles", renderTable([
     { label: "车型", render: row => vehicleModelLabel(row) },
     { label: "规格型号", key: "specificationModel" },
     { label: "车辆类型", key: "machineType" },
@@ -2580,10 +2633,11 @@ function renderParts() {
           ${hasPermission("part:write") ? `<button class="btn btn-primary" type="button" data-action="create" data-kind="part">${icon("plus")}新增配件</button>` : ""}
           ${hasPermission("stock:adjust") ? `<button class="btn" type="button" data-action="part-stock" data-direction="inbound">${icon("plus")}配件入库</button>` : ""}
           ${hasPermission("stock:adjust") ? `<button class="btn" type="button" data-action="part-stock" data-direction="outbound">${icon("minus")}配件出库</button>` : ""}
+          ${exportButton("parts")}
           <button class="btn btn-ghost" type="button" data-action="refresh">${icon("refresh")}刷新</button>
         </div>
       </div>
-      ${renderSurface("配件列表", renderTable([
+      ${renderExportableSurface("配件列表", "parts", renderTable([
         { label: "编码", key: "partCode" },
         { label: "名称", key: "partName" },
         { label: "品牌", key: "partBrand" },
@@ -2659,10 +2713,11 @@ function renderOutboundOrders() {
       <div class="toolbar">
         ${searchBox("outboundOrders", "搜索订单号、客户、车号、收款情况、开票情况或备注")}
         <div class="toolbar-actions">
+          ${exportButton("outboundOrders")}
           <button class="btn btn-ghost" type="button" data-action="refresh">${icon("refresh")}刷新</button>
         </div>
       </div>
-      ${renderSurface("出库订单列表", renderTable([
+      ${renderExportableSurface("出库订单列表", "outboundOrders", renderTable([
         { label: "订单号", html: true, render: row => orderNoSummary(row) },
         { label: "出库项", html: true, render: row => orderResourceSummary(row) },
         { label: "客户", key: "customerName" },
@@ -2697,7 +2752,7 @@ function renderRentals() {
         ${summaryCard("待归还", activeRows.length, activeRows.length ? "请持续跟进租赁去向" : "暂无进行中租赁")}
       </section>
       ${renderToolbar("rentals", "搜索租赁单、车号、客户、去向或经办人", "rental", "新增租赁", "stock:adjust")}
-      ${renderSurface("租赁记录", renderTable([
+      ${renderExportableSurface("租赁记录", "rentals", renderTable([
         { label: "租赁单", html: true, render: row => rentalNoSummary(row) },
         { label: "车辆", html: true, render: row => rentalVehicleSummary(row) },
         { label: "去向", html: true, render: row => rentalCustomerSummary(row) },
@@ -2859,7 +2914,7 @@ function renderCustomers() {
   return `
     <div class="page">
       ${renderToolbar("customers", "搜索公司、联系人、电话或税号", "customer", "新增客户", "vehicle:write")}
-      ${renderSurface("客户列表", renderTable([
+      ${renderExportableSurface("客户列表", "customers", renderTable([
         { label: "公司名称", key: "companyName" },
         { label: "地址", key: "address" },
         { label: "联系人", key: "contactName" },
@@ -2881,7 +2936,7 @@ function renderRepairs() {
   return `
     <div class="page">
       ${renderToolbar("repairs", "搜索客户、车号、维修人、状态", "repair", "新增维修", "repair:write")}
-      ${renderSurface("维修记录", renderTable([
+      ${renderExportableSurface("维修记录", "repairs", renderTable([
         { label: "维修时间", key: "repairDate", formatter: dateTime },
         { label: "车号", html: true, render: row => repairVehicleSummary(row) },
         { label: "客户", html: true, render: row => repairCustomerSummary(row) },
@@ -3400,6 +3455,7 @@ function renderToolbar(moduleKey, placeholder, kind, createLabel, createPermissi
       ${searchBox(moduleKey, placeholder)}
       <div class="toolbar-actions">
         ${!createPermission || hasPermission(createPermission) ? `<button class="btn btn-primary" type="button" data-action="create" data-kind="${kind}">${icon("plus")}${createLabel}</button>` : ""}
+        ${exportButton(moduleKey)}
         <button class="btn btn-ghost" type="button" data-action="refresh">${icon("refresh")}刷新</button>
       </div>
     </div>
@@ -3537,6 +3593,23 @@ function renderTable(columns, rows, options = {}) {
       </table>
     </div>
   `;
+}
+
+function renderExportableSurface(title, exportType, body) {
+  return `
+    <section class="surface">
+      <div class="surface-head">
+        <h2 class="surface-title">${title}</h2>
+        <div class="toolbar-actions">${exportButton(exportType)}</div>
+      </div>
+      <div class="surface-body">${body}</div>
+    </section>
+  `;
+}
+
+function exportButton(type) {
+  if (!endpoints.export?.[type]) return "";
+  return `<button class="btn" type="button" data-action="export-excel" data-export-type="${escapeAttr(type)}">${icon("download")}导出 Excel</button>`;
 }
 
 function renderPagination(tab) {

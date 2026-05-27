@@ -2,6 +2,24 @@
 
 本项目遵循 [语义化版本](https://semver.org/lang/zh-CN/) 和 [Keep a Changelog](https://keepachangelog.com/zh-CN/) 规范。
 
+## [0.1.44] - 2026-05-27 - Codex
+
+### 新增
+- **列表 Excel 导出**
+  - 新增 `/api/export/{type}` Excel 导出接口，支持车辆库存、配件库存、客户档案、出库订单、租赁记录和维修记录。
+  - 前端列表页接入“导出 Excel”下载动作，下载时复用当前登录令牌并按后端附件文件名保存。
+
+### 修复
+- **列表导出入口可见性**
+  - 车辆库存、配件列表、订单列表、租赁记录、客户列表和维修记录的列表标题栏新增“导出 Excel”按钮，避免只在顶部工具栏时不易发现。
+  - Service Worker 缓存版本升级为 `forklift-erp-client-v41`，确保前端刷新后加载新的导出入口。
+
+### 验证
+- Git：`uploads/` 已在 `.gitignore`，且 `git ls-files uploads` 无输出，上传附件不会进入本地备份提交。
+- Node：`node --check src/main/resources/static/assets/app.js` 与 `node --check src/main/resources/static/assets/modules/routes.js` 通过。
+- Java 21：`.\mvnw.cmd -Dtest=AdminMaintenanceIntegrationTests test` 通过，新增覆盖 `/api/export/vehicles` 返回 `.xlsx` 附件；`.\mvnw.cmd test` 通过，累计 `22` 个测试通过；`.\mvnw.cmd package -DskipTests` 通过。
+- 静态产物：`target/classes/static/assets/app.js` 包含各列表标题栏导出入口，`target/classes/static/sw.js` 包含 `forklift-erp-client-v41`。
+
 ## [0.1.43] - 2026-05-27 - Codex
 
 ### 新增

@@ -71,6 +71,14 @@ export const endpoints = {
     updatePassword: id => `/api/auth/users/${id}/password`,
     delete: id => `/api/auth/users/${id}`
   },
+  export: {
+    vehicles: "/api/export/vehicles",
+    parts: "/api/export/parts",
+    customers: "/api/export/customers",
+    outboundOrders: "/api/export/outbound-orders",
+    rentals: "/api/export/rentals",
+    repairs: "/api/export/repairs"
+  },
   logs: "/api/logs",
   statistics: "/api/statistics/finance"
 };
