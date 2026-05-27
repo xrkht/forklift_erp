@@ -1,5 +1,6 @@
 package com.example.forklift_erp.service.impl;
 
+import com.example.forklift_erp.common.PageResult;
 import com.example.forklift_erp.common.ResultCode;
 import com.example.forklift_erp.dto.RentalRecordCreateDTO;
 import com.example.forklift_erp.dto.RentalRecordUpdateDTO;
@@ -14,7 +15,11 @@ import com.example.forklift_erp.repository.RentalRecordRepository;
 import com.example.forklift_erp.service.CollaborationService;
 import com.example.forklift_erp.service.OperationAuditService;
 import com.example.forklift_erp.service.RentalRecordService;
+import com.example.forklift_erp.util.ListPageSupport;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -52,6 +57,24 @@ public class RentalRecordServiceImpl implements RentalRecordService {
         return rentalRecordRepository.findAllByOrderByCreatedAtDesc().stream()
                 .map(RentalRecordVO::fromEntity)
                 .toList();
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public PageResult<RentalRecordVO> findPage(String keyword, Integer page, Integer size) {
+        int normalizedPage = ListPageSupport.page(page);
+        int normalizedSize = ListPageSupport.size(size);
+        String normalizedKeyword = keyword == null ? "" : keyword.trim();
+        Page<RentalRecord> records = rentalRecordRepository.searchPage(
+                normalizedKeyword,
+                PageRequest.of(normalizedPage, normalizedSize, Sort.by(Sort.Direction.DESC, "createdAt"))
+        );
+        return PageResult.of(
+                records.getContent().stream().map(RentalRecordVO::fromEntity).toList(),
+                records.getNumber(),
+                records.getSize(),
+                records.getTotalElements()
+        );
     }
 
     @Override

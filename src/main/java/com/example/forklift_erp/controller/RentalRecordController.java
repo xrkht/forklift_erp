@@ -5,7 +5,6 @@ import com.example.forklift_erp.dto.RentalRecordCreateDTO;
 import com.example.forklift_erp.dto.RentalRecordUpdateDTO;
 import com.example.forklift_erp.dto.RentalRecordVO;
 import com.example.forklift_erp.service.RentalRecordService;
-import com.example.forklift_erp.util.ListPageSupport;
 import jakarta.validation.Valid;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
@@ -21,8 +20,6 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
-import java.util.List;
-
 @RestController
 @RequestMapping("/api/rentals")
 public class RentalRecordController {
@@ -35,23 +32,10 @@ public class RentalRecordController {
                             @RequestParam(required = false) String keyword,
                             @RequestParam(required = false) Integer page,
                             @RequestParam(required = false) Integer size) {
-        List<RentalRecordVO> list = service.findAll();
         if (paged) {
-            List<RentalRecordVO> filtered = ListPageSupport.filter(list, keyword, row -> ListPageSupport.text(
-                    row.getRentalNo(),
-                    row.getVehicleNumber(),
-                    row.getMachineName(),
-                    row.getSpecificationModel(),
-                    row.getCustomerName(),
-                    row.getCustomerAddress(),
-                    row.getDestination(),
-                    row.getStatus(),
-                    row.getOperator(),
-                    row.getRemark()
-            ));
-            return Result.success(ListPageSupport.page(filtered, page, size));
+            return Result.success(service.findPage(keyword, page, size));
         }
-        return Result.success(list);
+        return Result.success(service.findAll());
     }
 
     @GetMapping("/{id}")

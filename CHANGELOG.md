@@ -2,6 +2,26 @@
 
 本项目遵循 [语义化版本](https://semver.org/lang/zh-CN/) 和 [Keep a Changelog](https://keepachangelog.com/zh-CN/) 规范。
 
+## [0.1.43] - 2026-05-27 - Codex
+
+### 新增
+- **OpenAPI 接口文档**
+  - 新增 SpringDoc OpenAPI UI 依赖，本地可通过 `/swagger-ui.html` 查看接口文档，`/v3/api-docs` 提供 OpenAPI JSON。
+  - 生产 profile 默认关闭 OpenAPI 与 Swagger UI，可通过 `FORKLIFT_ERP_OPENAPI_ENABLED=true` 临时开启。
+
+### 变更
+- **生产配置与上传文件治理**
+  - 新增 `application-prod.yml`，生产环境关闭 SQL 详情日志和演示数据，并要求通过环境变量提供 JWT 密钥。
+  - `.gitignore` 新增 `uploads/`，避免发票、合同等真实业务附件继续进入代码仓库。
+
+### 优化
+- **租赁列表分页**
+  - `/api/rentals?paged=true` 改为数据库分页与关键词搜索，不再先加载全部租赁记录后在内存分页。
+
+### 验证
+- Java 21：`.\mvnw.cmd -Dtest=RentalRecordIntegrationTests test` 通过，覆盖租赁中禁止销售、归还后可销售、分页搜索和无权限访问拒绝。
+- Java 21：`.\mvnw.cmd test` 通过，累计 `21` 个测试通过；`.\mvnw.cmd package -DskipTests` 通过。
+
 ## [0.1.42] - 2026-05-27 - Codex
 
 ### 修复

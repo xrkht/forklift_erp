@@ -1,0 +1,26 @@
+spring:
+  jpa:
+    show-sql: false
+    properties:
+      hibernate:
+        format_sql: false
+
+logging:
+  level:
+    com.example.forklift_erp: info
+    org.springframework.web: warn
+    org.hibernate.SQL: warn
+    org.hibernate.type.descriptor.sql.BasicBinder: warn
+
+jwt:
+  secret: ${FORKLIFT_ERP_JWT_SECRET}
+
+forklift:
+  seed-demo-data:
+    enabled: false
+
+springdoc:
+  api-docs:
+    enabled: ${FORKLIFT_ERP_OPENAPI_ENABLED:false}
+  swagger-ui:
+    enabled: ${FORKLIFT_ERP_OPENAPI_ENABLED:false}

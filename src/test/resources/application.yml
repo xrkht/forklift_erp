@@ -15,3 +15,9 @@ jwt:
 forklift:
   seed-demo-data:
     enabled: false
+
+springdoc:
+  api-docs:
+    enabled: false
+  swagger-ui:
+    enabled: false

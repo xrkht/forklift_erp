@@ -1,0 +1,370 @@
+package com.example.forklift_erp;
+
+import com.example.forklift_erp.entity.MachineInventory;
+import com.example.forklift_erp.entity.Permission;
+import com.example.forklift_erp.entity.Role;
+import com.example.forklift_erp.entity.User;
+import com.example.forklift_erp.repository.CustomerRepository;
+import com.example.forklift_erp.repository.MachineInventoryRepository;
+import com.example.forklift_erp.repository.OutboundOrderRepository;
+import com.example.forklift_erp.repository.PermissionRepository;
+import com.example.forklift_erp.repository.RentalRecordRepository;
+import com.example.forklift_erp.repository.RoleRepository;
+import com.example.forklift_erp.repository.UserRepository;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
+import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.http.MediaType;
+import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.test.web.servlet.MockMvc;
+
+import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.UUID;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+
+@SpringBootTest(properties = {
+        "forklift.seed-demo-data.enabled=false",
+        "springdoc.api-docs.enabled=false",
+        "springdoc.swagger-ui.enabled=false"
+})
+@AutoConfigureMockMvc
+class RentalRecordIntegrationTests {
+    private static final String PASSWORD = "CodexTest123!";
+
+    @Autowired
+    private MockMvc mockMvc;
+
+    @Autowired
+    private ObjectMapper objectMapper;
+
+    @Autowired
+    private UserRepository userRepository;
+
+    @Autowired
+    private RoleRepository roleRepository;
+
+    @Autowired
+    private PermissionRepository permissionRepository;
+
+    @Autowired
+    private CustomerRepository customerRepository;
+
+    @Autowired
+    private MachineInventoryRepository machineRepository;
+
+    @Autowired
+    private RentalRecordRepository rentalRecordRepository;
+
+    @Autowired
+    private OutboundOrderRepository outboundOrderRepository;
+
+    @Autowired
+    private PasswordEncoder passwordEncoder;
+
+    private final List<String> usersToCleanup = new ArrayList<>();
+    private final List<String> rolesToCleanup = new ArrayList<>();
+    private final List<Long> ordersToCleanup = new ArrayList<>();
+    private final List<Long> rentalsToCleanup = new ArrayList<>();
+    private final List<Long> machinesToCleanup = new ArrayList<>();
+    private final List<Long> customersToCleanup = new ArrayList<>();
+
+    private String superToken;
+
+    @BeforeEach
+    void setUp() throws Exception {
+        String username = unique("super");
+        createUserDirectly(username, "SUPER_ADMIN");
+        superToken = login(username);
+    }
+
+    @AfterEach
+    void tearDown() {
+        for (Long orderId : ordersToCleanup.reversed()) {
+            outboundOrderRepository.findById(orderId).ifPresent(outboundOrderRepository::delete);
+        }
+        ordersToCleanup.clear();
+
+        for (Long rentalId : rentalsToCleanup.reversed()) {
+            rentalRecordRepository.findById(rentalId).ifPresent(rentalRecordRepository::delete);
+        }
+        rentalsToCleanup.clear();
+
+        for (Long machineId : machinesToCleanup.reversed()) {
+            machineRepository.findById(machineId).ifPresent(machineRepository::delete);
+        }
+        machinesToCleanup.clear();
+
+        for (Long customerId : customersToCleanup.reversed()) {
+            customerRepository.findById(customerId).ifPresent(customerRepository::delete);
+        }
+        customersToCleanup.clear();
+
+        for (String username : usersToCleanup.reversed()) {
+            userRepository.findByUsername(username).ifPresent(userRepository::delete);
+        }
+        usersToCleanup.clear();
+
+        for (String roleName : rolesToCleanup.reversed()) {
+            roleRepository.findByName(roleName).ifPresent(roleRepository::delete);
+        }
+        rolesToCleanup.clear();
+    }
+
+    @Test
+    void activeRentalBlocksVehicleSaleUntilReturned() throws Exception {
+        JsonNode customer = createCustomer("租赁客户");
+        JsonNode machine = createMachine("RT-BLOCK");
+        JsonNode rental = createRental(customer, machine, "佛山仓外租赁点");
+
+        Map<String, Object> outboundPayload = vehicleOutboundPayload(customer, machine);
+        mockMvc.perform(post("/api/outbound-orders/vehicle")
+                        .header("Authorization", bearer(superToken))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json(outboundPayload)))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value(409))
+                .andExpect(jsonPath("$.message").value("车辆正在租赁中，不能创建销售出库订单"));
+
+        Map<String, Object> returnPayload = new LinkedHashMap<>();
+        returnPayload.put("version", rental.path("version").asLong());
+        returnPayload.put("customerId", customer.path("id").asLong());
+        returnPayload.put("destination", "已归还仓库");
+        returnPayload.put("monthlyRentalPrice", "3200.00");
+        returnPayload.put("startDate", "2026-05-20");
+        returnPayload.put("endDate", "2026-05-27");
+        returnPayload.put("status", "RETURNED");
+        returnPayload.put("operator", "rental-test");
+
+        mockMvc.perform(put("/api/rentals/{id}", rental.path("id").asLong())
+                        .header("Authorization", bearer(superToken))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json(returnPayload)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.status").value("RETURNED"));
+
+        String orderResponse = mockMvc.perform(post("/api/outbound-orders/vehicle")
+                        .header("Authorization", bearer(superToken))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json(outboundPayload)))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.data.resourceType").value("MACHINE"))
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+        JsonNode order = objectMapper.readTree(orderResponse).path("data");
+        ordersToCleanup.add(order.path("id").asLong());
+
+        MachineInventory savedMachine = machineRepository.findById(machine.path("id").asLong()).orElseThrow();
+        assertThat(savedMachine.getInventoryCount()).isZero();
+        assertThat(savedMachine.getStockStatus()).isEqualTo("OUTBOUND");
+    }
+
+    @Test
+    void rentalListUsesPagedSearchAndKeepsPermissionBoundary() throws Exception {
+        JsonNode customer = createCustomer("分页租赁客户");
+        JsonNode matchingMachine = createMachine("RT-PAGE-A");
+        JsonNode otherMachine = createMachine("RT-PAGE-B");
+        createRental(customer, matchingMachine, "南海目标租赁点");
+        createRental(customer, otherMachine, "顺德普通租赁点");
+
+        mockMvc.perform(get("/api/rentals")
+                        .param("paged", "true")
+                        .param("page", "0")
+                        .param("size", "1")
+                        .param("keyword", "南海目标")
+                        .header("Authorization", bearer(superToken)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.page").value(0))
+                .andExpect(jsonPath("$.data.size").value(1))
+                .andExpect(jsonPath("$.data.totalElements").value(1))
+                .andExpect(jsonPath("$.data.content[0].destination").value("南海目标租赁点"));
+
+        String deniedUser = unique("denied");
+        createUserWithPermissions(deniedUser, "ROLE_NO_RENTAL_" + unique("role"));
+        String deniedToken = login(deniedUser);
+
+        mockMvc.perform(get("/api/rentals")
+                        .header("Authorization", bearer(deniedToken)))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value(403));
+    }
+
+    private JsonNode createRental(JsonNode customer, JsonNode machine, String destination) throws Exception {
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("machineId", machine.path("id").asLong());
+        payload.put("machineVersion", machine.path("version").asLong());
+        payload.put("customerId", customer.path("id").asLong());
+        payload.put("destination", destination);
+        payload.put("monthlyRentalPrice", "3200.00");
+        payload.put("startDate", "2026-05-20");
+        payload.put("operator", "rental-test");
+        payload.put("remark", "租赁集成测试");
+
+        String response = mockMvc.perform(post("/api/rentals")
+                        .header("Authorization", bearer(superToken))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json(payload)))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.data.status").value("ACTIVE"))
+                .andExpect(jsonPath("$.data.destination").value(destination))
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+        JsonNode rental = objectMapper.readTree(response).path("data");
+        rentalsToCleanup.add(rental.path("id").asLong());
+        return rental;
+    }
+
+    private Map<String, Object> vehicleOutboundPayload(JsonNode customer, JsonNode machine) {
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("machineId", machine.path("id").asLong());
+        payload.put("machineVersion", machine.path("version").asLong());
+        payload.put("customerId", customer.path("id").asLong());
+        payload.put("salesDate", "2026-05-27");
+        payload.put("settlementPrice", "118000.00");
+        payload.put("operator", "rental-sale-test");
+        payload.put("orderRemark", "租赁归还后销售测试");
+        return payload;
+    }
+
+    private JsonNode createCustomer(String companyName) throws Exception {
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("companyName", companyName + "-" + unique("customer"));
+        payload.put("address", "广东省佛山市测试路 1 号");
+        payload.put("contactName", "陈经理");
+        payload.put("contactPhone", "13800138000");
+        payload.put("taxOrIdNumber", "91440000TEST");
+
+        String response = mockMvc.perform(post("/api/customers")
+                        .header("Authorization", bearer(superToken))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json(payload)))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.code").value(200))
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+        JsonNode customer = objectMapper.readTree(response).path("data");
+        customersToCleanup.add(customer.path("id").asLong());
+        return customer;
+    }
+
+    private JsonNode createMachine(String prefix) throws Exception {
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("vehicleProductNumber", prefix + "-" + unique("machine"));
+        payload.put("name", "租赁测试车型");
+        payload.put("specificationModel", "CPCD30");
+        payload.put("configuration", "国四 / 二节 3 米 / 1220 货叉");
+        payload.put("machineType", "内燃叉车");
+        payload.put("supplier", "Codex Supplier");
+        payload.put("applicationNumber", "APP-" + unique("apply"));
+        payload.put("materialNumber", "MAT-" + unique("material"));
+        payload.put("inventoryCount", 1);
+        payload.put("remarks", "租赁集成测试数据");
+
+        String response = mockMvc.perform(post("/api/inventory")
+                        .header("Authorization", bearer(superToken))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json(payload)))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.code").value(200))
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+        JsonNode machine = objectMapper.readTree(response).path("data");
+        machinesToCleanup.add(machine.path("id").asLong());
+        return machine;
+    }
+
+    private void createUserWithPermissions(String username, String roleName, String... permissionCodes) {
+        Set<Permission> permissions = new HashSet<>();
+        for (String code : permissionCodes) {
+            Permission permission = permissionRepository.findByCode(code)
+                    .orElseGet(() -> {
+                        Permission created = new Permission();
+                        created.setCode(code);
+                        created.setDescription(code);
+                        return permissionRepository.save(created);
+                    });
+            permissions.add(permission);
+        }
+
+        Role role = new Role();
+        role.setName(roleName);
+        role.setDescription(roleName);
+        role.setPermissions(permissions);
+        roleRepository.save(role);
+        rolesToCleanup.add(roleName);
+
+        User user = new User();
+        user.setUsername(username);
+        user.setPassword(passwordEncoder.encode(PASSWORD));
+        user.setEnabled(true);
+        user.setRoles(Set.of(role));
+        userRepository.save(user);
+        usersToCleanup.add(username);
+    }
+
+    private void createUserDirectly(String username, String roleName) {
+        Role role = roleRepository.findByName(roleName)
+                .orElseGet(() -> {
+                    Role newRole = new Role();
+                    newRole.setName(roleName);
+                    newRole.setDescription(roleName);
+                    if ("SUPER_ADMIN".equals(roleName)) {
+                        permissionRepository.findAll().forEach(newRole.getPermissions()::add);
+                    }
+                    return roleRepository.save(newRole);
+                });
+
+        User user = new User();
+        user.setUsername(username);
+        user.setPassword(passwordEncoder.encode(PASSWORD));
+        user.setEnabled(true);
+        user.setRoles(Set.of(role));
+        userRepository.save(user);
+        usersToCleanup.add(username);
+    }
+
+    private String login(String username) throws Exception {
+        String body = mockMvc.perform(post("/api/auth/login")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json(Map.of(
+                                "username", username,
+                                "password", PASSWORD
+                        ))))
+                .andExpect(status().isOk())
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+        return objectMapper.readTree(body).path("data").path("token").asText();
+    }
+
+    private String unique(String prefix) {
+        return "it_" + prefix + "_" + UUID.randomUUID().toString().replace("-", "").substring(0, 12);
+    }
+
+    private String json(Object value) throws Exception {
+        return objectMapper.writeValueAsString(value);
+    }
+
+    private String bearer(String token) {
+        return "Bearer " + token;
+    }
+}

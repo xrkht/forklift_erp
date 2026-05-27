@@ -55,3 +55,9 @@ forklift:
   contract-storage-dir: ${FORKLIFT_ERP_CONTRACT_STORAGE_DIR:uploads/contracts}
   seed-demo-data:
     enabled: ${FORKLIFT_ERP_SEED_DEMO_DATA:true} # 本地启动时幂等补齐演示业务数据；生产可设为 false
+
+springdoc:
+  api-docs:
+    path: /v3/api-docs
+  swagger-ui:
+    path: /swagger-ui.html

@@ -1,6 +1,7 @@
 HELP.md
 target/
 logs/
+uploads/
 .codebuddy/
 __pycache__/
 *.py[cod]
