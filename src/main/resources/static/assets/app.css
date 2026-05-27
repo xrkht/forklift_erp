@@ -453,28 +453,6 @@ button {
   outline: none;
 }
 
-.workflow-strip {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin-bottom: 14px;
-}
-
-.workflow-chip {
-  min-height: 34px;
-  padding: 0 12px;
-  border: 1px solid var(--line);
-  border-radius: 999px;
-  background: #fff;
-  color: var(--muted);
-}
-
-.workflow-chip.is-active {
-  border-color: var(--primary);
-  background: var(--primary-weak);
-  color: var(--primary);
-}
-
 .segmented-control {
   display: inline-flex;
   align-items: center;
@@ -708,6 +686,11 @@ button {
 .overview-attachment-list {
   display: grid;
   gap: 10px;
+}
+
+.overview-shortcuts .hover-menu,
+.overview-shortcuts .hover-menu-trigger {
+  width: 100%;
 }
 
 .overview-task-row,

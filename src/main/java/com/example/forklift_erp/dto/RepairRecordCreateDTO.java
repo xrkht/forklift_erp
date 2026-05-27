@@ -58,7 +58,7 @@ public class RepairRecordCreateDTO {
     private BigDecimal partsFee;
     private BigDecimal totalFee;
 
-    @Pattern(regexp = "^(PENDING|IN_PROGRESS|COMPLETED)$", message = "状态值非法")
+    @Pattern(regexp = "^(PENDING|COMPLETED)$", message = "状态值非法")
     private String status;
 
     @Size(max = 500)

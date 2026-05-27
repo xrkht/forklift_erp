@@ -4,6 +4,7 @@ package com.example.forklift_erp.service.impl;
 import com.example.forklift_erp.common.ResultCode;
 import com.example.forklift_erp.dto.ConfigReplaceRequestDTO;
 import com.example.forklift_erp.dto.PartReplaceRequestDTO;
+import com.example.forklift_erp.dto.VehiclePartInstallRequestDTO;
 import com.example.forklift_erp.entity.*;
 import com.example.forklift_erp.exception.BusinessException;
 import com.example.forklift_erp.repository.*;
@@ -273,6 +274,85 @@ public class ConfigReplaceServiceImpl implements ConfigReplaceService {
         return savedLog;
     }
 
+    @Override
+    @Transactional
+    public ConfigReplaceLog performPartInstall(VehiclePartInstallRequestDTO request) {
+        MachineInventory machine = machineRepository.findByIdForUpdate(request.getMachineId())
+                .orElseThrow(() -> new BusinessException(ResultCode.VEHICLE_NOT_FOUND, "车辆不存在"));
+        collaborationService.validateWrite(machine, request.getMachineVersion());
+
+        ConfigItem configItem = configItemRepository.findById(request.getConfigItemId())
+                .orElseThrow(() -> new BusinessException(ResultCode.NOT_FOUND, "配件分类不存在"));
+
+        PartInventory newPart = partRepository.findByIdForUpdate(request.getNewPartId())
+                .orElseThrow(() -> new BusinessException(ResultCode.PART_NOT_FOUND, "仓库配件不存在"));
+        collaborationService.validateWrite(newPart, request.getNewPartVersion());
+
+        int quantity = request.getQuantity() == null ? 1 : request.getQuantity();
+        if (quantity < 1) {
+            throw new BusinessException(ResultCode.PARAM_ERROR, "装车数量必须大于0");
+        }
+        if (newPart.getQuantity() == null || newPart.getQuantity() < quantity) {
+            throw new BusinessException(ResultCode.INSUFFICIENT_STOCK, "配件库存不足: " + newPart.getPartName());
+        }
+
+        String expectedType = normalizeType(configPartCategory(configItem));
+        String actualType = normalizeType(newPart.getPartCategory());
+        if (!expectedType.isEmpty() && !expectedType.equals(actualType)) {
+            throw new BusinessException(ResultCode.PARAM_ERROR,
+                    "所选配件不属于该分类: 分类=" + configPartCategory(configItem) + "，配件分类=" + newPart.getPartCategory());
+        }
+
+        ConfigValue configValue = resolveConfigValueForInstall(configItem, newPart);
+        String installedValue = partDisplayName(newPart);
+
+        int beforeQuantity = newPart.getQuantity();
+        newPart.setQuantity(beforeQuantity - quantity);
+        collaborationService.stampWrite(newPart);
+        newPart = partRepository.saveAndFlush(newPart);
+        savePartStockLog(newPart, "OUTBOUND", quantity, beforeQuantity, newPart.getQuantity(),
+                request.getOperator(),
+                "整车新增配件装车；车辆ID=" + machine.getId(),
+                "VEHICLE_PART_INSTALL", null);
+
+        MachineConfig newConfig = new MachineConfig();
+        newConfig.setMachineId(machine.getId());
+        newConfig.setConfigItemId(configItem.getId());
+        newConfig.setConfigValueId(configValue.getId());
+        newConfig.setItemName(configItem.getItemName());
+        newConfig.setSelectedValue(installedValue);
+        newConfig.setConfigSource("WAREHOUSE");
+        newConfig.setIsStandard(false);
+        newConfig.setInstalledDate(LocalDateTime.now());
+        newConfig.setRemark("从配件仓库装车；配件编码=" + newPart.getPartCode()
+                + "；数量=" + quantity
+                + (request.getRemark() == null || request.getRemark().isBlank() ? "" : "；" + request.getRemark()));
+        collaborationService.stampWrite(newConfig);
+        newConfig = machineConfigRepository.saveAndFlush(newConfig);
+
+        collaborationService.stampWrite(machine);
+        machineRepository.saveAndFlush(machine);
+
+        ConfigReplaceLog logEntry = new ConfigReplaceLog();
+        logEntry.setMachineId(machine.getId());
+        logEntry.setMachineConfigId(newConfig.getId());
+        logEntry.setItemName(configItem.getItemName());
+        logEntry.setOldValue(null);
+        logEntry.setNewValue(installedValue);
+        logEntry.setReplaceType("PART_INSTALL");
+        logEntry.setNewPartId(newPart.getId());
+        logEntry.setOperator(request.getOperator());
+        logEntry.setRemark("从配件仓库新增装车；配件编码=" + newPart.getPartCode()
+                + "；分类=" + configPartCategory(configItem)
+                + (quantity > 1 ? "；数量=" + quantity : "")
+                + (request.getRemark() == null || request.getRemark().isBlank() ? "" : "；" + request.getRemark()));
+        ConfigReplaceLog savedLog = replaceLogRepository.save(logEntry);
+
+        log.info("整车新增配件装车成功: machineId={}, configId={}, part={}, quantity={}",
+                machine.getId(), newConfig.getId(), newPart.getPartCode(), quantity);
+        return savedLog;
+    }
+
     /**
      * 根据替换类型决定配置来源
      */
@@ -298,6 +378,31 @@ public class ConfigReplaceServiceImpl implements ConfigReplaceService {
         return configItemRepository.findById(config.getConfigItemId())
                 .map(item -> firstNonBlank(item.getSubCategory(), item.getItemName(), config.getItemName()))
                 .orElse(config.getItemName());
+    }
+
+    private String configPartCategory(ConfigItem item) {
+        return firstNonBlank(item.getSubCategory(), item.getItemName(), item.getCategory());
+    }
+
+    private ConfigValue resolveConfigValueForInstall(ConfigItem item, PartInventory part) {
+        List<ConfigValue> values = configValueRepository.findByConfigItemIdOrderBySortOrderAsc(item.getId());
+        if (values.isEmpty()) {
+            throw new BusinessException(ResultCode.NOT_FOUND, "该配件分类还没有配置字典值");
+        }
+        String partName = normalizeType(part.getPartName());
+        String specification = normalizeType(part.getSpecification());
+        String displayName = normalizeType(partDisplayName(part));
+        Optional<ConfigValue> matched = values.stream()
+                .filter(value -> {
+                    String label = normalizeType(value.getValueLabel());
+                    return label.equals(partName) || label.equals(specification) || label.equals(displayName);
+                })
+                .findFirst();
+        if (matched.isPresent()) {
+            return matched.get();
+        }
+        ConfigValue defaultValue = configValueRepository.findByConfigItemIdAndIsDefaultTrue(item.getId());
+        return defaultValue != null ? defaultValue : values.get(0);
     }
 
     private String firstNonBlank(String... values) {

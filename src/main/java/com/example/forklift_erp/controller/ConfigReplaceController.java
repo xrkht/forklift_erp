@@ -4,6 +4,7 @@ import com.example.forklift_erp.common.Result;
 import com.example.forklift_erp.dto.ConfigReplaceLogVO;
 import com.example.forklift_erp.dto.ConfigReplaceRequestDTO;
 import com.example.forklift_erp.dto.PartReplaceRequestDTO;
+import com.example.forklift_erp.dto.VehiclePartInstallRequestDTO;
 import com.example.forklift_erp.entity.ConfigReplaceLog;
 import com.example.forklift_erp.service.ConfigReplaceLogService;
 import com.example.forklift_erp.service.ConfigReplaceService;
@@ -62,6 +63,18 @@ public class ConfigReplaceController {
                 display(log.getOldValue()) + " -> " + display(log.getNewValue()),
                 log.getOperator(), log.getRemark(), "REPLACE", log.getId());
         return Result.success("配件替换成功，旧件已自动入库", ConfigReplaceLogVO.fromEntity(log));
+    }
+
+    @PostMapping("/install-part")
+    @ResponseStatus(HttpStatus.CREATED)
+    @PreAuthorize("@permissionService.hasPermission(authentication, 'replace:write')")
+    public Result<ConfigReplaceLogVO> performPartInstall(@Valid @RequestBody VehiclePartInstallRequestDTO request) {
+        ConfigReplaceLog log = configReplaceService.performPartInstall(request);
+        operationAuditService.record("配置替换", "PART_INSTALL", "MACHINE", log.getMachineId(),
+                "车辆ID " + log.getMachineId(), log.getItemName(),
+                display(log.getNewValue()),
+                log.getOperator(), log.getRemark(), "REPLACE", log.getId());
+        return Result.success("配件装车成功", ConfigReplaceLogVO.fromEntity(log));
     }
 
     private String display(String value) {

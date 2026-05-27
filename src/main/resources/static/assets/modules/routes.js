@@ -15,6 +15,7 @@ export const endpoints = {
     list: "/api/repairs",
     create: "/api/repairs",
     update: id => `/api/repairs/${id}`,
+    updateStatus: id => `/api/repairs/${id}/status`,
     delete: id => `/api/repairs/${id}`
   },
   configItem: {
@@ -28,7 +29,8 @@ export const endpoints = {
     delete: id => `/api/config/values/${id}`
   },
   partReplace: {
-    create: "/api/replace/part"
+    create: "/api/replace/part",
+    install: "/api/replace/install-part"
   },
   modificationOrder: {
     list: "/api/modification-work-orders",
@@ -63,6 +65,8 @@ export const endpoints = {
     list: "/api/auth/users",
     repairers: "/api/auth/repair-users",
     create: "/api/auth/register",
+    updateJobTag: id => `/api/auth/users/${id}/job-tag`,
+    updateEnabled: id => `/api/auth/users/${id}/enabled`,
     updateUsername: id => `/api/auth/users/${id}/username`,
     updatePassword: id => `/api/auth/users/${id}/password`,
     delete: id => `/api/auth/users/${id}`

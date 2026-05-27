@@ -147,6 +147,7 @@ public class DataInitializer implements CommandLineRunner {
             superAdmin.setUsername("admin");
             superAdmin.setPassword(passwordEncoder.encode("admin123"));
             superAdmin.setRoles(Set.of(superAdminRole));
+            superAdmin.setJobTag("MANAGEMENT");
             userRepository.save(superAdmin);
         }
     }

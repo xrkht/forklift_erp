@@ -33,6 +33,9 @@ public class User implements CollaborativeResource {
     @Column(nullable = false)
     private boolean enabled = true;
 
+    @Column(name = "job_tag", nullable = false, length = 20)
+    private String jobTag = "CLERK";
+
     @ManyToMany(fetch = FetchType.EAGER)   // 用户加载时立即加载角色
     @JoinTable(
             name = "user_roles",

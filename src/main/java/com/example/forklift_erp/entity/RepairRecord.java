@@ -129,10 +129,9 @@ public class RepairRecord implements CollaborativeResource {
     /**
      * 状态
      * PENDING = 待维修
-     * IN_PROGRESS = 维修中
      * COMPLETED = 已完成
      */
-    @Pattern(regexp = "^(PENDING|IN_PROGRESS|COMPLETED)$", message = "状态值非法")
+    @Pattern(regexp = "^(PENDING|COMPLETED)$", message = "状态值非法")
     @Column(name = "status", length = 20)
     private String status = "PENDING";
 

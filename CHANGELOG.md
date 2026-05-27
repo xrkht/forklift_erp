@@ -2,6 +2,90 @@
 
 本项目遵循 [语义化版本](https://semver.org/lang/zh-CN/) 和 [Keep a Changelog](https://keepachangelog.com/zh-CN/) 规范。
 
+## [0.1.42] - 2026-05-27 - Codex
+
+### 修复
+- **总览整车流转详情**
+  - 修复总览“整车流转”的“详情”按钮只加载数据但仍停留在总览页的问题；现在会切到车辆库存页并定位到对应车辆详情。
+
+### 新增
+- **入库档案编辑入口**
+  - 车辆详情与车型详情中选中库存车号后，“入库档案”区域新增“编辑档案”按钮，直接打开整车档案编辑弹窗。
+  - Service Worker 缓存版本升级为 `forklift-erp-client-v39`，避免继续使用旧脚本。
+
+## [0.1.41] - 2026-05-27 - Codex
+
+### 变更
+- **车辆库存去台账化**
+  - 删除车辆库存页的台账视图、阶段筛选与“新增入库台账 / 登记销售跟进”等台账入口，车辆页回到车型库存列表与整车档案详情。
+  - 总览阶段入口不再跳转车辆台账：“在库待销售”进入车型库存并筛选在库车辆，销售闭环阶段进入订单列表。
+  - Service Worker 缓存版本升级为 `forklift-erp-client-v38`，避免继续使用旧的车辆台账脚本。
+
+### 修复
+- **车型库存分页位置**
+  - 修复车型视图中车型库存列表翻页会自动滑到页面顶端的问题，车辆分页只刷新当前列表，不再触发全局滚动。
+
+### 验证
+- 内置 Node：`node --check src\main\resources\static\assets\app.js`、`node --check src\main\resources\static\assets\modules\routes.js` 与 `node --check src\main\resources\static\sw.js` 通过。
+- 静态残留检查：`app.js` / `app.css` 不再包含 `set-vehicle-view`、`set-vehicle-workflow`、`workflow-chip`、`renderVehicleLedger`、`vehicleWorkflowRows`、`isVehicleModelView` 等旧台账视图关键字。
+- Java 21：`.\mvnw.cmd test` 通过，累计 `19` 个测试通过；`.\mvnw.cmd package -DskipTests` 通过。
+- 本地 jar 静态验证：`http://127.0.0.1:8105/` 返回 `200`，`/assets/app.js`、`/assets/app.css` 与 `/sw.js` 包含车型库存、装车配件和 `forklift-erp-client-v38`，且不包含旧台账视图关键字。
+- 浏览器插件验证尝试打开本地服务时当前环境返回连接/策略拦截错误，因此未将其计为页面级通过信号。
+
+## [0.1.40] - 2026-05-27 - Codex
+
+### 新增
+- **整车新增配件装车**
+  - 新增 `/api/replace/install-part` 接口，从配件仓库按数量领料装到整车，自动扣减配件库存、写入库存流水、给整车新增 `WAREHOUSE` 配置并记录 `PART_INSTALL` 日志。
+  - 整车详情“新增配件”改为装车领料弹窗，只需要选择配件分类、仓库配件和数量；分类来自配置字典，具体配件来自有库存的配件档案。
+
+### 修复
+- **总览统计与入口**
+  - 总览“待收款 / 待报销售 / 待申请发票”改为复用车辆台账阶段筛选口径，避免统计数字与点击进入后的台账结果不一致。
+  - 快捷入口“新增车型”保留车型分类菜单，但触发按钮改为与其他快捷入口同宽同风格。
+
+### 变更
+- Service Worker 缓存版本升级为 `forklift-erp-client-v37`。
+
+### 验证
+- 内置 Node：`node --check src\main\resources\static\assets\app.js` 与 `node --check src\main\resources\static\assets\modules\routes.js` 通过。
+- Java 21：`.\mvnw.cmd -Dtest=ModificationWorkOrderIntegrationTests test` 通过，新增覆盖整车新增配件装车后库存扣减、整车配置新增和 `PART_INSTALL` 日志；`.\mvnw.cmd test` 通过，累计 `19` 个测试通过；`.\mvnw.cmd package -DskipTests` 通过。
+- 本地 jar 静态验证：`http://127.0.0.1:8104/` 返回 `200`，`/assets/app.js`、`/assets/modules/routes.js`、`/assets/app.css` 与 `/sw.js` 包含 `vehiclePartInstall`、`installPartOptions`、`pendingPaymentRows`、`/api/replace/install-part` 和 `forklift-erp-client-v37`。
+- 浏览器插件验证尝试打开 `http://127.0.0.1:8104/` 与 `http://localhost:8104/`，当前浏览器环境均返回 `ERR_BLOCKED_BY_CLIENT`，因此未将其计为页面级通过信号。
+
+## [0.1.39] - 2026-05-27 - Codex
+
+### 修复
+- **维修人员预填交互**
+  - 新增维修记录的“维修人员”默认“其他”改为灰色预填提示，打开下拉时不再用“其他”过滤候选；保存时未手动选择仍会提交“其他”。
+- **维修人员候选刷新**
+  - 维修记录弹窗每次打开都会重新请求 `/api/auth/repair-users`，确保刚切换为“维修”职务且仍处于启用状态的用户能立即进入候选列表。
+  - 维修记录列表的“维修人”列去掉重复的“其他”标记，只保留一个维修人显示值。
+- **用户启用状态切换**
+  - 用户管理列表的“状态”列改为可点击切换“启用 / 停用”，新增 `/api/auth/users/{id}/enabled` 接口并保留协作版本校验和审计记录。
+  - 已停用账号不再允许登录，且不会出现在维修人员候选列表中；前端禁止停用当前登录账号和超级管理员账号。
+
+### 新增
+- **用户职务标签**
+  - 用户账号新增 `MANAGEMENT`、`CLERK`、`REPAIR` 三种职务标签，对应前端显示“管理 / 文员 / 维修”。
+  - 用户管理列表新增“职务”列，点击职务标签即可在三种职务间循环切换；后端新增 `/api/auth/users/{id}/job-tag` 接口并保留协作版本校验和审计记录。
+  - 新增 Flyway `V17__user_job_tag_and_repair_status.sql`，为历史用户补齐 `job_tag` 字段，并把管理员/超级管理员初始化为“管理”职务。
+- **维修人员按职务筛选**
+  - `/api/auth/repair-users` 改为只返回启用且职务标签为“维修”的用户；维修记录保存时同步校验所选用户必须是“维修”职务。
+  - 新建用户弹窗支持选择职务，维修记录仍保留“其他”选项用于外部维修人员。
+
+### 变更
+- **维修状态简化**
+  - 维修记录状态移除“处理中”，仅保留“待处理”和“已完成”。
+  - 维修记录列表状态改为行内点击切换，新增 `/api/repairs/{id}/status` 接口，切换状态不再需要进入编辑弹窗。
+  - Service Worker 缓存版本升级为 `forklift-erp-client-v36`。
+
+### 验证
+- 内置 Node：`node --check src\main\resources\static\assets\app.js` 与 `node --check src\main\resources\static\assets\modules\routes.js` 通过。
+- Java 21：`.\mvnw.cmd -Dtest=AuthIntegrationTests test` 通过，覆盖职务标签决定维修人员候选；`.\mvnw.cmd test` 通过，累计 `18` 个测试通过；`.\mvnw.cmd package -DskipTests` 通过。
+- 本地 jar 静态验证：`http://127.0.0.1:8103/` 返回 `200`，`/assets/app.js`、`/assets/modules/routes.js` 与 `/sw.js` 包含 `toggle-user-job-tag`、`toggle-user-enabled`、`toggle-repair-status`、`updateJobTag`、`updateEnabled`、`updateStatus` 和 `forklift-erp-client-v36`。
+- 浏览器插件验证尝试打开 `http://127.0.0.1:8103/` 与 `http://localhost:8103/`，当前浏览器环境均返回 `ERR_BLOCKED_BY_CLIENT`，因此未将其计为页面级通过信号。
+
 ## [0.1.38] - 2026-05-27 - Codex
 
 ### 修复

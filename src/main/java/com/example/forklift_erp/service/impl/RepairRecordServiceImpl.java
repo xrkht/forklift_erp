@@ -185,13 +185,15 @@ public class RepairRecordServiceImpl implements RepairRecordService {
         }
         User user = userRepository.findById(record.getRepairPersonUserId())
                 .orElseThrow(() -> new BusinessException(ResultCode.NOT_FOUND, "维修人员不存在"));
-        boolean privileged = user.getRoles().stream()
-                .anyMatch(role -> "ADMIN".equals(role.getName()) || "SUPER_ADMIN".equals(role.getName()));
-        if (privileged) {
-            throw new BusinessException(ResultCode.FORBIDDEN, "管理员和超级管理员不能作为维修人员");
+        if (!user.isEnabled() || !"REPAIR".equals(normalizeJobTag(user.getJobTag()))) {
+            throw new BusinessException(ResultCode.FORBIDDEN, "维修人员必须选择职务标签为维修的用户");
         }
         record.setRepairPerson(user.getUsername());
         record.setRepairExternal(false);
+    }
+
+    private String normalizeJobTag(String value) {
+        return value == null ? "" : value.trim().toUpperCase();
     }
 
     private void normalizeUsedParts(RepairRecord record) {

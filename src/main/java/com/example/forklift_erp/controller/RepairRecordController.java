@@ -11,6 +11,8 @@ import com.example.forklift_erp.service.OperationAuditService;
 import com.example.forklift_erp.service.RepairRecordService;
 import com.example.forklift_erp.util.ListPageSupport;
 import jakarta.validation.Valid;
+import jakarta.validation.constraints.Pattern;
+import lombok.Data;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.format.annotation.DateTimeFormat;
@@ -36,6 +38,14 @@ public class RepairRecordController {
 
     @Autowired
     private CollaborationService collaborationService;
+
+    @Data
+    public static class StatusUpdateRequest {
+        private Long version;
+
+        @Pattern(regexp = "^(PENDING|COMPLETED)$", message = "状态值非法")
+        private String status;
+    }
 
     @GetMapping
     public Result<?> getAll(
@@ -114,6 +124,21 @@ public class RepairRecordController {
                 saved.getVehicleNumber(), saved.getCustomerName(), "更新维修工单：" + saved.getStatus(),
                 saved.getRepairPerson(), saved.getRemarks(), "REPAIR", saved.getId());
         return Result.success("更新成功", RepairRecordVO.fromEntity(saved));
+    }
+
+    @PutMapping("/{id}/status")
+    @PreAuthorize("@permissionService.hasPermission(authentication, 'repair:write')")
+    @Transactional
+    public Result<RepairRecordVO> updateStatus(@PathVariable Long id, @Valid @RequestBody StatusUpdateRequest request) {
+        RepairRecord record = repairService.findByIdForUpdate(id)
+                .orElseThrow(() -> new BusinessException(ResultCode.NOT_FOUND, "维修记录不存在"));
+        collaborationService.validateWrite(record, request.getVersion());
+        record.setStatus(request.getStatus());
+        RepairRecord saved = repairService.save(record);
+        operationAuditService.record("维修工单", saved.getStatus(), "REPAIR", saved.getId(),
+                saved.getVehicleNumber(), saved.getCustomerName(), "切换维修状态：" + saved.getStatus(),
+                saved.getRepairPerson(), saved.getRemarks(), "REPAIR", saved.getId());
+        return Result.success("维修状态已更新", RepairRecordVO.fromEntity(saved));
     }
 
     @DeleteMapping("/{id}")

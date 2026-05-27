@@ -189,6 +189,80 @@ class AuthIntegrationTests {
     }
 
     @Test
+    void jobTagControlsRepairUserChoices() throws Exception {
+        String repairUsername = uniqueUsername("repair");
+
+        usersToCleanup.add(repairUsername);
+        mockMvc.perform(post("/api/auth/register")
+                        .header("Authorization", bearer(superToken))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json(Map.of(
+                                "username", repairUsername,
+                                "password", PASSWORD,
+                                "roles", List.of("USER"),
+                                "jobTag", "REPAIR"
+                        ))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(200));
+
+        String repairUsers = mockMvc.perform(get("/api/auth/repair-users")
+                        .header("Authorization", bearer(superToken)))
+                .andExpect(status().isOk())
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+        assertThat(repairUsers).contains(repairUsername);
+
+        Long userId = findUserId(repairUsername);
+        mockMvc.perform(put("/api/auth/users/{id}/job-tag", userId)
+                        .header("Authorization", bearer(superToken))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json(Map.of(
+                                "version", findUserVersion(repairUsername),
+                                "jobTag", "CLERK"
+                        ))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.jobTag").value("CLERK"));
+
+        String afterToggle = mockMvc.perform(get("/api/auth/repair-users")
+                        .header("Authorization", bearer(superToken)))
+                .andExpect(status().isOk())
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+        assertThat(afterToggle).doesNotContain(repairUsername);
+
+        mockMvc.perform(put("/api/auth/users/{id}/job-tag", userId)
+                        .header("Authorization", bearer(superToken))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json(Map.of(
+                                "version", findUserVersion(repairUsername),
+                                "jobTag", "REPAIR"
+                        ))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.jobTag").value("REPAIR"));
+
+        mockMvc.perform(put("/api/auth/users/{id}/enabled", userId)
+                        .header("Authorization", bearer(superToken))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json(Map.of(
+                                "version", findUserVersion(repairUsername),
+                                "enabled", false
+                        ))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.enabled").value(false));
+
+        String afterDisabled = mockMvc.perform(get("/api/auth/repair-users")
+                        .header("Authorization", bearer(superToken)))
+                .andExpect(status().isOk())
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+        assertThat(afterDisabled).doesNotContain(repairUsername);
+        loginExpectingStatus(repairUsername, PASSWORD, 401);
+    }
+
+    @Test
     void normalUserKeepsBusinessPermissionsButCannotReadAdminModules() throws Exception {
         String adminUsername = uniqueUsername("admin");
         String userUsername = uniqueUsername("user");
@@ -311,6 +385,7 @@ class AuthIntegrationTests {
         user.setPassword(passwordEncoder.encode(password));
         user.setEnabled(true);
         user.setRoles(Set.of(role));
+        user.setJobTag("SUPER_ADMIN".equals(roleName) || "ADMIN".equals(roleName) ? "MANAGEMENT" : "CLERK");
         userRepository.save(user);
         usersToCleanup.add(username);
     }

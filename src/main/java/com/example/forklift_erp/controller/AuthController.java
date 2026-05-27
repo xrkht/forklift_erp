@@ -45,6 +45,10 @@ import java.util.Set;
 @RequestMapping("/api/auth")
 public class AuthController {
 
+    private static final String JOB_TAG_MANAGEMENT = "MANAGEMENT";
+    private static final String JOB_TAG_CLERK = "CLERK";
+    private static final String JOB_TAG_REPAIR = "REPAIR";
+
     @Autowired
     private UserRepository userRepository;
 
@@ -79,6 +83,7 @@ public class AuthController {
     public static class TokenResponse {
         private String token;
         private String username;
+        private String jobTag;
         private List<String> roles;
         private List<String> permissions;
     }
@@ -88,6 +93,7 @@ public class AuthController {
         private Long id;
         private Long version;
         private String username;
+        private String jobTag;
         private Boolean enabled;
         private List<String> roles;
         private List<String> permissions;
@@ -98,6 +104,7 @@ public class AuthController {
             response.setId(user.getId());
             response.setVersion(user.getVersion());
             response.setUsername(user.getUsername());
+            response.setJobTag(normalizeJobTag(user));
             response.setEnabled(user.isEnabled());
             response.setRoles(user.getRoles().stream()
                     .map(Role::getName)
@@ -118,6 +125,8 @@ public class AuthController {
         private String password;
 
         private List<String> roles;
+
+        private String jobTag;
     }
 
     @Data
@@ -147,6 +156,21 @@ public class AuthController {
         private String password;
     }
 
+    @Data
+    public static class UpdateJobTagRequest {
+        private Long version;
+
+        @NotBlank(message = "职务标签不能为空")
+        private String jobTag;
+    }
+
+    @Data
+    public static class UpdateEnabledRequest {
+        private Long version;
+
+        private Boolean enabled;
+    }
+
     @PostMapping("/login")
     public Result<TokenResponse> login(@Valid @RequestBody LoginRequest request) {
         User user = userRepository.findByUsername(request.getUsername())
@@ -155,11 +179,15 @@ public class AuthController {
         if (!passwordEncoder.matches(request.getPassword(), user.getPassword())) {
             throw new BusinessException(ResultCode.UNAUTHORIZED, "用户名或密码错误");
         }
+        if (!user.isEnabled()) {
+            throw new BusinessException(ResultCode.UNAUTHORIZED, "账号已停用");
+        }
 
         String token = jwtTokenProvider.createToken(user.getUsername());
         TokenResponse resp = new TokenResponse();
         resp.setToken(token);
         resp.setUsername(user.getUsername());
+        resp.setJobTag(normalizeJobTag(user));
         resp.setRoles(user.getRoles().stream()
                 .map(Role::getName)
                 .sorted()
@@ -187,6 +215,7 @@ public class AuthController {
         if (paged) {
             List<UserSummaryResponse> filtered = ListPageSupport.filter(users, keyword, row -> ListPageSupport.text(
                     row.getUsername(),
+                    row.getJobTag(),
                     String.join(" ", row.getRoles()),
                     String.join(" ", row.getPermissions())
             ));
@@ -200,8 +229,7 @@ public class AuthController {
     public Result<List<UserSummaryResponse>> listRepairUsers() {
         List<UserSummaryResponse> users = userRepository.findAll().stream()
                 .filter(User::isEnabled)
-                .filter(user -> user.getRoles().stream()
-                        .noneMatch(role -> "ADMIN".equals(role.getName()) || "SUPER_ADMIN".equals(role.getName())))
+                .filter(user -> JOB_TAG_REPAIR.equals(normalizeJobTag(user)))
                 .sorted(Comparator.comparing(User::getId).reversed())
                 .map(user -> UserSummaryResponse.fromEntity(user, permissionService.findPermissionCodes(user)))
                 .toList();
@@ -245,6 +273,7 @@ public class AuthController {
         newUser.setUsername(username);
         newUser.setPassword(passwordEncoder.encode(request.getPassword()));
         newUser.setRoles(assignRoles);
+        newUser.setJobTag(normalizeJobTag(request.getJobTag(), assignRoles));
         newUser.setEnabled(true);
         collaborationService.stampWrite(newUser);
 
@@ -318,6 +347,61 @@ public class AuthController {
         return Result.success("用户密码修改成功");
     }
 
+    @PutMapping("/users/{id}/job-tag")
+    @PreAuthorize("@permissionService.hasPermission(authentication, 'user:write')")
+    @Transactional
+    public Result<UserSummaryResponse> updateUserJobTag(@PathVariable Long id, @Valid @RequestBody UpdateJobTagRequest request) {
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        User targetUser = findUserByIdForUpdate(id);
+        boolean targetIsPrivileged = isPrivileged(targetUser);
+        boolean canManagePrivilegedUsers = permissionService.hasPermission(authentication, PermissionCodes.USER_ADMIN);
+
+        if (targetIsPrivileged && !canManagePrivilegedUsers) {
+            throw new BusinessException(ResultCode.FORBIDDEN, "当前权限不允许修改管理员职务标签");
+        }
+
+        collaborationService.validateWrite(targetUser, request.getVersion());
+        String oldTag = normalizeJobTag(targetUser);
+        targetUser.setJobTag(normalizeJobTag(request.getJobTag(), targetUser.getRoles()));
+        collaborationService.stampWrite(targetUser);
+        User savedUser = userRepository.save(targetUser);
+        operationAuditService.record("用户管理", "JOB_TAG_UPDATE", "USER", savedUser.getId(),
+                savedUser.getUsername(), roleNames(savedUser), oldTag + " -> " + normalizeJobTag(savedUser),
+                null, null, "USER", savedUser.getId());
+        return Result.success("职务标签已更新", UserSummaryResponse.fromEntity(savedUser, permissionService.findPermissionCodes(savedUser)));
+    }
+
+    @PutMapping("/users/{id}/enabled")
+    @PreAuthorize("@permissionService.hasPermission(authentication, 'user:write')")
+    @Transactional
+    public Result<UserSummaryResponse> updateUserEnabled(@PathVariable Long id, @Valid @RequestBody UpdateEnabledRequest request) {
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        User targetUser = findUserByIdForUpdate(id);
+        rejectSuperAdminTarget(targetUser, "超级管理员账号不允许停用");
+        boolean targetIsPrivileged = isPrivileged(targetUser);
+        boolean canManagePrivilegedUsers = permissionService.hasPermission(authentication, PermissionCodes.USER_ADMIN);
+
+        if (targetUser.getUsername().equals(authentication.getName())) {
+            throw new BusinessException(ResultCode.FORBIDDEN, "不能停用当前登录账号");
+        }
+        if (targetIsPrivileged && !canManagePrivilegedUsers) {
+            throw new BusinessException(ResultCode.FORBIDDEN, "当前权限不允许修改管理员启用状态");
+        }
+        if (request.getEnabled() == null) {
+            throw new BusinessException(ResultCode.PARAM_ERROR, "启用状态不能为空");
+        }
+
+        collaborationService.validateWrite(targetUser, request.getVersion());
+        boolean oldEnabled = targetUser.isEnabled();
+        targetUser.setEnabled(Boolean.TRUE.equals(request.getEnabled()));
+        collaborationService.stampWrite(targetUser);
+        User savedUser = userRepository.save(targetUser);
+        operationAuditService.record("用户管理", savedUser.isEnabled() ? "ENABLE" : "DISABLE", "USER", savedUser.getId(),
+                savedUser.getUsername(), roleNames(savedUser), oldEnabled + " -> " + savedUser.isEnabled(),
+                null, null, "USER", savedUser.getId());
+        return Result.success("用户状态已更新", UserSummaryResponse.fromEntity(savedUser, permissionService.findPermissionCodes(savedUser)));
+    }
+
     @DeleteMapping("/users/{id}")
     @PreAuthorize("@permissionService.hasPermission(authentication, 'user:admin')")
     @Transactional
@@ -351,6 +435,25 @@ public class AuthController {
         if (user.getRoles().stream().anyMatch(r -> "SUPER_ADMIN".equals(r.getName()))) {
             throw new BusinessException(ResultCode.FORBIDDEN, message);
         }
+    }
+
+    private boolean isPrivileged(User user) {
+        return user.getRoles().stream()
+                .anyMatch(role -> "ADMIN".equals(role.getName()) || "SUPER_ADMIN".equals(role.getName()));
+    }
+
+    private static String normalizeJobTag(User user) {
+        return normalizeJobTag(user.getJobTag(), user.getRoles());
+    }
+
+    private static String normalizeJobTag(String value, Collection<Role> roles) {
+        String normalized = value == null ? "" : value.trim().toUpperCase();
+        if (JOB_TAG_MANAGEMENT.equals(normalized) || JOB_TAG_CLERK.equals(normalized) || JOB_TAG_REPAIR.equals(normalized)) {
+            return normalized;
+        }
+        return roles.stream().anyMatch(role -> "ADMIN".equals(role.getName()) || "SUPER_ADMIN".equals(role.getName()))
+                ? JOB_TAG_MANAGEMENT
+                : JOB_TAG_CLERK;
     }
 
     private String roleNames(User user) {

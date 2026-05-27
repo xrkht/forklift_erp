@@ -237,6 +237,67 @@ class ModificationWorkOrderIntegrationTests {
     }
 
     @Test
+    void installVehiclePartConsumesWarehousePartAndCreatesVehicleConfig() throws Exception {
+        JsonNode machine = createMachine();
+        Long machineId = machine.path("id").asLong();
+        machinesToCleanup.add(machineId);
+
+        ConfigItem item = new ConfigItem();
+        item.setCategory("ELECTRIC");
+        item.setSubCategory("TIRE");
+        item.setItemName("Tire type");
+        item.setItemCode("INSTALL-CFG-" + unique("config"));
+        item.setInputType("SELECT");
+        ConfigItem savedItem = configItemRepository.saveAndFlush(item);
+        configItemsToCleanup.add(savedItem.getId());
+
+        ConfigValue value = new ConfigValue();
+        value.setConfigItemId(savedItem.getId());
+        value.setValueLabel("Solid tire");
+        ConfigValue savedValue = configValueRepository.saveAndFlush(value);
+        configValuesToCleanup.add(savedValue.getId());
+
+        JsonNode part = createPart("TIRE", 3);
+        Long partId = part.path("id").asLong();
+
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("machineId", machineId);
+        payload.put("machineVersion", machine.path("version").asLong());
+        payload.put("configItemId", savedItem.getId());
+        payload.put("newPartId", partId);
+        payload.put("newPartVersion", part.path("version").asLong());
+        payload.put("quantity", 2);
+        payload.put("operator", "install-test");
+
+        String response = mockMvc.perform(post("/api/replace/install-part")
+                        .header("Authorization", bearer(superToken))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json(payload)))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.code").value(200))
+                .andExpect(jsonPath("$.data.replaceType").value("PART_INSTALL"))
+                .andExpect(jsonPath("$.data.newPartId").value(partId))
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+
+        JsonNode log = objectMapper.readTree(response).path("data");
+        Long configId = log.path("machineConfigId").asLong();
+        configsToCleanup.add(configId);
+
+        PartInventory adjustedPart = partRepository.findById(partId).orElseThrow();
+        assertThat(adjustedPart.getQuantity()).isEqualTo(1);
+
+        MachineConfig installedConfig = machineConfigRepository.findById(configId).orElseThrow();
+        assertThat(installedConfig.getMachineId()).isEqualTo(machineId);
+        assertThat(installedConfig.getConfigItemId()).isEqualTo(savedItem.getId());
+        assertThat(installedConfig.getConfigValueId()).isEqualTo(savedValue.getId());
+        assertThat(installedConfig.getSelectedValue()).isEqualTo("Solid tire / 28x9-15");
+        assertThat(installedConfig.getConfigSource()).isEqualTo("WAREHOUSE");
+        assertThat(installedConfig.getIsStandard()).isFalse();
+    }
+
+    @Test
     void createConfigItemAutoFillsSequentialCodeWhenBlank() throws Exception {
         JsonNode first = createConfigItemByApi("电动车", "轮胎", "轮胎类型");
         JsonNode second = createConfigItemByApi("内燃车", "货叉", "货叉类型");
