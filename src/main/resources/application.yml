@@ -1,0 +1,66 @@
+server:
+  port: ${FORKLIFT_ERP_SERVER_PORT:8080} # 服务端口
+  http:
+    port: ${FORKLIFT_ERP_HTTP_PORT:8080} # HTTP 跳转端口
+  ssl:
+    enabled: ${FORKLIFT_ERP_SSL_ENABLED:false}
+    key-store: ${FORKLIFT_ERP_SSL_KEY_STORE:classpath:certs/forklift-erp-dev.p12}
+    key-store-password: ${FORKLIFT_ERP_SSL_KEY_STORE_PASSWORD:}
+    key-store-type: PKCS12
+    key-alias: forklift-erp
+
+spring:
+  application:
+    name: forklift-erp # 应用名称，与Spring Initializr创建时保持一致
+  datasource:
+    url: ${FORKLIFT_ERP_DB_URL:jdbc:mysql://localhost:3306/forklift_erp?useUnicode=true&characterEncoding=utf-8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true}
+    username: ${FORKLIFT_ERP_DB_USERNAME:root} # 数据库用户名，请根据实际情况修改
+    password: ${FORKLIFT_ERP_DB_PASSWORD:ChH060118} # 数据库密码，请根据实际情况修改
+    driver-class-name: com.mysql.cj.jdbc.Driver
+  jpa:
+    hibernate:
+      ddl-auto: validate # 结构变更由 Flyway 管理，启动时只校验实体与表结构
+    show-sql: true # 控制台显示SQL语句，开发环境建议开启
+    properties:
+      hibernate:
+        format_sql: true # 格式化输出SQL语句，便于阅读
+  flyway:
+    enabled: true
+    baseline-on-migrate: true # 接管已有非空数据库时自动建立基线
+    baseline-version: 1
+    locations: classpath:db/migration
+  web:
+    resources:
+      add-mappings: true # 启用静态资源映射，用于前端页面
+
+
+# 日志配置
+logging:
+  file:
+    name: logs/application.log  # 日志文件路径
+  level:
+    com.example.forklift_erp: debug # 项目包路径下的日志级别设置为debug，便于开发调试
+    org.springframework.web: info # Spring Web模块日志级别
+    org.hibernate.SQL: debug # Hibernate SQL日志级别
+    org.hibernate.type.descriptor.sql.BasicBinder: trace # 显示SQL参数绑定值
+
+# JWT配置
+jwt:
+  secret: ${FORKLIFT_ERP_JWT_SECRET:forklift-erp-development-jwt-secret-change-me-32-bytes-minimum}
+  expiration: 31536000000   # 1 年（毫秒），可调整为 Long.MAX_VALUE 但建议合理设置
+  header: Authorization # Token在请求头中的名称
+
+forklift:
+  invoice-storage-dir: ${FORKLIFT_ERP_INVOICE_STORAGE_DIR:uploads/invoices}
+  contract-storage-dir: ${FORKLIFT_ERP_CONTRACT_STORAGE_DIR:uploads/contracts}
+  admin:
+    business-data-reset:
+      enabled: ${FORKLIFT_ERP_BUSINESS_DATA_RESET_ENABLED:false}
+  seed-demo-data:
+    enabled: ${FORKLIFT_ERP_SEED_DEMO_DATA:true} # 本地启动时幂等补齐演示业务数据；生产可设为 false
+
+springdoc:
+  api-docs:
+    path: /v3/api-docs
+  swagger-ui:
+    path: /swagger-ui.html

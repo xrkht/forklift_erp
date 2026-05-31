@@ -1,0 +1,26 @@
+spring:
+  datasource:
+    url: ${FORKLIFT_ERP_TEST_DB_URL:jdbc:mysql://localhost:3306/forklift_erp_test?useUnicode=true&characterEncoding=utf-8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true&createDatabaseIfNotExist=true}
+    username: ${FORKLIFT_ERP_TEST_DB_USERNAME:${FORKLIFT_ERP_DB_USERNAME:root}}
+    password: ${FORKLIFT_ERP_TEST_DB_PASSWORD:${FORKLIFT_ERP_DB_PASSWORD:}}
+    driver-class-name: com.mysql.cj.jdbc.Driver
+  flyway:
+    clean-disabled: true
+
+jwt:
+  secret: ${FORKLIFT_ERP_TEST_JWT_SECRET:forklift-erp-test-jwt-secret-change-me-32-bytes-min}
+  expiration: 31536000000
+  header: Authorization
+
+forklift:
+  admin:
+    business-data-reset:
+      enabled: true
+  seed-demo-data:
+    enabled: false
+
+springdoc:
+  api-docs:
+    enabled: false
+  swagger-ui:
+    enabled: false
