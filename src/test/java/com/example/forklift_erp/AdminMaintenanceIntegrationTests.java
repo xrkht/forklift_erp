@@ -14,7 +14,6 @@ import com.example.forklift_erp.repository.StockOperationLogRepository;
 import com.example.forklift_erp.repository.UserRepository;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -37,7 +36,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 @SpringBootTest
 @AutoConfigureMockMvc
-class AdminMaintenanceIntegrationTests {
+class AdminMaintenanceIntegrationTests extends TestcontainersDatabaseSupport {
 
     private static final String PASSWORD = "CodexTest123!";
 
@@ -88,11 +87,6 @@ class AdminMaintenanceIntegrationTests {
         superUsername = unique("super");
         createUserDirectly(superUsername, "SUPER_ADMIN");
         superToken = login(superUsername);
-    }
-
-    @AfterEach
-    void tearDown() {
-        userRepository.findByUsername(superUsername).ifPresent(userRepository::delete);
     }
 
     @Test
@@ -248,46 +242,4 @@ class AdminMaintenanceIntegrationTests {
                 .andExpect(jsonPath("$.code").value(200));
     }
 
-    private void createUserDirectly(String username, String roleName) {
-        Role role = roleRepository.findByName(roleName)
-                .orElseGet(() -> {
-                    Role newRole = new Role();
-                    newRole.setName(roleName);
-                    newRole.setDescription(roleName);
-                    return roleRepository.save(newRole);
-                });
-
-        User user = new User();
-        user.setUsername(username);
-        user.setPassword(passwordEncoder.encode(PASSWORD));
-        user.setEnabled(true);
-        user.setRoles(Set.of(role));
-        userRepository.save(user);
-    }
-
-    private String login(String username) throws Exception {
-        String body = mockMvc.perform(post("/api/auth/login")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(json(Map.of(
-                                "username", username,
-                                "password", PASSWORD
-                        ))))
-                .andExpect(status().isOk())
-                .andReturn()
-                .getResponse()
-                .getContentAsString();
-        return objectMapper.readTree(body).path("data").path("token").asText();
-    }
-
-    private String unique(String prefix) {
-        return "it_" + prefix + "_" + UUID.randomUUID().toString().replace("-", "").substring(0, 10);
-    }
-
-    private String json(Object value) throws Exception {
-        return objectMapper.writeValueAsString(value);
-    }
-
-    private String bearer(String token) {
-        return "Bearer " + token;
-    }
 }

@@ -1,6 +1,7 @@
 package com.example.forklift_erp.controller;
 
 import com.example.forklift_erp.common.Result;
+import com.example.forklift_erp.constant.RoleNames;
 import com.example.forklift_erp.dto.OutboundInvoiceDownload;
 import com.example.forklift_erp.dto.OutboundOrderUpdateDTO;
 import com.example.forklift_erp.dto.OutboundOrderVO;
@@ -66,7 +67,7 @@ public class OutboundOrderController {
     }
 
     @PutMapping("/{id}/lock")
-    @PreAuthorize("hasAnyRole('ADMIN','SUPER_ADMIN')")
+    @PreAuthorize("hasAnyRole('" + RoleNames.ADMIN + "','" + RoleNames.SUPER_ADMIN + "')")
     public Result<OutboundOrderVO> setLocked(
             @PathVariable Long id,
             @RequestParam boolean locked,
@@ -77,8 +78,12 @@ public class OutboundOrderController {
 
     @PostMapping(value = "/{id}/invoice", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     @PreAuthorize("@permissionService.hasPermission(authentication, 'stock:adjust')")
-    public Result<OutboundOrderVO> uploadInvoice(@PathVariable Long id, @RequestPart("file") MultipartFile file) {
-        return Result.success("发票上传成功", service.uploadInvoice(id, file));
+    public Result<OutboundOrderVO> uploadInvoice(
+            @PathVariable Long id,
+            @RequestPart("file") MultipartFile file,
+            @RequestParam(required = false) Long version
+    ) {
+        return Result.success("发票上传成功", service.uploadInvoice(id, file, version));
     }
 
     @GetMapping("/{id}/invoice")
@@ -90,8 +95,12 @@ public class OutboundOrderController {
 
     @PostMapping(value = "/{id}/contract", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     @PreAuthorize("@permissionService.hasPermission(authentication, 'stock:adjust')")
-    public Result<OutboundOrderVO> uploadContract(@PathVariable Long id, @RequestPart("file") MultipartFile file) {
-        return Result.success("合同上传成功", service.uploadContract(id, file));
+    public Result<OutboundOrderVO> uploadContract(
+            @PathVariable Long id,
+            @RequestPart("file") MultipartFile file,
+            @RequestParam(required = false) Long version
+    ) {
+        return Result.success("合同上传成功", service.uploadContract(id, file, version));
     }
 
     @GetMapping("/{id}/contract")

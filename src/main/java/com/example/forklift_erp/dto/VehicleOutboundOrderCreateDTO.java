@@ -21,6 +21,10 @@ public class VehicleOutboundOrderCreateDTO {
 
     private LocalDate salesDate;
     private BigDecimal salePrice;
+    private BigDecimal receivableAmount;
+    private BigDecimal receivedAmount;
+    private LocalDate paymentDueDate;
+    private LocalDate lastPaymentDate;
     private Boolean paymentSettled;
     private String paymentRemark;
     private Boolean salesReported;

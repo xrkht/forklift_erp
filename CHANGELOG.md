@@ -2,6 +2,70 @@
 
 本项目遵循 [语义化版本](https://semver.org/lang/zh-CN/) 和 [Keep a Changelog](https://keepachangelog.com/zh-CN/) 规范。
 
+## [0.1.45] - 2026-06-01 - Codex
+
+### 新增
+- **应收款与待办中心**
+  - 出库订单新增应收金额、已收金额、收款期限和最后收款日期字段，历史数据按结清状态回填应收/已收金额，并新增收款到期索引。
+  - 新增 `/api/todos` 待办中心，聚合待收款、逾期收款、待报销售、待申请发票、待上传发票/合同、维修跟进、租赁跟进和配件库存预警，并按当前用户权限过滤锁定数据。
+  - 总览页接入待办中心数据，新增应收/已收/未收统计、阶段入口、附件待办和可跳转的工作项列表。
+
+- **采购供应商、采购订单与库存盘点**
+  - 新增供应商档案 `/api/suppliers`，支持分页搜索、新增、编辑、删除、协作版本校验和操作审计。
+  - 新增采购订单 `/api/purchase-orders`，支持关联供应商、配置项/配置值、采购数量、单价、金额、预计到货、收货状态和运费维护。
+  - 新增库存盘点 `/api/stocktaking-records`，支持整车/配件盘点草稿、账面数量快照、实盘差异、确认入账和完成后禁止编辑/删除。
+  - 新增 Flyway `V20`、`V21`、`V22`，创建供应商、采购订单、盘点表，并补齐采购运费、配置项/配置值关联字段。
+
+- **测试数据库改用 Testcontainers**
+  - 集成测试改为通过 Testcontainers 启动 `mysql:8.0.43`，测试库连接信息由 `TestcontainersDatabaseSupport` 动态注入，不再依赖本机固定测试数据库。
+  - 新增测试工具基类，统一 `MockMvc`、`ObjectMapper`、用户/角色/权限仓储、登录、造用户、JSON 序列化和清理逻辑，减少集成测试重复代码。
+
+- **状态值和角色值枚举化**
+  - 新增 `CodedEnum`、`EnumCodes` 以及角色、职务、维修状态、租赁状态、库存状态、改装工单状态和旧件处理动作枚举。
+  - 原 `RoleNames`、`JobTags`、`RepairStatuses`、`RentalStatuses`、`MachineStockStatuses` 等常量类保留为兼容层，后续调用点可逐步迁移到枚举/值对象入口。
+
+### 变更
+- **出库订单收款、附件与锁定流程扩展**
+  - 出库订单 DTO、实体、创建/编辑表单和列表展示新增应收金额、已收金额、收款期限、报销售、发票申请、开票状态、合同类型等跟进字段。
+  - 发票/合同上传下载继续沿用 `/api/outbound-orders/{id}/invoice` 和 `/contract`，并通过上传前置策略控制“已满足条件但未上传”的待办提示。
+  - 列表操作统一补传协作 `version`，出库订单、维修记录、租赁记录、用户、改装工单等编辑/删除/状态切换继续走乐观版本校验。
+
+- **前端 app.js 继续模块化**
+  - 新增 `app-state.js`、`ui-config.js`、`field-config.js`、`display-utils.js` 和 `status-ui.js`，将页面状态、标签配置、表单字段、展示格式化、状态徽章等逻辑从 `app.js` 拆出。
+  - `app.js` 进一步收敛为页面编排和业务动作入口，降低后续维护和查找问题的成本。
+  - 侧边导航按业务总览、库存与订单、客户与采购、报表与审计、系统设置分组，并新增供应商、采购订单、库存盘点页面入口。
+
+- **出库服务拆分**
+  - 从 `OutboundOrderServiceImpl` 拆出文件存储、资源锁、上传前置校验和已存储文件值对象，降低单个服务类职责密度。
+  - 租赁中车辆禁止销售出库的错误信息统一为中文提示，和前端及集成测试断言一致。
+
+- **统计摘要与导出扩展**
+  - `/api/statistics/list-summary` 新增供应商、采购订单、库存盘点等列表摘要卡片，配合前端列表顶部概览展示当前筛选下的数量、金额和待跟进项。
+  - Excel 导出扩展到供应商、采购订单和库存盘点记录，前端导出路由同步补齐。
+
+### 优化
+- **前端可用性与错误反馈**
+  - 登录页新增焦点、跳转主内容入口、图标资源和按钮状态文案，主内容区支持键盘聚焦，详情抽屉用于承载更复杂的列表详情。
+  - API 客户端在请求失败时保留 HTTP 状态码和业务 `code`，便于前端区分登录过期、权限不足和普通业务错误。
+  - Service Worker 缓存版本升级为 `forklift-erp-client-v54`，并把新拆分的前端模块纳入离线壳资源。
+
+- **本地开发验证环境**
+  - 项目 Maven 编译器配置启用 fork 模式，避免 JDK 21 下 Maven 内嵌编译器偶发“无法关闭编译器资源”的问题。
+  - `.gitignore` 新增 Docker Desktop 安装器和 Codex Docker 临时配置目录，避免本地安装辅助文件误入提交。
+
+### 修复
+- **测试上下文 MockMvc 配置**
+  - 测试工具基类统一启用 `@AutoConfigureMockMvc`，修复继承基类的上下文启动测试无法注入 `MockMvc` 的问题。
+- **注解常量表达式**
+  - `RoleNames` 恢复为编译期字符串常量，保证 `@PreAuthorize` 等注解表达式可正常编译，同时保留枚举作为判断和归一化入口。
+
+### 验证
+- Docker Desktop：`docker run --rm hello-world` 通过，Docker Engine `29.5.2` 可用。
+- Java 21：`java -version` 使用 `C:\Users\chh00\.jdks\ms-21.0.11`，版本为 `21.0.11`。
+- Node：`node --check src/main/resources/static/assets/app.js`、`display-utils.js`、`status-ui.js` 通过。
+- Java 21 + Testcontainers：`.\mvnw.cmd test` 通过，累计 `24` 个测试通过，`Failures: 0, Errors: 0`。
+- 静态检查：`git diff --check` 通过，仅保留 Windows 换行符提示。
+
 ## [0.1.44] - 2026-05-27 - Codex
 
 ### 新增

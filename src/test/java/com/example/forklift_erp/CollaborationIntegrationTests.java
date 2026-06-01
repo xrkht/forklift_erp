@@ -32,7 +32,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 @SpringBootTest
 @AutoConfigureMockMvc
-class CollaborationIntegrationTests {
+class CollaborationIntegrationTests extends TestcontainersDatabaseSupport {
 
     private static final String PASSWORD = "CodexTest123!";
 
@@ -54,7 +54,6 @@ class CollaborationIntegrationTests {
     @Autowired
     private PasswordEncoder passwordEncoder;
 
-    private final List<String> usersToCleanup = new ArrayList<>();
     private final List<String> vehiclesToCleanup = new ArrayList<>();
     private String superToken;
     private String adminToken;
@@ -77,10 +76,6 @@ class CollaborationIntegrationTests {
         }
         vehiclesToCleanup.clear();
 
-        for (String username : usersToCleanup.reversed()) {
-            userRepository.findByUsername(username).ifPresent(userRepository::delete);
-        }
-        usersToCleanup.clear();
     }
 
     @Test
@@ -155,47 +150,4 @@ class CollaborationIntegrationTests {
         return payload;
     }
 
-    private void createUserDirectly(String username, String roleName) {
-        Role role = roleRepository.findByName(roleName)
-                .orElseGet(() -> {
-                    Role newRole = new Role();
-                    newRole.setName(roleName);
-                    newRole.setDescription(roleName);
-                    return roleRepository.save(newRole);
-                });
-
-        User user = new User();
-        user.setUsername(username);
-        user.setPassword(passwordEncoder.encode(PASSWORD));
-        user.setEnabled(true);
-        user.setRoles(Set.of(role));
-        userRepository.save(user);
-        usersToCleanup.add(username);
-    }
-
-    private String login(String username) throws Exception {
-        String body = mockMvc.perform(post("/api/auth/login")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(json(Map.of(
-                                "username", username,
-                                "password", PASSWORD
-                        ))))
-                .andExpect(status().isOk())
-                .andReturn()
-                .getResponse()
-                .getContentAsString();
-        return objectMapper.readTree(body).path("data").path("token").asText();
-    }
-
-    private String unique(String prefix) {
-        return "it_" + prefix + "_" + UUID.randomUUID().toString().replace("-", "").substring(0, 12);
-    }
-
-    private String json(Object value) throws Exception {
-        return objectMapper.writeValueAsString(value);
-    }
-
-    private String bearer(String token) {
-        return "Bearer " + token;
-    }
 }

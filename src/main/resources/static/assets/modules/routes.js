@@ -61,6 +61,27 @@ export const endpoints = {
     update: id => `/api/customers/${id}`,
     delete: id => `/api/customers/${id}`
   },
+  supplier: {
+    list: "/api/suppliers",
+    create: "/api/suppliers",
+    update: id => `/api/suppliers/${id}`,
+    delete: id => `/api/suppliers/${id}`
+  },
+  purchaseOrder: {
+    list: "/api/purchase-orders",
+    create: "/api/purchase-orders",
+    update: id => `/api/purchase-orders/${id}`,
+    received: id => `/api/purchase-orders/${id}/received`,
+    freight: id => `/api/purchase-orders/${id}/freight`,
+    delete: id => `/api/purchase-orders/${id}`
+  },
+  stocktaking: {
+    list: "/api/stocktaking-records",
+    create: "/api/stocktaking-records",
+    update: id => `/api/stocktaking-records/${id}`,
+    complete: id => `/api/stocktaking-records/${id}/complete`,
+    delete: id => `/api/stocktaking-records/${id}`
+  },
   user: {
     list: "/api/auth/users",
     repairers: "/api/auth/repair-users",
@@ -77,8 +98,13 @@ export const endpoints = {
     customers: "/api/export/customers",
     outboundOrders: "/api/export/outbound-orders",
     rentals: "/api/export/rentals",
-    repairs: "/api/export/repairs"
+    repairs: "/api/export/repairs",
+    suppliers: "/api/export/suppliers",
+    purchases: "/api/export/purchase-orders",
+    stocktakes: "/api/export/stocktaking-records"
   },
   logs: "/api/logs",
-  statistics: "/api/statistics/finance"
+  todos: "/api/todos",
+  statistics: "/api/statistics/finance",
+  listSummary: "/api/statistics/list-summary"
 };

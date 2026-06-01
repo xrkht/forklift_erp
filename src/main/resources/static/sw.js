@@ -1,12 +1,17 @@
-const CACHE_NAME = "forklift-erp-client-v42";
+const CACHE_NAME = "forklift-erp-client-v54";
 const SHELL_ASSETS = [
   "/",
   "/index.html",
   "/assets/app.css",
   "/assets/app.js",
+  "/assets/modules/app-state.js",
+  "/assets/modules/display-utils.js",
+  "/assets/modules/field-config.js",
   "/assets/modules/paging.js",
   "/assets/modules/routes.js",
   "/assets/modules/session.js",
+  "/assets/modules/status-ui.js",
+  "/assets/modules/ui-config.js",
   "/assets/icon.svg",
   "/manifest.webmanifest"
 ];

@@ -1,5 +1,7 @@
 package com.example.forklift_erp.config;
 
+import com.example.forklift_erp.constant.JobTags;
+import com.example.forklift_erp.constant.RoleNames;
 import com.example.forklift_erp.entity.Permission;
 import com.example.forklift_erp.entity.Role;
 import com.example.forklift_erp.entity.User;
@@ -21,15 +23,15 @@ import java.util.Set;
 @Component
 public class DataInitializer implements CommandLineRunner {
     private static final Map<String, String> ROLE_DESCRIPTIONS = Map.of(
-            "SUPER_ADMIN", "Super administrator",
-            "ADMIN", "Administrator",
-            "USER", "Standard user"
+            RoleNames.SUPER_ADMIN, "Super administrator",
+            RoleNames.ADMIN, "Administrator",
+            RoleNames.USER, "Standard user"
     );
 
     private static final Map<String, String> PERMISSION_DESCRIPTIONS = new LinkedHashMap<>();
 
     private static final Map<String, Set<String>> ROLE_PERMISSION_CODES = Map.of(
-            "SUPER_ADMIN", Set.of(
+            RoleNames.SUPER_ADMIN, Set.of(
                     PermissionCodes.VEHICLE_WRITE,
                     PermissionCodes.PART_WRITE,
                     PermissionCodes.REPAIR_WRITE,
@@ -41,7 +43,7 @@ public class DataInitializer implements CommandLineRunner {
                     PermissionCodes.USER_WRITE,
                     PermissionCodes.USER_ADMIN
             ),
-            "ADMIN", Set.of(
+            RoleNames.ADMIN, Set.of(
                     PermissionCodes.VEHICLE_WRITE,
                     PermissionCodes.PART_WRITE,
                     PermissionCodes.REPAIR_WRITE,
@@ -52,7 +54,7 @@ public class DataInitializer implements CommandLineRunner {
                     PermissionCodes.USER_READ,
                     PermissionCodes.USER_WRITE
             ),
-            "USER", Set.of(
+            RoleNames.USER, Set.of(
                     PermissionCodes.VEHICLE_WRITE,
                     PermissionCodes.PART_WRITE,
                     PermissionCodes.REPAIR_WRITE,
@@ -93,7 +95,7 @@ public class DataInitializer implements CommandLineRunner {
         Map<String, Role> roles = ensureRoles();
         Map<String, Permission> permissions = ensurePermissions();
         assignDefaultPermissions(roles, permissions);
-        ensureDefaultSuperAdmin(roles.get("SUPER_ADMIN"));
+        ensureDefaultSuperAdmin(roles.get(RoleNames.SUPER_ADMIN));
     }
 
     private Map<String, Role> ensureRoles() {
@@ -127,7 +129,7 @@ public class DataInitializer implements CommandLineRunner {
                 return;
             }
             boolean removed = false;
-            if ("USER".equals(roleName)) {
+            if (RoleNames.USER.equals(roleName)) {
                 removed = role.getPermissions().removeIf(permission -> !permissionCodes.contains(permission.getCode()));
             }
             boolean added = permissionCodes.stream()
@@ -147,7 +149,7 @@ public class DataInitializer implements CommandLineRunner {
             superAdmin.setUsername("admin");
             superAdmin.setPassword(passwordEncoder.encode("admin123"));
             superAdmin.setRoles(Set.of(superAdminRole));
-            superAdmin.setJobTag("MANAGEMENT");
+            superAdmin.setJobTag(JobTags.MANAGEMENT);
             userRepository.save(superAdmin);
         }
     }

@@ -44,7 +44,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
         "springdoc.swagger-ui.enabled=false"
 })
 @AutoConfigureMockMvc
-class RentalRecordIntegrationTests {
+class RentalRecordIntegrationTests extends TestcontainersDatabaseSupport {
     private static final String PASSWORD = "CodexTest123!";
 
     @Autowired
@@ -77,8 +77,6 @@ class RentalRecordIntegrationTests {
     @Autowired
     private PasswordEncoder passwordEncoder;
 
-    private final List<String> usersToCleanup = new ArrayList<>();
-    private final List<String> rolesToCleanup = new ArrayList<>();
     private final List<Long> ordersToCleanup = new ArrayList<>();
     private final List<Long> rentalsToCleanup = new ArrayList<>();
     private final List<Long> machinesToCleanup = new ArrayList<>();
@@ -115,15 +113,6 @@ class RentalRecordIntegrationTests {
         }
         customersToCleanup.clear();
 
-        for (String username : usersToCleanup.reversed()) {
-            userRepository.findByUsername(username).ifPresent(userRepository::delete);
-        }
-        usersToCleanup.clear();
-
-        for (String roleName : rolesToCleanup.reversed()) {
-            roleRepository.findByName(roleName).ifPresent(roleRepository::delete);
-        }
-        rolesToCleanup.clear();
     }
 
     @Test
@@ -292,79 +281,4 @@ class RentalRecordIntegrationTests {
         return machine;
     }
 
-    private void createUserWithPermissions(String username, String roleName, String... permissionCodes) {
-        Set<Permission> permissions = new HashSet<>();
-        for (String code : permissionCodes) {
-            Permission permission = permissionRepository.findByCode(code)
-                    .orElseGet(() -> {
-                        Permission created = new Permission();
-                        created.setCode(code);
-                        created.setDescription(code);
-                        return permissionRepository.save(created);
-                    });
-            permissions.add(permission);
-        }
-
-        Role role = new Role();
-        role.setName(roleName);
-        role.setDescription(roleName);
-        role.setPermissions(permissions);
-        roleRepository.save(role);
-        rolesToCleanup.add(roleName);
-
-        User user = new User();
-        user.setUsername(username);
-        user.setPassword(passwordEncoder.encode(PASSWORD));
-        user.setEnabled(true);
-        user.setRoles(Set.of(role));
-        userRepository.save(user);
-        usersToCleanup.add(username);
-    }
-
-    private void createUserDirectly(String username, String roleName) {
-        Role role = roleRepository.findByName(roleName)
-                .orElseGet(() -> {
-                    Role newRole = new Role();
-                    newRole.setName(roleName);
-                    newRole.setDescription(roleName);
-                    if ("SUPER_ADMIN".equals(roleName)) {
-                        permissionRepository.findAll().forEach(newRole.getPermissions()::add);
-                    }
-                    return roleRepository.save(newRole);
-                });
-
-        User user = new User();
-        user.setUsername(username);
-        user.setPassword(passwordEncoder.encode(PASSWORD));
-        user.setEnabled(true);
-        user.setRoles(Set.of(role));
-        userRepository.save(user);
-        usersToCleanup.add(username);
-    }
-
-    private String login(String username) throws Exception {
-        String body = mockMvc.perform(post("/api/auth/login")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(json(Map.of(
-                                "username", username,
-                                "password", PASSWORD
-                        ))))
-                .andExpect(status().isOk())
-                .andReturn()
-                .getResponse()
-                .getContentAsString();
-        return objectMapper.readTree(body).path("data").path("token").asText();
-    }
-
-    private String unique(String prefix) {
-        return "it_" + prefix + "_" + UUID.randomUUID().toString().replace("-", "").substring(0, 12);
-    }
-
-    private String json(Object value) throws Exception {
-        return objectMapper.writeValueAsString(value);
-    }
-
-    private String bearer(String token) {
-        return "Bearer " + token;
-    }
 }

@@ -1,5 +1,6 @@
 package com.example.forklift_erp.security;
 
+import com.example.forklift_erp.constant.RoleNames;
 import com.example.forklift_erp.entity.User;
 import com.example.forklift_erp.repository.UserRepository;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -25,7 +26,7 @@ public class UserDetailsServiceImpl implements UserDetailsService {
 
         var authorities = new ArrayList<SimpleGrantedAuthority>();
         authorities.addAll(user.getRoles().stream()
-                .map(role -> new SimpleGrantedAuthority("ROLE_" + role.getName()))
+                .map(role -> new SimpleGrantedAuthority(RoleNames.authority(role.getName())))
                 .collect(Collectors.toList()));
         authorities.addAll(user.getRoles().stream()
                 .flatMap(role -> role.getPermissions().stream())

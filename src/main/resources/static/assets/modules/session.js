@@ -42,14 +42,22 @@ export function createApiClient(getToken) {
     if (response.status === 401 || payload?.code === 401) {
       const error = new Error("未登录或登录已过期");
       error.authExpired = true;
+      error.status = response.status;
+      error.code = payload?.code;
       throw error;
     }
     if (!response.ok) {
-      throw new Error(payload?.message || `请求失败：${response.status}`);
+      const error = new Error(payload?.message || `请求失败：${response.status}`);
+      error.status = response.status;
+      error.code = payload?.code;
+      throw error;
     }
     if (payload && Object.prototype.hasOwnProperty.call(payload, "code")) {
       if (payload.code !== 200) {
-        throw new Error(payload.message || "请求失败");
+        const error = new Error(payload.message || "请求失败");
+        error.status = response.status;
+        error.code = payload.code;
+        throw error;
       }
       return payload.data;
     }

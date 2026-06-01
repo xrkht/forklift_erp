@@ -2,6 +2,7 @@ package com.example.forklift_erp.service.impl;
 
 import com.example.forklift_erp.common.PageResult;
 import com.example.forklift_erp.common.ResultCode;
+import com.example.forklift_erp.constant.MachineStockStatuses;
 import com.example.forklift_erp.dto.InboundRequestDTO;
 import com.example.forklift_erp.dto.MachineConfigVO;
 import com.example.forklift_erp.dto.MachineInventoryCreateDTO;
@@ -141,7 +142,7 @@ public class MachineInventoryServiceImpl implements MachineInventoryService {
         }
         if (Boolean.TRUE.equals(machineInventory.getModelOnly())) {
             machineInventory.setInventoryCount(0);
-            machineInventory.setStockStatus("PENDING_INBOUND");
+            machineInventory.setStockStatus(MachineStockStatuses.PENDING_INBOUND);
             machineInventory.setEngineNumber(null);
             machineInventory.setFrameNumber(null);
             machineInventory.setWarrantyCardNumber(null);
@@ -154,7 +155,9 @@ public class MachineInventoryServiceImpl implements MachineInventoryService {
             machineInventory.setWarehouseId(stockLedgerService.resolveWarehouseId(null));
         }
         if (machineInventory.getStockStatus() == null || machineInventory.getStockStatus().isBlank()) {
-            machineInventory.setStockStatus(machineInventory.getInventoryCount() > 0 ? "IN_STOCK" : "PENDING_INBOUND");
+            machineInventory.setStockStatus(machineInventory.getInventoryCount() > 0
+                    ? MachineStockStatuses.IN_STOCK
+                    : MachineStockStatuses.PENDING_INBOUND);
         }
 
         collaborationService.stampWrite(machineInventory);
@@ -377,7 +380,8 @@ public class MachineInventoryServiceImpl implements MachineInventoryService {
         collaborationService.validateWrite(machine, request.getVersion());
         int after = inbound ? current + quantity : current - quantity;
         machine.setInventoryCount(after);
-        machine.setStockStatus(after > 0 ? "IN_STOCK" : (inbound ? "PENDING_INBOUND" : "OUTBOUND"));
+        machine.setStockStatus(after > 0 ? MachineStockStatuses.IN_STOCK
+                : (inbound ? MachineStockStatuses.PENDING_INBOUND : MachineStockStatuses.OUTBOUND));
         if (inbound) {
             machine.setInboundDate(LocalDateTime.now());
         }

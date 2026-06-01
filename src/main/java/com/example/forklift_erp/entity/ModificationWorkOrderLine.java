@@ -1,5 +1,6 @@
 package com.example.forklift_erp.entity;
 
+import com.example.forklift_erp.constant.PartChangeAction;
 import jakarta.persistence.*;
 import lombok.Data;
 
@@ -49,7 +50,7 @@ public class ModificationWorkOrderLine {
     private Integer quantity = 1;
 
     @Column(name = "old_part_action", nullable = false, length = 30)
-    private String oldPartAction = "STOCK_IN";
+    private String oldPartAction = PartChangeAction.STOCK_IN.code();
 
     @Column(name = "price_difference", nullable = false, precision = 12, scale = 2)
     private BigDecimal priceDifference = BigDecimal.ZERO;

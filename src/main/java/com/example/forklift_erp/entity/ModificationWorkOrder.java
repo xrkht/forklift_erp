@@ -1,5 +1,6 @@
 package com.example.forklift_erp.entity;
 
+import com.example.forklift_erp.constant.ModificationWorkOrderStatus;
 import jakarta.persistence.*;
 import lombok.Data;
 
@@ -31,7 +32,7 @@ public class ModificationWorkOrder {
     private String salesOrderNo;
 
     @Column(name = "status", nullable = false, length = 30)
-    private String status = "WAITING_PARTS";
+    private String status = ModificationWorkOrderStatus.WAITING_PARTS.code();
 
     @Column(length = 50)
     private String operator;

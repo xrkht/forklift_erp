@@ -6,6 +6,7 @@ import jakarta.validation.constraints.NotNull;
 import lombok.Data;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
 
 @Data
 public class PartOutboundOrderCreateDTO {
@@ -22,6 +23,12 @@ public class PartOutboundOrderCreateDTO {
     private Long customerId;
 
     private BigDecimal settlementPrice;
+    private BigDecimal receivableAmount;
+    private BigDecimal receivedAmount;
+    private LocalDate paymentDueDate;
+    private LocalDate lastPaymentDate;
+    private Boolean paymentSettled;
+    private String paymentRemark;
     private String operator;
     private String orderRemark;
 }

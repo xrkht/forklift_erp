@@ -1,6 +1,7 @@
 // src/main/java/com/example/forklift_erp/dto/RepairRecordCreateDTO.java
 package com.example.forklift_erp.dto;
 
+import com.example.forklift_erp.constant.RepairStatuses;
 import com.example.forklift_erp.entity.RepairRecord;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
@@ -58,7 +59,7 @@ public class RepairRecordCreateDTO {
     private BigDecimal partsFee;
     private BigDecimal totalFee;
 
-    @Pattern(regexp = "^(PENDING|COMPLETED)$", message = "状态值非法")
+    @Pattern(regexp = RepairStatuses.VALIDATION_PATTERN, message = "状态值非法")
     private String status;
 
     @Size(max = 500)

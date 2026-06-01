@@ -1,8 +1,8 @@
 spring:
   datasource:
-    url: ${FORKLIFT_ERP_TEST_DB_URL:jdbc:mysql://localhost:3306/forklift_erp_test?useUnicode=true&characterEncoding=utf-8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true&createDatabaseIfNotExist=true}
-    username: ${FORKLIFT_ERP_TEST_DB_USERNAME:${FORKLIFT_ERP_DB_USERNAME:root}}
-    password: ${FORKLIFT_ERP_TEST_DB_PASSWORD:${FORKLIFT_ERP_DB_PASSWORD:}}
+    url: jdbc:mysql://testcontainers-required/should_be_overridden
+    username: forklift
+    password: forklift
     driver-class-name: com.mysql.cj.jdbc.Driver
   flyway:
     clean-disabled: true

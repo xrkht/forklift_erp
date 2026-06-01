@@ -1,5 +1,7 @@
 package com.example.forklift_erp.entity;
 
+import com.example.forklift_erp.constant.RepairStatus;
+import com.example.forklift_erp.constant.RepairStatuses;
 import jakarta.persistence.*;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
@@ -131,9 +133,9 @@ public class RepairRecord implements CollaborativeResource {
      * PENDING = 待维修
      * COMPLETED = 已完成
      */
-    @Pattern(regexp = "^(PENDING|COMPLETED)$", message = "状态值非法")
+    @Pattern(regexp = RepairStatuses.VALIDATION_PATTERN, message = "状态值非法")
     @Column(name = "status", length = 20)
-    private String status = "PENDING";
+    private String status = RepairStatus.PENDING.code();
 
     @Column(length = 500)
     private String remarks;

@@ -4,8 +4,10 @@ import com.example.forklift_erp.entity.OutboundOrder;
 import lombok.Data;
 
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.temporal.ChronoUnit;
 
 @Data
 public class OutboundOrderVO {
@@ -28,6 +30,12 @@ public class OutboundOrderVO {
     private BigDecimal settlementPrice;
     private LocalDate salesDate;
     private BigDecimal salePrice;
+    private BigDecimal receivableAmount;
+    private BigDecimal receivedAmount;
+    private BigDecimal outstandingAmount;
+    private LocalDate paymentDueDate;
+    private LocalDate lastPaymentDate;
+    private Integer overdueDays;
     private Boolean paymentSettled;
     private String paymentRemark;
     private Boolean salesReported;
@@ -77,6 +85,12 @@ public class OutboundOrderVO {
         vo.setSettlementPrice(entity.getSettlementPrice());
         vo.setSalesDate(entity.getSalesDate());
         vo.setSalePrice(entity.getSalePrice());
+        vo.setReceivableAmount(defaultAmount(entity.getReceivableAmount(), entity.getSettlementPrice()));
+        vo.setReceivedAmount(defaultAmount(entity.getReceivedAmount(), BigDecimal.ZERO));
+        vo.setOutstandingAmount(outstandingAmount(vo.getReceivableAmount(), vo.getReceivedAmount()));
+        vo.setPaymentDueDate(entity.getPaymentDueDate());
+        vo.setLastPaymentDate(entity.getLastPaymentDate());
+        vo.setOverdueDays(overdueDays(vo.getOutstandingAmount(), entity.getPaymentDueDate()));
         vo.setPaymentSettled(Boolean.TRUE.equals(entity.getPaymentSettled()));
         vo.setPaymentRemark(entity.getPaymentRemark());
         vo.setSalesReported(Boolean.TRUE.equals(entity.getSalesReported()));
@@ -105,5 +119,24 @@ public class OutboundOrderVO {
         vo.setCreatedAt(entity.getCreatedAt());
         vo.setUpdatedAt(entity.getUpdatedAt());
         return vo;
+    }
+
+    private static BigDecimal defaultAmount(BigDecimal value, BigDecimal fallback) {
+        BigDecimal amount = value == null ? fallback : value;
+        return amount == null ? BigDecimal.ZERO : amount.setScale(2, RoundingMode.HALF_UP);
+    }
+
+    private static BigDecimal outstandingAmount(BigDecimal receivableAmount, BigDecimal receivedAmount) {
+        BigDecimal amount = defaultAmount(receivableAmount, BigDecimal.ZERO)
+                .subtract(defaultAmount(receivedAmount, BigDecimal.ZERO));
+        return amount.signum() < 0 ? BigDecimal.ZERO : amount.setScale(2, RoundingMode.HALF_UP);
+    }
+
+    private static Integer overdueDays(BigDecimal outstandingAmount, LocalDate paymentDueDate) {
+        if (paymentDueDate == null || outstandingAmount == null || outstandingAmount.signum() <= 0) {
+            return 0;
+        }
+        long days = ChronoUnit.DAYS.between(paymentDueDate, LocalDate.now());
+        return days > 0 ? Math.toIntExact(days) : 0;
     }
 }

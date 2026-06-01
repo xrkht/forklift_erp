@@ -1,5 +1,6 @@
 package com.example.forklift_erp.entity;
 
+import com.example.forklift_erp.constant.RentalStatuses;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.GeneratedValue;
@@ -19,8 +20,8 @@ import java.time.LocalDateTime;
 @Entity
 @Table(name = "rental_record")
 public class RentalRecord implements CollaborativeResource {
-    public static final String STATUS_ACTIVE = "ACTIVE";
-    public static final String STATUS_RETURNED = "RETURNED";
+    public static final String STATUS_ACTIVE = RentalStatuses.ACTIVE;
+    public static final String STATUS_RETURNED = RentalStatuses.RETURNED;
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)

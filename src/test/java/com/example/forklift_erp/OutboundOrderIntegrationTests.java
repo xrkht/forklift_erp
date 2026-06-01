@@ -56,7 +56,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 @SpringBootTest
 @AutoConfigureMockMvc
-class OutboundOrderIntegrationTests {
+class OutboundOrderIntegrationTests extends TestcontainersDatabaseSupport {
 
     private static final String PASSWORD = "CodexTest123!";
     private static final Path INVOICE_STORAGE_DIR = Paths.get("target", "invoice-test-files", UUID.randomUUID().toString());
@@ -104,14 +104,11 @@ class OutboundOrderIntegrationTests {
     @Autowired
     private PasswordEncoder passwordEncoder;
 
-    private final List<String> usersToCleanup = new ArrayList<>();
     private final List<Long> ordersToCleanup = new ArrayList<>();
     private final List<Long> rentalsToCleanup = new ArrayList<>();
     private final List<Long> customersToCleanup = new ArrayList<>();
     private final List<Long> machinesToCleanup = new ArrayList<>();
     private final List<String> partsToCleanup = new ArrayList<>();
-    private final List<String> rolesToCleanup = new ArrayList<>();
-
     private String superToken;
 
     @BeforeEach
@@ -148,15 +145,6 @@ class OutboundOrderIntegrationTests {
         }
         customersToCleanup.clear();
 
-        for (String username : usersToCleanup.reversed()) {
-            userRepository.findByUsername(username).ifPresent(userRepository::delete);
-        }
-        usersToCleanup.clear();
-
-        for (String roleName : rolesToCleanup.reversed()) {
-            roleRepository.findByName(roleName).ifPresent(roleRepository::delete);
-        }
-        rolesToCleanup.clear();
     }
 
     @Test
@@ -208,6 +196,7 @@ class OutboundOrderIntegrationTests {
         );
         mockMvc.perform(multipart("/api/outbound-orders/{id}/invoice", orderId)
                         .file(earlyInvoice)
+                        .param("version", order.path("version").asText())
                         .header("Authorization", bearer(superToken)))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.code").value(4001));
@@ -220,6 +209,7 @@ class OutboundOrderIntegrationTests {
         );
         String earlyContractResponse = mockMvc.perform(multipart("/api/outbound-orders/{id}/contract", orderId)
                         .file(earlyContract)
+                        .param("version", order.path("version").asText())
                         .header("Authorization", bearer(superToken)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.contractOriginalName").value("early-contract.pdf"))
@@ -241,13 +231,17 @@ class OutboundOrderIntegrationTests {
         invoiceAppliedPayload.put("invoiceStatus", "含税已申请发票");
         invoiceAppliedPayload.put("orderRemark", "已申请发票，待上传文件");
 
-        mockMvc.perform(put("/api/outbound-orders/{id}", orderId)
+        String invoiceAppliedUpdateResponse = mockMvc.perform(put("/api/outbound-orders/{id}", orderId)
                         .header("Authorization", bearer(superToken))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(json(invoiceAppliedPayload)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.invoiceApplied").value(true))
-                .andExpect(jsonPath("$.data.invoiceApplicationDate").value("2026-05-25"));
+                .andExpect(jsonPath("$.data.invoiceApplicationDate").value("2026-05-25"))
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+        JsonNode invoiceAppliedOrder = objectMapper.readTree(invoiceAppliedUpdateResponse).path("data");
 
         byte[] appliedInvoiceBytes = "%PDF-1.4 applied invoice".getBytes(StandardCharsets.UTF_8);
         MockMultipartFile appliedInvoice = new MockMultipartFile(
@@ -258,6 +252,7 @@ class OutboundOrderIntegrationTests {
         );
         String appliedInvoiceResponse = mockMvc.perform(multipart("/api/outbound-orders/{id}/invoice", orderId)
                         .file(appliedInvoice)
+                        .param("version", invoiceAppliedOrder.path("version").asText())
                         .header("Authorization", bearer(superToken)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.invoiceOriginalName").value("invoice-applied.pdf"))
@@ -294,7 +289,7 @@ class OutboundOrderIntegrationTests {
         updatePayload.put("contractType", "纸质合同");
         updatePayload.put("orderRemark", "车款已结清，已报销售并申请发票");
 
-        mockMvc.perform(put("/api/outbound-orders/{id}", orderId)
+        String settledUpdateResponse = mockMvc.perform(put("/api/outbound-orders/{id}", orderId)
                         .header("Authorization", bearer(superToken))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(json(updatePayload)))
@@ -310,7 +305,11 @@ class OutboundOrderIntegrationTests {
                 .andExpect(jsonPath("$.data.invoiceStatus").value("含税已开票"))
                 .andExpect(jsonPath("$.data.invoiceIssuedDate").value("2026-05-26"))
                 .andExpect(jsonPath("$.data.registrationStatus").value("已上牌"))
-                .andExpect(jsonPath("$.data.contractType").value("纸质合同"));
+                .andExpect(jsonPath("$.data.contractType").value("纸质合同"))
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+        JsonNode settledOrder = objectMapper.readTree(settledUpdateResponse).path("data");
 
         byte[] invoiceBytes = "%PDF-1.4 Codex invoice".getBytes(StandardCharsets.UTF_8);
         MockMultipartFile issuedInvoice = new MockMultipartFile(
@@ -319,8 +318,9 @@ class OutboundOrderIntegrationTests {
                 "application/pdf",
                 invoiceBytes
         );
-        mockMvc.perform(multipart("/api/outbound-orders/{id}/invoice", orderId)
+        String issuedInvoiceResponse = mockMvc.perform(multipart("/api/outbound-orders/{id}/invoice", orderId)
                         .file(issuedInvoice)
+                        .param("version", settledOrder.path("version").asText())
                         .header("Authorization", bearer(superToken)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value(200))
@@ -328,7 +328,11 @@ class OutboundOrderIntegrationTests {
                 .andExpect(jsonPath("$.data.invoiceContentType").value("application/pdf"))
                 .andExpect(jsonPath("$.data.invoiceFileSize").value(invoiceBytes.length))
                 .andExpect(jsonPath("$.data.invoiceFileAvailable").value(true))
-                .andExpect(jsonPath("$.data.invoiceUploadedAt").exists());
+                .andExpect(jsonPath("$.data.invoiceUploadedAt").exists())
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+        JsonNode issuedInvoiceOrder = objectMapper.readTree(issuedInvoiceResponse).path("data");
 
         mockMvc.perform(get("/api/outbound-orders/{id}/invoice", orderId)
                         .header("Authorization", bearer(superToken)))
@@ -346,6 +350,7 @@ class OutboundOrderIntegrationTests {
         );
         mockMvc.perform(multipart("/api/outbound-orders/{id}/contract", orderId)
                         .file(contractFile)
+                        .param("version", issuedInvoiceOrder.path("version").asText())
                         .header("Authorization", bearer(superToken)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value(200))
@@ -714,76 +719,4 @@ class OutboundOrderIntegrationTests {
         return objectMapper.readTree(response).path("data");
     }
 
-    private void createUserWithPermissions(String username, String roleName, String... permissionCodes) {
-        Set<Permission> permissions = new HashSet<>();
-        for (String code : permissionCodes) {
-            Permission permission = permissionRepository.findByCode(code)
-                    .orElseGet(() -> {
-                        Permission created = new Permission();
-                        created.setCode(code);
-                        created.setDescription(code);
-                        return permissionRepository.save(created);
-                    });
-            permissions.add(permission);
-        }
-
-        Role role = new Role();
-        role.setName(roleName);
-        role.setDescription(roleName);
-        role.setPermissions(permissions);
-        roleRepository.save(role);
-        rolesToCleanup.add(roleName);
-
-        User user = new User();
-        user.setUsername(username);
-        user.setPassword(passwordEncoder.encode(PASSWORD));
-        user.setEnabled(true);
-        user.setRoles(Set.of(role));
-        userRepository.save(user);
-        usersToCleanup.add(username);
-    }
-
-    private void createUserDirectly(String username, String roleName) {
-        Role role = roleRepository.findByName(roleName)
-                .orElseGet(() -> {
-                    Role newRole = new Role();
-                    newRole.setName(roleName);
-                    newRole.setDescription(roleName);
-                    return roleRepository.save(newRole);
-                });
-
-        User user = new User();
-        user.setUsername(username);
-        user.setPassword(passwordEncoder.encode(PASSWORD));
-        user.setEnabled(true);
-        user.setRoles(Set.of(role));
-        userRepository.save(user);
-        usersToCleanup.add(username);
-    }
-
-    private String login(String username) throws Exception {
-        String body = mockMvc.perform(post("/api/auth/login")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(json(Map.of(
-                                "username", username,
-                                "password", PASSWORD
-                        ))))
-                .andExpect(status().isOk())
-                .andReturn()
-                .getResponse()
-                .getContentAsString();
-        return objectMapper.readTree(body).path("data").path("token").asText();
-    }
-
-    private String unique(String prefix) {
-        return "it_" + prefix + "_" + UUID.randomUUID().toString().replace("-", "").substring(0, 12);
-    }
-
-    private String json(Object value) throws Exception {
-        return objectMapper.writeValueAsString(value);
-    }
-
-    private String bearer(String token) {
-        return "Bearer " + token;
-    }
 }

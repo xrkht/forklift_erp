@@ -3,6 +3,8 @@ target/
 logs/
 uploads/
 .codebuddy/
+.codex-docker-config/
+DockerDesktopInstaller.exe
 __pycache__/
 *.py[cod]
 /config/

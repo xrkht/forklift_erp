@@ -1,21 +1,35 @@
 package com.example.forklift_erp.service;
 
 import com.example.forklift_erp.dto.StatisticsDashboardVO;
+import com.example.forklift_erp.dto.ListSummaryVO;
+import com.example.forklift_erp.constant.ModificationWorkOrderStatuses;
+import com.example.forklift_erp.constant.PartChangeActions;
+import com.example.forklift_erp.constant.RentalStatuses;
 import com.example.forklift_erp.entity.MachineInventory;
 import com.example.forklift_erp.entity.ModificationWorkOrder;
 import com.example.forklift_erp.entity.ModificationWorkOrderLine;
+import com.example.forklift_erp.entity.OutboundOrder;
 import com.example.forklift_erp.entity.PartInventory;
+import com.example.forklift_erp.entity.PurchaseOrder;
 import com.example.forklift_erp.entity.RepairRecord;
 import com.example.forklift_erp.entity.RentalRecord;
+import com.example.forklift_erp.entity.StocktakingRecord;
 import com.example.forklift_erp.entity.StockOperationLog;
+import com.example.forklift_erp.entity.Supplier;
 import com.example.forklift_erp.repository.MachineInventoryRepository;
 import com.example.forklift_erp.repository.ModificationWorkOrderLineRepository;
 import com.example.forklift_erp.repository.ModificationWorkOrderRepository;
+import com.example.forklift_erp.repository.OutboundOrderRepository;
 import com.example.forklift_erp.repository.PartInventoryRepository;
+import com.example.forklift_erp.repository.PurchaseOrderRepository;
 import com.example.forklift_erp.repository.RepairRecordRepository;
 import com.example.forklift_erp.repository.RentalRecordRepository;
+import com.example.forklift_erp.repository.StocktakingRecordRepository;
 import com.example.forklift_erp.repository.StockOperationLogRepository;
+import com.example.forklift_erp.repository.SupplierRepository;
+import com.example.forklift_erp.util.SecurityUtils;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
@@ -56,6 +70,18 @@ public class StatisticsService {
     @Autowired
     private ModificationWorkOrderLineRepository modificationWorkOrderLineRepository;
 
+    @Autowired
+    private OutboundOrderRepository outboundOrderRepository;
+
+    @Autowired
+    private SupplierRepository supplierRepository;
+
+    @Autowired
+    private PurchaseOrderRepository purchaseOrderRepository;
+
+    @Autowired
+    private StocktakingRecordRepository stocktakingRecordRepository;
+
     public StatisticsDashboardVO financeDashboard(Integer year) {
         int selectedYear = year == null ? LocalDate.now().getYear() : year;
         Map<Long, MachineInventory> machines = machineInventoryRepository.findAll().stream()
@@ -82,6 +108,112 @@ public class StatisticsService {
         dashboard.setStockValues(buildStockValues(machines.values().stream().toList(), parts.values().stream().toList()));
         dashboard.setLowStocks(buildLowStocks(machines.values().stream().toList(), parts.values().stream().toList()));
         return dashboard;
+    }
+
+    public ListSummaryVO listSummary(String type, String keyword) {
+        String normalizedType = type == null ? "" : type.trim();
+        return switch (normalizedType) {
+            case "outboundOrders" -> outboundOrderSummary(keyword);
+            case "rentals" -> rentalSummary(keyword);
+            case "suppliers" -> supplierSummary(keyword);
+            case "purchases" -> purchaseSummary(keyword);
+            case "stocktakes" -> stocktakingSummary(keyword);
+            default -> {
+                ListSummaryVO empty = new ListSummaryVO();
+                empty.setType(normalizedType);
+                empty.setKeyword(keyword);
+                yield empty;
+            }
+        };
+    }
+
+    private ListSummaryVO outboundOrderSummary(String keyword) {
+        List<OutboundOrder> rows = outboundOrderRepository.searchPage(
+                normalizeKeyword(keyword),
+                SecurityUtils.isAdminOrSuperAdmin(),
+                Pageable.unpaged()
+        ).getContent();
+        long unsettledOrders = rows.stream().filter(row -> !Boolean.TRUE.equals(row.getPaymentSettled())).count();
+        long pendingReports = rows.stream().filter(row -> !Boolean.TRUE.equals(row.getSalesReported())).count();
+        long pendingInvoices = rows.stream().filter(row -> !Boolean.TRUE.equals(row.getInvoiceApplied())).count();
+        long settledOrders = rows.stream().filter(row -> Boolean.TRUE.equals(row.getPaymentSettled())).count();
+        long uploadedInvoices = rows.stream().filter(row -> !isBlank(row.getInvoiceStoredFileName())).count();
+        long uploadedContracts = rows.stream().filter(row -> !isBlank(row.getContractStoredFileName())).count();
+        long overdueOrders = rows.stream().filter(row -> overdueDays(receivableOutstanding(row), row.getPaymentDueDate()) > 0).count();
+        long machineOrders = rows.stream().filter(row -> OutboundOrder.RESOURCE_MACHINE.equals(row.getResourceType())).count();
+        BigDecimal outstandingAmount = rows.stream()
+                .map(this::receivableOutstanding)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+        return summary("outboundOrders", keyword)
+                .addCard("出库订单", rows.size(), unsettledOrders + " 单待收款")
+                .addMoneyCard("应收欠款", outstandingAmount, overdueOrders + " 单逾期")
+                .addCard("待报销售", pendingReports, machineOrders + " 单整机订单")
+                .addCard("待申请发票", pendingInvoices, uploadedInvoices + " 单已上传发票")
+                .addCard("已结清车款", settledOrders, uploadedContracts + " 单已上传合同");
+    }
+
+    private ListSummaryVO rentalSummary(String keyword) {
+        List<RentalRecord> rows = rentalRecordRepository.searchPage(normalizeKeyword(keyword), Pageable.unpaged()).getContent();
+        long activeRows = rows.stream().filter(row -> RentalStatuses.ACTIVE.equals(row.getStatus())).count();
+        long returnedRows = rows.stream().filter(row -> RentalStatuses.RETURNED.equals(row.getStatus())).count();
+        long vehicleCount = rows.stream().map(RentalRecord::getMachineId).filter(Objects::nonNull).distinct().count();
+        BigDecimal rentalIncome = rows.stream()
+                .map(this::rentalAmount)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+        return summary("rentals", keyword)
+                .addCard("租赁记录", rows.size(), activeRows + " 台租赁中")
+                .addMoneyCard("月租收入", rentalIncome, returnedRows + " 单已归还")
+                .addCard("租赁车辆", vehicleCount, "按具体车号记录")
+                .addCard("待归还", activeRows, activeRows > 0 ? "请持续跟进租赁去向" : "暂无进行中租赁");
+    }
+
+    private ListSummaryVO supplierSummary(String keyword) {
+        List<Supplier> rows = supplierRepository.searchPage(normalizeKeyword(keyword), Pageable.unpaged()).getContent();
+        long typed = rows.stream().filter(row -> !isBlank(row.getSupplierType())).count();
+        long contacts = rows.stream().filter(row -> !isBlank(row.getContactName()) || !isBlank(row.getContactPhone())).count();
+        long purchaseSupplierCount = purchaseOrderRepository.findAll().stream()
+                .map(PurchaseOrder::getSupplierName)
+                .filter(value -> !isBlank(value))
+                .distinct()
+                .count();
+        return summary("suppliers", keyword)
+                .addCard("供应商总数", rows.size(), typed + " 家已标记类型")
+                .addCard("采购订单供应商", purchaseSupplierCount, "已被采购订单引用")
+                .addCard("联系人", contacts, "可直接联系");
+    }
+
+    private ListSummaryVO purchaseSummary(String keyword) {
+        List<PurchaseOrder> rows = purchaseOrderRepository.searchPage(normalizeKeyword(keyword), Pageable.unpaged()).getContent();
+        BigDecimal totalAmount = rows.stream()
+                .map(order -> amount(order.getTotalAmount()))
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+        BigDecimal freightTotal = rows.stream()
+                .map(order -> amount(order.getFreightAmount()))
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+        long received = rows.stream().filter(row -> "RECEIVED".equals(row.getStatus())).count();
+        long pending = rows.stream().filter(row -> !"RECEIVED".equals(row.getStatus()) && !"CANCELED".equals(row.getStatus())).count();
+        return summary("purchases", keyword)
+                .addCard("采购订单", rows.size(), pending + " 单待跟进")
+                .addMoneyCard("采购金额", totalAmount, "当前筛选合计")
+                .addCard("已收货", received, "运费 " + freightTotal);
+    }
+
+    private ListSummaryVO stocktakingSummary(String keyword) {
+        List<StocktakingRecord> rows = stocktakingRecordRepository.searchPage(normalizeKeyword(keyword), Pageable.unpaged()).getContent();
+        long drafts = rows.stream().filter(row -> !"COMPLETED".equals(row.getStatus())).count();
+        long completed = rows.stream().filter(row -> "COMPLETED".equals(row.getStatus())).count();
+        long differences = rows.stream().filter(row -> quantity(row.getDifferenceQuantity()) != 0).count();
+        return summary("stocktakes", keyword)
+                .addCard("盘点记录", rows.size(), drafts + " 条待入账")
+                .addCard("已入账", completed, "库存已同步")
+                .addCard("有差异", differences, "账实不一致");
+    }
+
+    private ListSummaryVO summary(String type, String keyword) {
+        ListSummaryVO summary = new ListSummaryVO();
+        summary.setType(type);
+        summary.setKeyword(keyword);
+        return summary;
     }
 
     private List<StatisticsDashboardVO.FinancialRow> buildMonthlyRows(
@@ -121,7 +253,7 @@ public class StatisticsService {
             addRentalToFinancial(rows.get(YearMonth.from(rentalDate).toString()), rental);
         }
         for (ModificationWorkOrder order : modificationOrders) {
-            if (!"COMPLETED".equals(order.getStatus()) || order.getCompletedAt() == null || order.getCompletedAt().getYear() != selectedYear) {
+            if (!ModificationWorkOrderStatuses.COMPLETED.equals(order.getStatus()) || order.getCompletedAt() == null || order.getCompletedAt().getYear() != selectedYear) {
                 continue;
             }
             addModificationToFinancial(
@@ -175,7 +307,7 @@ public class StatisticsService {
             addRentalToFinancial(row, rental);
         }
         for (ModificationWorkOrder order : modificationOrders) {
-            if (!"COMPLETED".equals(order.getStatus()) || order.getCompletedAt() == null) {
+            if (!ModificationWorkOrderStatuses.COMPLETED.equals(order.getStatus()) || order.getCompletedAt() == null) {
                 continue;
             }
             StatisticsDashboardVO.FinancialRow row = rows.computeIfAbsent(
@@ -432,7 +564,7 @@ public class StatisticsService {
         BigDecimal income = BigDecimal.ZERO;
         BigDecimal expense = BigDecimal.ZERO;
         List<BigDecimal> signedAmounts = lines.stream()
-                .filter(line -> "DISCOUNT".equals(line.getOldPartAction()))
+                .filter(line -> PartChangeActions.DISCOUNT.equals(line.getOldPartAction()))
                 .map(ModificationWorkOrderLine::getPriceDifference)
                 .filter(Objects::nonNull)
                 .toList();
@@ -508,6 +640,45 @@ public class StatisticsService {
 
     private int quantity(StockOperationLog log) {
         return log.getQuantity() == null ? 0 : log.getQuantity();
+    }
+
+    private int quantity(Integer value) {
+        return value == null ? 0 : value;
+    }
+
+    private BigDecimal receivableOutstanding(OutboundOrder order) {
+        BigDecimal receivable = firstAmount(order.getReceivableAmount(), order.getSettlementPrice());
+        BigDecimal received = amount(order.getReceivedAmount());
+        return receivable.subtract(received).max(BigDecimal.ZERO);
+    }
+
+    private BigDecimal amount(BigDecimal value) {
+        return value == null ? BigDecimal.ZERO : value;
+    }
+
+    private BigDecimal firstAmount(BigDecimal... values) {
+        for (BigDecimal value : values) {
+            if (value != null) {
+                return amount(value);
+            }
+        }
+        return BigDecimal.ZERO;
+    }
+
+    private int overdueDays(BigDecimal outstanding, LocalDate dueDate) {
+        if (dueDate == null || outstanding == null || outstanding.signum() <= 0) {
+            return 0;
+        }
+        long days = java.time.temporal.ChronoUnit.DAYS.between(dueDate, LocalDate.now());
+        return days > 0 ? Math.toIntExact(days) : 0;
+    }
+
+    private String normalizeKeyword(String keyword) {
+        return keyword == null || keyword.isBlank() ? null : keyword.trim();
+    }
+
+    private boolean isBlank(String value) {
+        return value == null || value.isBlank();
     }
 
     private String resourceLabel(String resourceType) {

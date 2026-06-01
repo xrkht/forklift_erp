@@ -1,6 +1,9 @@
 package com.example.forklift_erp.config;
 
 import com.example.forklift_erp.dto.ModificationWorkOrderCreateDTO;
+import com.example.forklift_erp.constant.MachineStockStatuses;
+import com.example.forklift_erp.constant.ModificationWorkOrderStatuses;
+import com.example.forklift_erp.constant.PartChangeActions;
 import com.example.forklift_erp.entity.ConfigItem;
 import com.example.forklift_erp.entity.ConfigValue;
 import com.example.forklift_erp.entity.Customer;
@@ -146,7 +149,7 @@ public class DemoDataInitializer implements CommandLineRunner {
             machine.setSettlementPrice(new BigDecimal("82000.00"));
             machine.setInventoryCount(1);
             machine.setModelOnly(false);
-            machine.setStockStatus("IN_STOCK");
+            machine.setStockStatus(MachineStockStatuses.IN_STOCK);
             machine.setRemarks("系统启动自动补齐的改装工单测试整车");
             return machineInventoryService.save(machine);
         });
@@ -212,7 +215,7 @@ public class DemoDataInitializer implements CommandLineRunner {
         line.setNewPartId(currentPart.getId());
         line.setNewPartVersion(currentPart.getVersion());
         line.setQuantity(1);
-        line.setOldPartAction("STOCK_IN");
+        line.setOldPartAction(PartChangeActions.STOCK_IN);
         line.setRemark("演示：客户要求替换为实心胎");
 
         ModificationWorkOrderCreateDTO request = new ModificationWorkOrderCreateDTO();
@@ -227,6 +230,7 @@ public class DemoDataInitializer implements CommandLineRunner {
     }
 
     private boolean isClosed(ModificationWorkOrder order) {
-        return "COMPLETED".equals(order.getStatus()) || "CANCELED".equals(order.getStatus());
+        return ModificationWorkOrderStatuses.COMPLETED.equals(order.getStatus())
+                || ModificationWorkOrderStatuses.CANCELED.equals(order.getStatus());
     }
 }

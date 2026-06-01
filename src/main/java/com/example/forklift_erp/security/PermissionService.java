@@ -1,5 +1,6 @@
 package com.example.forklift_erp.security;
 
+import com.example.forklift_erp.constant.RoleNames;
 import com.example.forklift_erp.entity.Permission;
 import com.example.forklift_erp.entity.Role;
 import com.example.forklift_erp.entity.User;
@@ -34,7 +35,7 @@ public class PermissionService {
         if (authentication == null || !authentication.isAuthenticated() || codes == null || codes.length == 0) {
             return false;
         }
-        if (hasAuthority(authentication, "ROLE_SUPER_ADMIN")) {
+        if (hasAuthority(authentication, RoleNames.authority(RoleNames.SUPER_ADMIN))) {
             return true;
         }
         Set<String> required = Arrays.stream(codes)
@@ -57,7 +58,7 @@ public class PermissionService {
         if (user == null) {
             return Set.of();
         }
-        if (user.getRoles().stream().anyMatch(role -> "SUPER_ADMIN".equals(role.getName()))) {
+        if (user.getRoles().stream().anyMatch(role -> RoleNames.isSuperAdmin(role.getName()))) {
             return permissionRepository.findAll().stream()
                     .map(Permission::getCode)
                     .sorted()

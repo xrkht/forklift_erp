@@ -1,6 +1,7 @@
 // MachineInventory.java
 package com.example.forklift_erp.entity;
 
+import com.example.forklift_erp.constant.MachineStockStatus;
 import jakarta.persistence.*;
 import jakarta.validation.constraints.DecimalMin;
 import jakarta.validation.constraints.NotBlank;
@@ -93,7 +94,7 @@ public class MachineInventory implements CollaborativeResource {
     private Long warehouseId;
 
     @Column(name = "stock_status", length = 30)
-    private String stockStatus = "IN_STOCK";
+    private String stockStatus = MachineStockStatus.IN_STOCK.code();
 
     @Column(name = "purchase_price", precision = 12, scale = 2) // 价格类型使用BigDecimal，精度更高
     private BigDecimal purchasePrice;// 采购单价

@@ -6,8 +6,11 @@ import com.example.forklift_erp.dto.ExcelExportFile;
 import com.example.forklift_erp.dto.MachineInventoryVO;
 import com.example.forklift_erp.dto.OutboundOrderVO;
 import com.example.forklift_erp.dto.PartInventoryVO;
+import com.example.forklift_erp.dto.PurchaseOrderVO;
 import com.example.forklift_erp.dto.RentalRecordVO;
 import com.example.forklift_erp.dto.RepairRecordVO;
+import com.example.forklift_erp.dto.StocktakingRecordVO;
+import com.example.forklift_erp.dto.SupplierVO;
 import com.example.forklift_erp.exception.BusinessException;
 import com.example.forklift_erp.security.PermissionService;
 import com.example.forklift_erp.service.CustomerService;
@@ -15,8 +18,11 @@ import com.example.forklift_erp.service.ExcelExportService;
 import com.example.forklift_erp.service.MachineInventoryService;
 import com.example.forklift_erp.service.OutboundOrderService;
 import com.example.forklift_erp.service.PartInventoryService;
+import com.example.forklift_erp.service.PurchaseOrderService;
 import com.example.forklift_erp.service.RentalRecordService;
 import com.example.forklift_erp.service.RepairRecordService;
+import com.example.forklift_erp.service.StocktakingRecordService;
+import com.example.forklift_erp.service.SupplierService;
 import org.apache.poi.ss.usermodel.BorderStyle;
 import org.apache.poi.ss.usermodel.Cell;
 import org.apache.poi.ss.usermodel.CellStyle;
@@ -70,6 +76,15 @@ public class ExcelExportServiceImpl implements ExcelExportService {
     @Autowired
     private RepairRecordService repairRecordService;
 
+    @Autowired
+    private SupplierService supplierService;
+
+    @Autowired
+    private PurchaseOrderService purchaseOrderService;
+
+    @Autowired
+    private StocktakingRecordService stocktakingRecordService;
+
     @Override
     @Transactional(readOnly = true)
     public ExcelExportFile export(String type, Authentication authentication) {
@@ -89,6 +104,18 @@ public class ExcelExportServiceImpl implements ExcelExportService {
                     yield exportRentals(workbook, styles);
                 }
                 case "repairs" -> exportRepairs(workbook, styles);
+                case "suppliers" -> {
+                    requirePermission(authentication, "stock:adjust");
+                    yield exportSuppliers(workbook, styles);
+                }
+                case "purchase-orders" -> {
+                    requirePermission(authentication, "stock:adjust");
+                    yield exportPurchaseOrders(workbook, styles);
+                }
+                case "stocktaking-records" -> {
+                    requirePermission(authentication, "stock:adjust");
+                    yield exportStocktakingRecords(workbook, styles);
+                }
                 default -> throw new BusinessException(ResultCode.PARAM_ERROR, "不支持的导出类型");
             };
             ByteArrayOutputStream out = new ByteArrayOutputStream();
@@ -148,12 +175,15 @@ public class ExcelExportServiceImpl implements ExcelExportService {
         List<OutboundOrderVO> rows = outboundOrderService.findAll();
         writeSheet(workbook, styles, "出库订单", List.of(
                 "ID", "订单号", "资源类型", "资源编码", "资源名称", "规格型号", "数量", "单位", "客户", "销售日期",
-                "结算价", "销售价", "车款结清", "报销售", "申请发票", "发票状态", "开票日期", "发票文件",
+                "结算价", "销售价", "应收金额", "已收金额", "欠款金额", "收款到期日", "最近收款日",
+                "车款结清", "报销售", "申请发票", "发票状态", "开票日期", "发票文件",
                 "合同", "合同文件", "经办人", "备注"
         ), rows.stream().map(row -> List.of(
                 value(row.getId()), value(row.getOrderNo()), value(row.getResourceType()), value(row.getResourceCode()),
                 value(row.getResourceName()), value(row.getSpecificationModel()), value(row.getQuantity()), value(row.getUnit()),
                 value(row.getCustomerName()), value(row.getSalesDate()), value(row.getSettlementPrice()), value(row.getSalePrice()),
+                value(row.getReceivableAmount()), value(row.getReceivedAmount()), value(row.getOutstandingAmount()),
+                value(row.getPaymentDueDate()), value(row.getLastPaymentDate()),
                 yesNo(row.getPaymentSettled()), yesNo(row.getSalesReported()), yesNo(row.getInvoiceApplied()), value(row.getInvoiceStatus()),
                 value(row.getInvoiceIssuedDate()), value(row.getInvoiceOriginalName()), value(row.getContractType()),
                 value(row.getContractOriginalName()), value(row.getOperator()), value(row.getOrderRemark())
@@ -189,6 +219,46 @@ public class ExcelExportServiceImpl implements ExcelExportService {
                 value(row.getTotalFee()), value(row.getStatus()), value(row.getRemarks())
         )).toList());
         return "维修记录";
+    }
+
+    private String exportSuppliers(XSSFWorkbook workbook, Styles styles) {
+        List<SupplierVO> rows = supplierService.findAll();
+        writeSheet(workbook, styles, "采购供应商", List.of(
+                "ID", "供应商名称", "供应类型", "联系人", "联系电话", "地址", "税号", "开户行/账号", "备注"
+        ), rows.stream().map(row -> List.of(
+                value(row.getId()), value(row.getSupplierName()), value(row.getSupplierType()), value(row.getContactName()),
+                value(row.getContactPhone()), value(row.getAddress()), value(row.getTaxNumber()), value(row.getBankAccount()),
+                value(row.getRemarks())
+        )).toList());
+        return "采购供应商";
+    }
+
+    private String exportPurchaseOrders(XSSFWorkbook workbook, Styles styles) {
+        List<PurchaseOrderVO> rows = purchaseOrderService.findAll();
+        writeSheet(workbook, styles, "采购订单", List.of(
+                "ID", "采购单号", "供应商", "配件编码/物料号", "配件名称", "规格型号", "数量", "单位",
+                "单价", "总金额", "运费", "采购日期", "预计到货", "状态", "经办人", "备注"
+        ), rows.stream().map(row -> List.of(
+                value(row.getId()), value(row.getPurchaseNo()), value(row.getSupplierName()), value(row.getResourceCode()),
+                value(row.getResourceName()), value(row.getSpecificationModel()), value(row.getQuantity()),
+                value(row.getUnit()), value(row.getUnitPrice()), value(row.getTotalAmount()), value(row.getFreightAmount()), value(row.getOrderDate()),
+                value(row.getExpectedArrivalDate()), value(row.getStatus()), value(row.getOperator()), value(row.getRemark())
+        )).toList());
+        return "采购订单";
+    }
+
+    private String exportStocktakingRecords(XSSFWorkbook workbook, Styles styles) {
+        List<StocktakingRecordVO> rows = stocktakingRecordService.findAll();
+        writeSheet(workbook, styles, "库存盘点", List.of(
+                "ID", "盘点单号", "盘点类型", "资源编码", "资源名称", "规格型号", "账面数量", "实盘数量",
+                "差异数量", "盘点日期", "状态", "盘点人", "备注"
+        ), rows.stream().map(row -> List.of(
+                value(row.getId()), value(row.getStocktakingNo()), value(row.getResourceType()), value(row.getResourceCode()),
+                value(row.getResourceName()), value(row.getSpecificationModel()), value(row.getBookQuantity()), value(row.getActualQuantity()),
+                value(row.getDifferenceQuantity()), value(row.getStocktakingDate()), value(row.getStatus()), value(row.getOperator()),
+                value(row.getRemark())
+        )).toList());
+        return "库存盘点";
     }
 
     private void writeSheet(XSSFWorkbook workbook, Styles styles, String sheetName, List<String> headers, List<List<Object>> rows) {

@@ -2,6 +2,8 @@ package com.example.forklift_erp.service.impl;
 
 import com.example.forklift_erp.common.PageResult;
 import com.example.forklift_erp.common.ResultCode;
+import com.example.forklift_erp.constant.MachineStockStatuses;
+import com.example.forklift_erp.constant.RentalStatuses;
 import com.example.forklift_erp.dto.OutboundInvoiceDownload;
 import com.example.forklift_erp.dto.OutboundOrderUpdateDTO;
 import com.example.forklift_erp.dto.OutboundOrderVO;
@@ -25,55 +27,28 @@ import com.example.forklift_erp.service.OutboundOrderService;
 import com.example.forklift_erp.service.StockLedgerService;
 import com.example.forklift_erp.util.ListPageSupport;
 import com.example.forklift_erp.util.SecurityUtils;
-import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.beans.factory.annotation.Value;
-import org.springframework.core.io.Resource;
-import org.springframework.core.io.UrlResource;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.transaction.support.TransactionSynchronization;
-import org.springframework.transaction.support.TransactionSynchronizationManager;
-import org.springframework.util.StringUtils;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.math.BigDecimal;
-import java.io.IOException;
-import java.io.InputStream;
-import java.nio.file.AtomicMoveNotSupportedException;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.nio.file.Paths;
-import java.nio.file.StandardCopyOption;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
-import java.util.Arrays;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
-import java.util.Objects;
 import java.util.Optional;
-import java.util.Set;
 import java.util.UUID;
 
-@Slf4j
 @Service
 public class OutboundOrderServiceImpl implements OutboundOrderService {
 
     private static final String SOURCE_TYPE = "OUTBOUND_ORDER";
     private static final DateTimeFormatter ORDER_NO_TIME = DateTimeFormatter.ofPattern("yyyyMMddHHmmssSSS");
-    private static final long MAX_INVOICE_FILE_SIZE = 20L * 1024 * 1024;
-    private static final long MAX_CONTRACT_FILE_SIZE = 20L * 1024 * 1024;
-    private static final Set<String> ALLOWED_INVOICE_EXTENSIONS = new HashSet<>(Arrays.asList(
-            "pdf", "ofd", "jpg", "jpeg", "png", "webp"
-    ));
-    private static final Set<String> ALLOWED_CONTRACT_EXTENSIONS = new HashSet<>(Arrays.asList(
-            "pdf", "ofd", "doc", "docx", "jpg", "jpeg", "png", "webp"
-    ));
 
     @Autowired
     private OutboundOrderRepository outboundOrderRepository;
@@ -102,11 +77,14 @@ public class OutboundOrderServiceImpl implements OutboundOrderService {
     @Autowired
     private CollaborationService collaborationService;
 
-    @Value("${forklift-erp.invoice-storage-dir:${FORKLIFT_ERP_INVOICE_STORAGE_DIR:uploads/invoices}}")
-    private String invoiceStorageDir;
+    @Autowired
+    private OutboundOrderFileStorage fileStorage;
 
-    @Value("${forklift-erp.contract-storage-dir:${FORKLIFT_ERP_CONTRACT_STORAGE_DIR:uploads/contracts}}")
-    private String contractStorageDir;
+    @Autowired
+    private OutboundUploadReadinessPolicy uploadReadinessPolicy;
+
+    @Autowired
+    private OutboundResourceLockService resourceLockService;
 
     @Override
     @Transactional(readOnly = true)
@@ -159,8 +137,8 @@ public class OutboundOrderServiceImpl implements OutboundOrderService {
         if (before < 1) {
             throw new BusinessException(ResultCode.INSUFFICIENT_STOCK, "Vehicle stock is insufficient");
         }
-        if (rentalRecordRepository.existsByMachineIdAndStatus(machine.getId(), "ACTIVE")) {
-            throw new BusinessException(ResultCode.CONFLICT, "Vehicle is currently rented and cannot be sold");
+        if (rentalRecordRepository.existsByMachineIdAndStatus(machine.getId(), RentalStatuses.ACTIVE)) {
+            throw new BusinessException(ResultCode.CONFLICT, "车辆正在租赁中，不能创建销售出库订单");
         }
 
         Customer customer = findCustomer(request.getCustomerId());
@@ -177,6 +155,10 @@ public class OutboundOrderServiceImpl implements OutboundOrderService {
         order.setSettlementPrice(request.getSettlementPrice());
         order.setSalesDate(request.getSalesDate());
         order.setSalePrice(firstPrice(request.getSalePrice(), machine.getSalePrice()));
+        order.setReceivableAmount(firstPrice(request.getReceivableAmount(), request.getSettlementPrice()));
+        order.setReceivedAmount(nonNegative(request.getReceivedAmount()));
+        order.setPaymentDueDate(request.getPaymentDueDate());
+        order.setLastPaymentDate(request.getLastPaymentDate());
         if (request.getPaymentSettled() != null) {
             order.setPaymentSettled(request.getPaymentSettled());
         }
@@ -195,12 +177,13 @@ public class OutboundOrderServiceImpl implements OutboundOrderService {
         order.setContractType(blankToNull(request.getContractType()));
         order.setOperator(blankToNull(request.getOperator()));
         order.setOrderRemark(blankToNull(request.getOrderRemark()));
+        syncReceivableStatus(order);
         collaborationService.stampWrite(order);
         OutboundOrder savedOrder = outboundOrderRepository.saveAndFlush(order);
 
         int after = before - 1;
         machine.setInventoryCount(after);
-        machine.setStockStatus(after > 0 ? "IN_STOCK" : "OUTBOUND");
+        machine.setStockStatus(after > 0 ? MachineStockStatuses.IN_STOCK : MachineStockStatuses.OUTBOUND);
         machine.setSettlementPrice(request.getSettlementPrice());
         machine.setSalePrice(firstPrice(request.getSalePrice(), machine.getSalePrice()));
         machine.setSalesDate(toMachineSalesDate(request.getSalesDate()));
@@ -262,8 +245,17 @@ public class OutboundOrderServiceImpl implements OutboundOrderService {
         order.setUnit(part.getUnit());
         copyCustomer(order, customer);
         order.setSettlementPrice(firstPrice(request.getSettlementPrice(), part.getSettlementPrice(), part.getSalePrice()));
+        order.setReceivableAmount(firstPrice(request.getReceivableAmount(), order.getSettlementPrice()));
+        order.setReceivedAmount(nonNegative(request.getReceivedAmount()));
+        order.setPaymentDueDate(request.getPaymentDueDate());
+        order.setLastPaymentDate(request.getLastPaymentDate());
+        if (request.getPaymentSettled() != null) {
+            order.setPaymentSettled(request.getPaymentSettled());
+        }
+        order.setPaymentRemark(blankToNull(request.getPaymentRemark()));
         order.setOperator(blankToNull(request.getOperator()));
         order.setOrderRemark(blankToNull(request.getOrderRemark()));
+        syncReceivableStatus(order);
         collaborationService.stampWrite(order);
         OutboundOrder savedOrder = outboundOrderRepository.saveAndFlush(order);
 
@@ -310,6 +302,16 @@ public class OutboundOrderServiceImpl implements OutboundOrderService {
         if (request.getSalePrice() != null) {
             order.setSalePrice(request.getSalePrice());
         }
+        if (request.getReceivableAmount() != null) {
+            order.setReceivableAmount(nonNegative(request.getReceivableAmount()));
+        } else if (order.getReceivableAmount() == null) {
+            order.setReceivableAmount(order.getSettlementPrice());
+        }
+        if (request.getReceivedAmount() != null) {
+            order.setReceivedAmount(nonNegative(request.getReceivedAmount()));
+        }
+        order.setPaymentDueDate(request.getPaymentDueDate());
+        order.setLastPaymentDate(request.getLastPaymentDate());
         if (request.getPaymentSettled() != null) {
             order.setPaymentSettled(request.getPaymentSettled());
         }
@@ -330,6 +332,7 @@ public class OutboundOrderServiceImpl implements OutboundOrderService {
         if (request.getOperator() != null && !request.getOperator().isBlank()) {
             order.setOperator(request.getOperator().trim());
         }
+        syncReceivableStatus(order);
         collaborationService.stampWrite(order);
         OutboundOrder saved = outboundOrderRepository.saveAndFlush(order);
         syncLegacyOutboundFlags(saved);
@@ -350,9 +353,9 @@ public class OutboundOrderServiceImpl implements OutboundOrderService {
         collaborationService.validateWrite(order, version);
         if (locked) {
             order.setIsLocked(true);
-            lockRelatedResource(order);
+            resourceLockService.lockRelatedResource(order);
         } else {
-            releaseRelatedResource(order);
+            resourceLockService.releaseRelatedResource(order);
             order.setIsLocked(false);
         }
         collaborationService.stampWrite(order);
@@ -366,32 +369,26 @@ public class OutboundOrderServiceImpl implements OutboundOrderService {
 
     @Override
     @Transactional
-    public OutboundOrderVO uploadInvoice(Long id, MultipartFile file) {
+    public OutboundOrderVO uploadInvoice(Long id, MultipartFile file, Long version) {
         OutboundOrder order = outboundOrderRepository.findByIdForUpdate(id)
                 .orElseThrow(() -> new BusinessException(ResultCode.NOT_FOUND, "Outbound order not found"));
         ensureOrderVisible(order);
-        validateInvoiceUpload(order, file);
+        collaborationService.validateWrite(order, version);
+        if (!uploadReadinessPolicy.isInvoiceUploadReady(order)) {
+            throw new BusinessException(ResultCode.PARAM_ERROR, "Order is not ready for invoice upload");
+        }
+        StoredOutboundFile storedFile = fileStorage.storeInvoice(order.getId(), file, order.getInvoiceStoredFileName());
 
-        String originalName = cleanOriginalInvoiceName(file.getOriginalFilename());
-        String extension = Objects.requireNonNull(StringUtils.getFilenameExtension(originalName)).toLowerCase(Locale.ROOT);
-        String storedFileName = "order-" + order.getId() + "-" + UUID.randomUUID()
-                .toString()
-                .replace("-", "")
-                + "." + extension;
-        Path target = storeUploadedFile(file, invoiceStorageRoot(), storedFileName, "Invoice file save failed");
-        String previousFileName = order.getInvoiceStoredFileName();
-        registerStoredFileLifecycle(target, () -> deleteStoredInvoice(previousFileName));
-
-        order.setInvoiceStoredFileName(storedFileName);
-        order.setInvoiceOriginalName(originalName);
-        order.setInvoiceContentType(firstNonBlank(file.getContentType(), probeContentType(target), "application/octet-stream"));
-        order.setInvoiceFileSize(file.getSize());
-        order.setInvoiceUploadedAt(LocalDateTime.now());
+        order.setInvoiceStoredFileName(storedFile.storedFileName());
+        order.setInvoiceOriginalName(storedFile.originalName());
+        order.setInvoiceContentType(storedFile.contentType());
+        order.setInvoiceFileSize(storedFile.fileSize());
+        order.setInvoiceUploadedAt(storedFile.uploadedAt());
         collaborationService.stampWrite(order);
 
         OutboundOrder saved = outboundOrderRepository.saveAndFlush(order);
         operationAuditService.record("Outbound order", "UPLOAD_INVOICE", "OUTBOUND_ORDER", saved.getId(),
-                saved.getOrderNo(), saved.getCustomerName(), "Upload invoice: " + originalName,
+                saved.getOrderNo(), saved.getCustomerName(), "Upload invoice: " + storedFile.originalName(),
                 saved.getOperator(), saved.getOrderRemark(), SOURCE_TYPE, saved.getId());
         return OutboundOrderVO.fromEntity(saved);
     }
@@ -401,55 +398,32 @@ public class OutboundOrderServiceImpl implements OutboundOrderService {
     public OutboundInvoiceDownload downloadInvoice(Long id) {
         OutboundOrder order = visibleOrderById(id)
                 .orElseThrow(() -> new BusinessException(ResultCode.NOT_FOUND, "Outbound order not found"));
-        if (order.getInvoiceStoredFileName() == null || order.getInvoiceStoredFileName().isBlank()) {
-            throw new BusinessException(ResultCode.NOT_FOUND, "Invoice has not been uploaded");
-        }
-
-        Path filePath = resolveInvoiceFile(order.getInvoiceStoredFileName());
-        if (!Files.isRegularFile(filePath)) {
-            throw new BusinessException(ResultCode.NOT_FOUND, "Invoice file not found");
-        }
-        try {
-            Resource resource = new UrlResource(filePath.toUri());
-            return new OutboundInvoiceDownload(
-                    resource,
-                    firstNonBlank(order.getInvoiceOriginalName(), "invoice-" + order.getOrderNo()),
-                    firstNonBlank(order.getInvoiceContentType(), "application/octet-stream"),
-                    Files.size(filePath)
-            );
-        } catch (IOException e) {
-            throw new BusinessException(ResultCode.SYSTEM_ERROR, "Invoice file download failed");
-        }
+        return fileStorage.downloadInvoice(order);
     }
 
     @Override
     @Transactional
-    public OutboundOrderVO uploadContract(Long id, MultipartFile file) {
+    public OutboundOrderVO uploadContract(Long id, MultipartFile file, Long version) {
         OutboundOrder order = outboundOrderRepository.findByIdForUpdate(id)
                 .orElseThrow(() -> new BusinessException(ResultCode.NOT_FOUND, "Outbound order not found"));
         ensureOrderVisible(order);
-        validateContractUpload(order, file);
+        collaborationService.validateWrite(order, version);
+        if (!uploadReadinessPolicy.isContractUploadReady(order)) {
+            throw new BusinessException(ResultCode.PARAM_ERROR, "Order is not ready for contract upload");
+        }
 
-        String originalName = cleanOriginalContractName(file.getOriginalFilename());
-        String extension = Objects.requireNonNull(StringUtils.getFilenameExtension(originalName)).toLowerCase(Locale.ROOT);
-        String storedFileName = "order-" + order.getId() + "-" + UUID.randomUUID()
-                .toString()
-                .replace("-", "")
-                + "." + extension;
-        Path target = storeUploadedFile(file, contractStorageRoot(), storedFileName, "Contract file save failed");
-        String previousFileName = order.getContractStoredFileName();
-        registerStoredFileLifecycle(target, () -> deleteStoredContract(previousFileName));
+        StoredOutboundFile storedFile = fileStorage.storeContract(order.getId(), file, order.getContractStoredFileName());
 
-        order.setContractStoredFileName(storedFileName);
-        order.setContractOriginalName(originalName);
-        order.setContractContentType(firstNonBlank(file.getContentType(), probeContentType(target), "application/octet-stream"));
-        order.setContractFileSize(file.getSize());
-        order.setContractUploadedAt(LocalDateTime.now());
+        order.setContractStoredFileName(storedFile.storedFileName());
+        order.setContractOriginalName(storedFile.originalName());
+        order.setContractContentType(storedFile.contentType());
+        order.setContractFileSize(storedFile.fileSize());
+        order.setContractUploadedAt(storedFile.uploadedAt());
         collaborationService.stampWrite(order);
 
         OutboundOrder saved = outboundOrderRepository.saveAndFlush(order);
         operationAuditService.record("Outbound order", "UPLOAD_CONTRACT", "OUTBOUND_ORDER", saved.getId(),
-                saved.getOrderNo(), saved.getCustomerName(), "Upload contract: " + originalName,
+                saved.getOrderNo(), saved.getCustomerName(), "Upload contract: " + storedFile.originalName(),
                 saved.getOperator(), saved.getOrderRemark(), SOURCE_TYPE, saved.getId());
         return OutboundOrderVO.fromEntity(saved);
     }
@@ -459,25 +433,7 @@ public class OutboundOrderServiceImpl implements OutboundOrderService {
     public OutboundInvoiceDownload downloadContract(Long id) {
         OutboundOrder order = visibleOrderById(id)
                 .orElseThrow(() -> new BusinessException(ResultCode.NOT_FOUND, "Outbound order not found"));
-        if (order.getContractStoredFileName() == null || order.getContractStoredFileName().isBlank()) {
-            throw new BusinessException(ResultCode.NOT_FOUND, "Contract has not been uploaded");
-        }
-
-        Path filePath = resolveContractFile(order.getContractStoredFileName());
-        if (!Files.isRegularFile(filePath)) {
-            throw new BusinessException(ResultCode.NOT_FOUND, "Contract file not found");
-        }
-        try {
-            Resource resource = new UrlResource(filePath.toUri());
-            return new OutboundInvoiceDownload(
-                    resource,
-                    firstNonBlank(order.getContractOriginalName(), "contract-" + order.getOrderNo()),
-                    firstNonBlank(order.getContractContentType(), "application/octet-stream"),
-                    Files.size(filePath)
-            );
-        } catch (IOException e) {
-            throw new BusinessException(ResultCode.SYSTEM_ERROR, "Contract file download failed");
-        }
+        return fileStorage.downloadContract(order);
     }
 
     private Optional<OutboundOrder> visibleOrderById(Long id) {
@@ -497,66 +453,6 @@ public class OutboundOrderServiceImpl implements OutboundOrderService {
         if (locked && !SecurityUtils.isAdminOrSuperAdmin()) {
             throw new BusinessException(resultCode, message);
         }
-    }
-
-    private void lockRelatedResource(OutboundOrder order) {
-        boolean previouslyOrderLocked = Boolean.TRUE.equals(order.getResourceLockedByOrder());
-        if (order.getResourceId() == null) {
-            order.setResourceLockedByOrder(false);
-            return;
-        }
-        if (OutboundOrder.RESOURCE_MACHINE.equals(order.getResourceType())) {
-            machineRepository.findByIdForUpdate(order.getResourceId()).ifPresent(machine -> {
-                boolean alreadyLocked = Boolean.TRUE.equals(machine.getIsLocked());
-                machine.setIsLocked(true);
-                order.setResourceLockedByOrder(previouslyOrderLocked || !alreadyLocked);
-                collaborationService.stampWrite(machine);
-                machineRepository.saveAndFlush(machine);
-            });
-            return;
-        }
-        if (OutboundOrder.RESOURCE_PART.equals(order.getResourceType())) {
-            partRepository.findByIdForUpdate(order.getResourceId()).ifPresent(part -> {
-                boolean alreadyLocked = Boolean.TRUE.equals(part.getIsLocked());
-                part.setIsLocked(true);
-                order.setResourceLockedByOrder(previouslyOrderLocked || !alreadyLocked);
-                collaborationService.stampWrite(part);
-                partRepository.saveAndFlush(part);
-            });
-        }
-    }
-
-    private void releaseRelatedResource(OutboundOrder order) {
-        if (!Boolean.TRUE.equals(order.getResourceLockedByOrder()) || order.getResourceId() == null) {
-            order.setResourceLockedByOrder(false);
-            return;
-        }
-        if (hasOtherLockedOrderForResource(order)) {
-            order.setResourceLockedByOrder(false);
-            return;
-        }
-        if (OutboundOrder.RESOURCE_MACHINE.equals(order.getResourceType())) {
-            machineRepository.findByIdForUpdate(order.getResourceId()).ifPresent(machine -> {
-                machine.setIsLocked(false);
-                collaborationService.stampWrite(machine);
-                machineRepository.saveAndFlush(machine);
-            });
-        } else if (OutboundOrder.RESOURCE_PART.equals(order.getResourceType())) {
-            partRepository.findByIdForUpdate(order.getResourceId()).ifPresent(part -> {
-                part.setIsLocked(false);
-                collaborationService.stampWrite(part);
-                partRepository.saveAndFlush(part);
-            });
-        }
-        order.setResourceLockedByOrder(false);
-    }
-
-    private boolean hasOtherLockedOrderForResource(OutboundOrder order) {
-        return outboundOrderRepository.existsByResourceTypeAndResourceIdAndIsLockedTrueAndIdNot(
-                order.getResourceType(),
-                order.getResourceId(),
-                order.getId()
-        );
     }
 
     private Customer findCustomer(Long customerId) {
@@ -642,211 +538,6 @@ public class OutboundOrderServiceImpl implements OutboundOrderService {
         return savedLog;
     }
 
-    private void validateInvoiceUpload(OutboundOrder order, MultipartFile file) {
-        if (!isInvoiceUploadReady(order)) {
-            throw new BusinessException(ResultCode.PARAM_ERROR, "Order is not ready for invoice upload");
-        }
-        if (file == null || file.isEmpty()) {
-            throw new BusinessException(ResultCode.PARAM_ERROR, "Invoice file is required");
-        }
-        if (file.getSize() > MAX_INVOICE_FILE_SIZE) {
-            throw new BusinessException(ResultCode.PARAM_ERROR, "闂佸憡鐟﹂崹褰掑Χ閵娾晛妫橀柛銉檮椤愯棄鈽夐幘宕囆ラ柛蹇旑焽閹奸箖宕ㄩ幍顔剧暫20MB");
-        }
-        String originalName = cleanOriginalInvoiceName(file.getOriginalFilename());
-        String extension = StringUtils.getFilenameExtension(originalName);
-        if (extension == null || !ALLOWED_INVOICE_EXTENSIONS.contains(extension.toLowerCase(Locale.ROOT))) {
-            throw new BusinessException(ResultCode.PARAM_ERROR, "Unsupported invoice file type");
-        }
-    }
-
-    private void validateContractUpload(OutboundOrder order, MultipartFile file) {
-        if (!isContractUploadReady(order)) {
-            throw new BusinessException(ResultCode.PARAM_ERROR, "Order is not ready for contract upload");
-        }
-        if (file == null || file.isEmpty()) {
-            throw new BusinessException(ResultCode.PARAM_ERROR, "Contract file is required");
-        }
-        if (file.getSize() > MAX_CONTRACT_FILE_SIZE) {
-            throw new BusinessException(ResultCode.PARAM_ERROR, "闂佸憡鑹鹃悧鍡涘箖閹捐妫橀柛銉檮椤愯棄鈽夐幘宕囆ラ柛蹇旑焽閹奸箖宕ㄩ幍顔剧暫20MB");
-        }
-        String originalName = cleanOriginalContractName(file.getOriginalFilename());
-        String extension = StringUtils.getFilenameExtension(originalName);
-        if (extension == null || !ALLOWED_CONTRACT_EXTENSIONS.contains(extension.toLowerCase(Locale.ROOT))) {
-            throw new BusinessException(ResultCode.PARAM_ERROR, "Unsupported contract file type");
-        }
-    }
-
-    private boolean isInvoiceUploadReady(OutboundOrder order) {
-        if (Boolean.TRUE.equals(order.getInvoiceApplied())) {
-            return true;
-        }
-        if (order.getInvoiceIssuedDate() != null) {
-            return true;
-        }
-        String status = blankToNull(order.getInvoiceStatus());
-        if (status == null) {
-            return false;
-        }
-        String lowerStatus = status.toLowerCase(Locale.ROOT);
-        return status.contains("issued")
-                || status.contains("\u5f00\u7968\u5b8c\u6210")
-                || status.contains("\u5b8c\u6210\u5f00\u7968")
-                || status.contains("\u5df2\u51fa\u7968")
-                || lowerStatus.contains("issued")
-                || lowerStatus.contains("invoiced");
-    }
-
-    private boolean isContractUploadReady(OutboundOrder order) {
-        String contractType = blankToNull(order.getContractType());
-        if (contractType == null) {
-            return false;
-        }
-        String lower = contractType.toLowerCase(Locale.ROOT);
-        if (lower.startsWith("no") || lower.startsWith("none") || lower.startsWith("false")) {
-            return false;
-        }
-        if (contractType.startsWith("\u5426")
-                || contractType.startsWith("\u65e0")
-                || contractType.startsWith("\u6ca1")
-                || contractType.startsWith("\u4e0d")
-                || contractType.contains("\u65e0\u5408\u540c")) {
-            return false;
-        }
-        return true;
-    }
-
-    private String cleanOriginalInvoiceName(String originalFilename) {
-        String originalName = StringUtils.cleanPath(Objects.requireNonNullElse(originalFilename, "invoice.pdf")).trim();
-        if (originalName.isBlank() || originalName.contains("..") || originalName.contains("/") || originalName.contains("\\")) {
-            throw new BusinessException(ResultCode.PARAM_ERROR, "Invoice file name is invalid");
-        }
-        return originalName;
-    }
-
-    private String cleanOriginalContractName(String originalFilename) {
-        String originalName = StringUtils.cleanPath(Objects.requireNonNullElse(originalFilename, "contract.pdf")).trim();
-        if (originalName.isBlank() || originalName.contains("..") || originalName.contains("/") || originalName.contains("\\")) {
-            throw new BusinessException(ResultCode.PARAM_ERROR, "Contract file name is invalid");
-        }
-        return originalName;
-    }
-
-    private Path invoiceStorageRoot() {
-        return Paths.get(invoiceStorageDir).toAbsolutePath().normalize();
-    }
-
-    private Path contractStorageRoot() {
-        return Paths.get(contractStorageDir).toAbsolutePath().normalize();
-    }
-
-    private Path storeUploadedFile(MultipartFile file, Path root, String storedFileName, String failureMessage) {
-        Path normalizedRoot = root.toAbsolutePath().normalize();
-        Path target = normalizedRoot.resolve(storedFileName).normalize();
-        if (!target.startsWith(normalizedRoot)) {
-            throw new BusinessException(ResultCode.PARAM_ERROR, "File path is invalid");
-        }
-
-        Path tempFile = null;
-        try {
-            Files.createDirectories(normalizedRoot);
-            tempFile = Files.createTempFile(normalizedRoot, storedFileName + "-", ".tmp");
-            try (InputStream inputStream = file.getInputStream()) {
-                Files.copy(inputStream, tempFile, StandardCopyOption.REPLACE_EXISTING);
-            }
-            moveIntoPlace(tempFile, target);
-            return target;
-        } catch (IOException e) {
-            deleteQuietly(tempFile, "Failed to delete temp upload");
-            throw new BusinessException(ResultCode.SYSTEM_ERROR, failureMessage);
-        }
-    }
-
-    private void moveIntoPlace(Path tempFile, Path target) throws IOException {
-        try {
-            Files.move(tempFile, target, StandardCopyOption.ATOMIC_MOVE);
-        } catch (AtomicMoveNotSupportedException e) {
-            Files.move(tempFile, target, StandardCopyOption.REPLACE_EXISTING);
-        }
-    }
-
-    private void registerStoredFileLifecycle(Path newFile, Runnable deletePreviousFile) {
-        if (!TransactionSynchronizationManager.isSynchronizationActive()) {
-            return;
-        }
-        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
-            @Override
-            public void afterCommit() {
-                deletePreviousFile.run();
-            }
-
-            @Override
-            public void afterCompletion(int status) {
-                if (status != STATUS_COMMITTED) {
-                    deleteQuietly(newFile, "Failed to delete rolled back upload");
-                }
-            }
-        });
-    }
-
-    private Path resolveInvoiceFile(String storedFileName) {
-        Path root = invoiceStorageRoot();
-        Path filePath = root.resolve(storedFileName).normalize();
-        if (!filePath.startsWith(root)) {
-            throw new BusinessException(ResultCode.PARAM_ERROR, "Invoice file path is invalid");
-        }
-        return filePath;
-    }
-
-    private Path resolveContractFile(String storedFileName) {
-        Path root = contractStorageRoot();
-        Path filePath = root.resolve(storedFileName).normalize();
-        if (!filePath.startsWith(root)) {
-            throw new BusinessException(ResultCode.PARAM_ERROR, "Contract file path is invalid");
-        }
-        return filePath;
-    }
-
-    private void deleteQuietly(Path path, String message) {
-        if (path == null) {
-            return;
-        }
-        try {
-            Files.deleteIfExists(path);
-        } catch (IOException e) {
-            log.warn("{}: {}", message, path, e);
-        }
-    }
-
-    private String probeContentType(Path target) {
-        try {
-            return Files.probeContentType(target);
-        } catch (IOException e) {
-            return null;
-        }
-    }
-
-    private void deleteStoredInvoice(String storedFileName) {
-        if (storedFileName == null || storedFileName.isBlank()) {
-            return;
-        }
-        try {
-            Files.deleteIfExists(resolveInvoiceFile(storedFileName));
-        } catch (IOException e) {
-            log.warn("闂佸憡甯炴繛鈧繛鍛叄瀵喛顦茬憸鏉垮€荤划濠囧Ω閿旂晫鈧喖霉閻樼儤纭鹃柕鍥ㄥ灩閹? {}", storedFileName, e);
-        }
-    }
-
-    private void deleteStoredContract(String storedFileName) {
-        if (storedFileName == null || storedFileName.isBlank()) {
-            return;
-        }
-        try {
-            Files.deleteIfExists(resolveContractFile(storedFileName));
-        } catch (IOException e) {
-            log.warn("闂佸憡甯炴繛鈧繛鍛叄瀵喛顦查柟顔奸叄瀹曘儳浠﹂悙顒傗偓顔济归悩鐑樼【闁靛洦鍨归幏? {}", storedFileName, e);
-        }
-    }
-
     private String nextOrderNo() {
         String suffix = UUID.randomUUID().toString()
                 .replace("-", "")
@@ -864,21 +555,38 @@ public class OutboundOrderServiceImpl implements OutboundOrderService {
         return null;
     }
 
+    private BigDecimal nonNegative(BigDecimal value) {
+        if (value == null) {
+            return BigDecimal.ZERO;
+        }
+        return value.signum() < 0 ? BigDecimal.ZERO : value;
+    }
+
+    private void syncReceivableStatus(OutboundOrder order) {
+        BigDecimal receivable = firstPrice(order.getReceivableAmount(), order.getSettlementPrice(), BigDecimal.ZERO);
+        BigDecimal received = nonNegative(order.getReceivedAmount());
+        order.setReceivableAmount(nonNegative(receivable));
+        order.setReceivedAmount(received);
+
+        if (Boolean.TRUE.equals(order.getPaymentSettled()) && received.compareTo(order.getReceivableAmount()) < 0) {
+            order.setReceivedAmount(order.getReceivableAmount());
+        }
+        if (order.getReceivableAmount().signum() > 0 && order.getReceivedAmount().compareTo(order.getReceivableAmount()) >= 0) {
+            order.setPaymentSettled(true);
+        } else if (order.getReceivableAmount().subtract(order.getReceivedAmount()).signum() > 0) {
+            order.setPaymentSettled(false);
+        }
+        if (Boolean.TRUE.equals(order.getPaymentSettled()) && order.getLastPaymentDate() == null) {
+            order.setLastPaymentDate(LocalDate.now());
+        }
+    }
+
     private String blankToNull(String value) {
         return value == null || value.isBlank() ? null : value.trim();
     }
 
     private String normalizeKeyword(String keyword) {
         return keyword == null || keyword.isBlank() ? null : keyword.trim();
-    }
-
-    private String firstNonBlank(String... values) {
-        for (String value : values) {
-            if (value != null && !value.isBlank()) {
-                return value.trim();
-            }
-        }
-        return null;
     }
 
     private String joinRemark(String... values) {

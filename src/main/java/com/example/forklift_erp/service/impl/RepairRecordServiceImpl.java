@@ -2,6 +2,8 @@ package com.example.forklift_erp.service.impl;
 
 import com.example.forklift_erp.common.PageResult;
 import com.example.forklift_erp.common.ResultCode;
+import com.example.forklift_erp.constant.JobTag;
+import com.example.forklift_erp.constant.RepairStatus;
 import com.example.forklift_erp.dto.RepairRecordCreateDTO;
 import com.example.forklift_erp.dto.RepairRecordVO;
 import com.example.forklift_erp.entity.Customer;
@@ -135,7 +137,9 @@ public class RepairRecordServiceImpl implements RepairRecordService {
             record.setRepairDate(LocalDateTime.now());
         }
         if (record.getStatus() == null) {
-            record.setStatus("PENDING");
+            record.setStatus(RepairStatus.PENDING.code());
+        } else {
+            record.setStatus(RepairStatus.normalizeOrDefault(record.getStatus(), RepairStatus.PENDING));
         }
         normalizeReferences(record);
         normalizeFees(record);
@@ -225,7 +229,7 @@ public class RepairRecordServiceImpl implements RepairRecordService {
         RepairRecord record = findByIdForUpdate(id)
                 .orElseThrow(() -> new BusinessException(ResultCode.NOT_FOUND, "Repair record not found"));
         collaborationService.validateWrite(record, version);
-        record.setStatus(status);
+        record.setStatus(RepairStatus.normalizeOrDefault(status, RepairStatus.PENDING));
         RepairRecord saved = save(record);
         operationAuditService.record("Repair", saved.getStatus(), "REPAIR", saved.getId(),
                 saved.getVehicleNumber(), saved.getCustomerName(), "Switch repair status: " + saved.getStatus(),
@@ -279,7 +283,7 @@ public class RepairRecordServiceImpl implements RepairRecordService {
         }
         User user = userRepository.findById(record.getRepairPersonUserId())
                 .orElseThrow(() -> new BusinessException(ResultCode.NOT_FOUND, "Repair user not found"));
-        if (!user.isEnabled() || !"REPAIR".equals(normalizeJobTag(user.getJobTag()))) {
+        if (!user.isEnabled() || !JobTag.REPAIR.code().equals(normalizeJobTag(user.getJobTag()))) {
             throw new BusinessException(ResultCode.FORBIDDEN, "Repair user must be enabled and tagged as REPAIR");
         }
         record.setRepairPerson(user.getUsername());

@@ -6,7 +6,6 @@ import com.example.forklift_erp.repository.RoleRepository;
 import com.example.forklift_erp.repository.UserRepository;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -32,7 +31,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 @SpringBootTest
 @AutoConfigureMockMvc
-class AuthIntegrationTests {
+class AuthIntegrationTests extends TestcontainersDatabaseSupport {
 
     private static final String PASSWORD = "CodexTest123!";
 
@@ -51,7 +50,6 @@ class AuthIntegrationTests {
     @Autowired
     private PasswordEncoder passwordEncoder;
 
-    private final List<String> usersToCleanup = new ArrayList<>();
     private String superUsername;
     private String superToken;
 
@@ -60,14 +58,6 @@ class AuthIntegrationTests {
         superUsername = uniqueUsername("super");
         createUserDirectly(superUsername, PASSWORD, "SUPER_ADMIN");
         superToken = login(superUsername, PASSWORD);
-    }
-
-    @AfterEach
-    void tearDown() {
-        for (String username : usersToCleanup.reversed()) {
-            userRepository.findByUsername(username).ifPresent(userRepository::delete);
-        }
-        usersToCleanup.clear();
     }
 
     @Test
@@ -371,88 +361,4 @@ class AuthIntegrationTests {
                 .andExpect(jsonPath("$.code").value(403));
     }
 
-    private void createUserDirectly(String username, String password, String roleName) {
-        Role role = roleRepository.findByName(roleName)
-                .orElseGet(() -> {
-                    Role newRole = new Role();
-                    newRole.setName(roleName);
-                    newRole.setDescription(roleName);
-                    return roleRepository.save(newRole);
-                });
-
-        User user = new User();
-        user.setUsername(username);
-        user.setPassword(passwordEncoder.encode(password));
-        user.setEnabled(true);
-        user.setRoles(Set.of(role));
-        user.setJobTag("SUPER_ADMIN".equals(roleName) || "ADMIN".equals(roleName) ? "MANAGEMENT" : "CLERK");
-        userRepository.save(user);
-        usersToCleanup.add(username);
-    }
-
-    private org.springframework.test.web.servlet.ResultActions registerViaApi(
-            String token,
-            String username,
-            String password,
-            String role
-    ) throws Exception {
-        usersToCleanup.add(username);
-        return mockMvc.perform(post("/api/auth/register")
-                .header("Authorization", bearer(token))
-                .contentType(MediaType.APPLICATION_JSON)
-                .content(json(Map.of(
-                        "username", username,
-                        "password", password,
-                        "roles", List.of(role)
-                ))));
-    }
-
-    private String login(String username, String password) throws Exception {
-        String body = loginExpectingStatus(username, password, 200);
-        return objectMapper.readTree(body).path("data").path("token").asText();
-    }
-
-    private String loginExpectingStatus(String username, String password, int status) throws Exception {
-        return mockMvc.perform(post("/api/auth/login")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(json(Map.of(
-                                "username", username,
-                                "password", password
-                        ))))
-                .andExpect(status().is(status))
-                .andReturn()
-                .getResponse()
-                .getContentAsString();
-    }
-
-    private Long findUserId(String username) {
-        return userRepository.findByUsername(username)
-                .orElseThrow()
-                .getId();
-    }
-
-    private Long findUserVersion(String username) {
-        return userRepository.findByUsername(username)
-                .orElseThrow()
-                .getVersion();
-    }
-
-    private String uniqueUsername(String prefix) {
-        String suffix = UUID.randomUUID().toString().replace("-", "").substring(0, 12);
-        return "it_" + prefix + "_" + suffix;
-    }
-
-    private List<String> textValues(JsonNode values) {
-        List<String> result = new ArrayList<>();
-        values.forEach(value -> result.add(value.asText()));
-        return result;
-    }
-
-    private String json(Object value) throws Exception {
-        return objectMapper.writeValueAsString(value);
-    }
-
-    private String bearer(String token) {
-        return "Bearer " + token;
-    }
 }

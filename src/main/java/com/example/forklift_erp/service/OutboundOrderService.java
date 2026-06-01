@@ -25,11 +25,11 @@ public interface OutboundOrderService {
 
     OutboundOrderVO setLocked(Long id, boolean locked, Long version);
 
-    OutboundOrderVO uploadInvoice(Long id, MultipartFile file);
+    OutboundOrderVO uploadInvoice(Long id, MultipartFile file, Long version);
 
     OutboundInvoiceDownload downloadInvoice(Long id);
 
-    OutboundOrderVO uploadContract(Long id, MultipartFile file);
+    OutboundOrderVO uploadContract(Long id, MultipartFile file, Long version);
 
     OutboundInvoiceDownload downloadContract(Long id);
 }

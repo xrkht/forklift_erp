@@ -1,5 +1,6 @@
 package com.example.forklift_erp.util;
 
+import com.example.forklift_erp.constant.RoleNames;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import java.util.Arrays;
@@ -14,28 +15,28 @@ public class SecurityUtils {
         if (auth == null) return false;
         return Arrays.stream(roles).anyMatch(role ->
                 auth.getAuthorities().stream().anyMatch(granted ->
-                        granted.getAuthority().equals("ROLE_" + role)));
+                        granted.getAuthority().equals(RoleNames.authority(role))));
     }
 
     /**
      * 判断当前用户是否为管理员或超级管理员
      */
     public static boolean isAdminOrSuperAdmin() {
-        return hasAnyRole("ADMIN", "SUPER_ADMIN");
+        return hasAnyRole(RoleNames.ADMIN, RoleNames.SUPER_ADMIN);
     }
 
     public static int currentRolePriority() {
-        if (hasAnyRole("SUPER_ADMIN")) return 300;
-        if (hasAnyRole("ADMIN")) return 200;
-        if (hasAnyRole("USER")) return 100;
+        if (hasAnyRole(RoleNames.SUPER_ADMIN)) return 300;
+        if (hasAnyRole(RoleNames.ADMIN)) return 200;
+        if (hasAnyRole(RoleNames.USER)) return 100;
         return 0;
     }
 
     public static String currentHighestRole() {
-        if (hasAnyRole("SUPER_ADMIN")) return "SUPER_ADMIN";
-        if (hasAnyRole("ADMIN")) return "ADMIN";
-        if (hasAnyRole("USER")) return "USER";
-        return "SYSTEM";
+        if (hasAnyRole(RoleNames.SUPER_ADMIN)) return RoleNames.SUPER_ADMIN;
+        if (hasAnyRole(RoleNames.ADMIN)) return RoleNames.ADMIN;
+        if (hasAnyRole(RoleNames.USER)) return RoleNames.USER;
+        return RoleNames.SYSTEM;
     }
 
     public static boolean hasAnyPermission(String... permissions) {

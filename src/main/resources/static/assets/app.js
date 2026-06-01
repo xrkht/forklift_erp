@@ -1,357 +1,62 @@
 import { clearSession, createApiClient, readStoredToken, readStoredUser, saveSession } from "./modules/session.js";
 import { endpoints } from "./modules/routes.js";
-import { assignPageState, createPageState, pageContent, pageUrl, resetPage } from "./modules/paging.js";
+import { assignPageState, pageContent, pageUrl, resetPage } from "./modules/paging.js";
+import { createInitialState, LOG_PAGE_SIZE, LIST_PAGE_SIZE } from "./modules/app-state.js";
+import { icons, tabs } from "./modules/ui-config.js";
+import { createFields } from "./modules/field-config.js";
+import { dateTime, dateValue, display, emptyState, escapeAttr, escapeHtml, fileSize, filterRows, money, normalizeText, nowInputDateTime, sortById, sortLogs, todayInputDate, toInputValue } from "./modules/display-utils.js";
+import { badge, jobTagBadge, jobTagLabel, jobTagType, logCategoryBadge, modificationStatusBadge, nextJobTag, normalizeJobTag, operationActionBadge, quantityChange, rentalStatusBadge, repairStatusText, resourceTypeLabel, roleBadges, statusBadge, stockBadge, stockStatusBadge, stockStatusLabel, stockText, yesNoBadge } from "./modules/status-ui.js";
 
-const LOG_PAGE_SIZE = 120;
-const LIST_PAGE_SIZE = 20;
+const LIST_STATE_STORAGE_KEY = "forklift-erp:list-state:v1";
+const DETAIL_DRAWER_TRANSITION_MS = 240;
 
-const state = {
+const state = createInitialState({
   token: readStoredToken(),
-  user: normalizeUser(readStoredUser()),
-  activeTab: "overview",
-  search: {
-    vehicles: "",
-    parts: "",
-    modificationOrders: "",
-    outboundOrders: "",
-    rentals: "",
-    customers: "",
-    repairs: "",
-    stats: "",
-    logs: "",
-    configItems: "",
-    configValues: "",
-    users: ""
-  },
-  filters: {
-    vehicles: {
-      power: "",
-      supplier: "",
-      stock: ""
-    }
-  },
-  data: {
-    vehicles: [],
-    parts: [],
-    modificationOrders: [],
-    outboundOrders: [],
-    rentals: [],
-    customers: [],
-    repairs: [],
-    statistics: null,
-    operationLogs: [],
-    configItems: [],
-    configValues: [],
-    configValueMap: {},
-    repairUsers: [],
-    users: []
-  },
-  pages: {
-    vehicles: createPageState(LIST_PAGE_SIZE),
-    parts: createPageState(LIST_PAGE_SIZE),
-    modificationOrders: createPageState(LIST_PAGE_SIZE),
-    outboundOrders: createPageState(LIST_PAGE_SIZE),
-    rentals: createPageState(LIST_PAGE_SIZE),
-    customers: createPageState(LIST_PAGE_SIZE),
-    repairs: createPageState(LIST_PAGE_SIZE),
-    logs: createPageState(LOG_PAGE_SIZE),
-    users: createPageState(LIST_PAGE_SIZE)
-  },
-  reference: {
-    vehiclesLoaded: false,
-    partsLoaded: false,
-    customersLoaded: false,
-    outboundOrdersLoaded: false,
-    rentalsLoaded: false,
-    repairUsersLoaded: false
-  },
-  selectedVehicleId: null,
-  vehicleDetail: null,
-  selectedConfigItemId: null,
-  configItemScrollTop: 0,
-  selectedStatsYear: new Date().getFullYear(),
-  visibleLogRows: LOG_PAGE_SIZE,
-  modal: null
-};
+  user: normalizeUser(readStoredUser())
+});
+restorePersistedListState();
 
 const api = createApiClient(() => state.token);
 
-const tabs = {
-  overview: { title: "总览", subtitle: "系统概览与业务入口" },
-  vehicles: { title: "车辆库存", subtitle: "车型库存、整车档案与库存状态" },
-  parts: { title: "配件库存", subtitle: "配件档案、库存数量与价格信息" },
-  modifications: { title: "改装工单", subtitle: "客户出库前改装、配件替换与拆下件回库" },
-  outboundOrders: { title: "订单列表", subtitle: "记录整车与配件出库、车款结清、报销售和发票申请" },
-  rentals: { title: "租赁管理", subtitle: "记录租赁车辆、租赁去向、租赁价格和归还状态" },
-  customers: { title: "客户列表", subtitle: "维护公司抬头、地址、联系人和税号/身份证号" },
-  repairs: { title: "维修记录", subtitle: "维修工单、费用与状态追踪" },
-  logs: { title: "日志查看", subtitle: "配件替换、维修和出入库流水" },
-  stats: { title: "统计财报", subtitle: "按月度和年度汇总库存收支、维修收入与库存价值" },
-  configs: { title: "配置字典", subtitle: "车辆配置项与可选值维护" },
-  users: { title: "用户管理", subtitle: "账号、角色与客户端登录切换" }
-};
-
-const icons = {
-  plus: '<svg viewBox="0 0 24 24" fill="none"><path d="M12 5v14M5 12h14" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>',
-  minus: '<svg viewBox="0 0 24 24" fill="none"><path d="M5 12h14" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>',
-  refresh: '<svg viewBox="0 0 24 24" fill="none"><path d="M20 12a8 8 0 1 1-2.34-5.66L20 8" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><path d="M20 4v4h-4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>',
-  edit: '<svg viewBox="0 0 24 24" fill="none"><path d="M12 20h9" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5Z" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>',
-  trash: '<svg viewBox="0 0 24 24" fill="none"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 14h10l1-14M9 7V4h6v3" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>',
-  eye: '<svg viewBox="0 0 24 24" fill="none"><path d="M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6S2 12 2 12Z" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><circle cx="12" cy="12" r="3" stroke="currentColor" stroke-width="1.8"/></svg>',
-  search: '<svg viewBox="0 0 24 24" fill="none"><circle cx="11" cy="11" r="7" stroke="currentColor" stroke-width="1.8"/><path d="m20 20-3.5-3.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>',
-  swap: '<svg viewBox="0 0 24 24" fill="none"><path d="M7 7h12l-3-3M17 17H5l3 3" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>',
-  upload: '<svg viewBox="0 0 24 24" fill="none"><path d="M12 16V4M7 9l5-5 5 5M5 20h14" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>',
-  download: '<svg viewBox="0 0 24 24" fill="none"><path d="M12 4v12M7 11l5 5 5-5M5 20h14" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>',
-  lock: '<svg viewBox="0 0 24 24" fill="none"><rect x="5" y="10" width="14" height="10" rx="2" stroke="currentColor" stroke-width="1.8"/><path d="M8 10V7a4 4 0 0 1 8 0v3" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>',
-  unlock: '<svg viewBox="0 0 24 24" fill="none"><rect x="5" y="10" width="14" height="10" rx="2" stroke="currentColor" stroke-width="1.8"/><path d="M8 10V7a4 4 0 0 1 7.3-2.3" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>'
-};
-
-const fields = {
-  vehicle: [
-    { name: "vehicleProductNumber", label: "车号/产品编号", required: true, section: "入库信息" },
-    { name: "inboundDate", label: "入库日期", type: "datetime-local", coerce: "datetime", defaultValue: nowInputDateTime, section: "入库信息" },
-    { name: "supplier", label: "供应商", section: "入库信息" },
-    { name: "warehouseName", label: "经销商名称/仓位", section: "入库信息" },
-    { name: "applicationNumber", label: "样机申请单号", section: "入库信息" },
-    { name: "materialNumber", label: "物料号", section: "入库信息" },
-    { name: "name", label: "名称", required: true, section: "整机识别" },
-    { name: "specificationModel", label: "规格型号", required: true, section: "整机识别" },
-    { name: "configuration", label: "配置", type: "textarea", span: 2, section: "整机识别" },
-    { name: "machineType", label: "动力", type: "select", options: powerTypeOptions, allowCustom: true, section: "整机识别" },
-    { name: "engineNumber", label: "发动机号", section: "整机识别" },
-    { name: "frameNumber", label: "车架号", section: "整机识别" },
-    { name: "warrantyCardNumber", label: "保修卡号", section: "整机识别" },
-    { name: "manufacturingDate", label: "制造日期", type: "date", coerce: "date", section: "整机识别" },
-    { name: "stockStatus", label: "库存状态", type: "select", options: stockStatusOptions(), defaultValue: "IN_STOCK", section: "价格库存" },
-    { name: "purchasePrice", label: "采购价", type: "number", coerce: "decimal", step: "0.01", section: "价格库存" },
-    { name: "settlementPrice", label: "结算价", type: "number", coerce: "decimal", step: "0.01", section: "价格库存" },
-    { name: "salePrice", label: "销售单价", type: "number", coerce: "decimal", step: "0.01", section: "价格库存" },
-    { name: "inventoryCount", label: "库存数", type: "number", coerce: "int", step: "1", defaultValue: 1, section: "价格库存" },
-    { name: "salesDate", label: "销售日期", type: "date", coerce: "date", section: "销售与去向" },
-    { name: "isSalesReported", label: "是否报销售", section: "销售与去向" },
-    { name: "salesReportDate", label: "报销售日期", type: "date", coerce: "date", section: "销售与去向" },
-    { name: "isInvoiceApplied", label: "是否申请发票", section: "销售与去向" },
-    { name: "destination1", label: "去向1", span: 2, section: "销售与去向" },
-    { name: "destination2", label: "去向2", span: 2, section: "销售与去向" },
-    { name: "destination3", label: "去向3", span: 2, section: "销售与去向" },
-    { name: "destination4", label: "去向4", span: 2, section: "销售与去向" },
-    { name: "destination5", label: "去向5", span: 2, section: "销售与去向" },
-    { name: "remarks", label: "备注", type: "textarea", span: 2, section: "销售与去向" }
-  ],
-  vehicleModel: [
-    { name: "name", label: "车型", required: true },
-    { name: "specificationModel", label: "规格型号", required: true },
-    { name: "configuration", label: "默认配置", type: "textarea", span: 2 },
-    { name: "machineType", label: "动力", type: "select", options: powerTypeOptions, allowCustom: true, required: true },
-    { name: "supplier", label: "供应商" },
-    { name: "warehouseName", label: "经销商/仓位" },
-    { name: "purchasePrice", label: "采购价", type: "number", coerce: "decimal", step: "0.01" },
-    { name: "salePrice", label: "销售单价", type: "number", coerce: "decimal", step: "0.01" }
-  ],
-  vehicleInbound: [
-    { name: "vehicleProductNumber", label: "车号/产品编号", required: true, section: "入库信息" },
-    { name: "inboundDate", label: "入库日期", type: "datetime-local", coerce: "datetime", defaultValue: nowInputDateTime, section: "入库信息" },
-    { name: "supplier", label: "供应商", section: "入库信息" },
-    { name: "warehouseName", label: "经销商名称/仓位", section: "入库信息" },
-    { name: "applicationNumber", label: "样机申请单号", section: "入库信息" },
-    { name: "materialNumber", label: "物料号", section: "入库信息" },
-    { name: "name", label: "名称", required: true, section: "整机识别" },
-    { name: "specificationModel", label: "规格型号", required: true, section: "整机识别" },
-    { name: "configuration", label: "配置", type: "textarea", span: 2, section: "整机识别" },
-    { name: "machineType", label: "动力", type: "select", options: powerTypeOptions, allowCustom: true, required: true, section: "整机识别" },
-    { name: "engineNumber", label: "发动机号", section: "整机识别" },
-    { name: "frameNumber", label: "车架号", section: "整机识别" },
-    { name: "warrantyCardNumber", label: "保修卡号", section: "整机识别" },
-    { name: "manufacturingDate", label: "制造日期", type: "date", coerce: "date", section: "整机识别" },
-    { name: "stockStatus", label: "库存状态", type: "select", options: stockStatusOptions(), defaultValue: "IN_STOCK", section: "价格库存" },
-    { name: "purchasePrice", label: "采购价", type: "number", coerce: "decimal", step: "0.01", section: "价格库存" },
-    { name: "settlementPrice", label: "结算价", type: "number", coerce: "decimal", step: "0.01", section: "价格库存" },
-    { name: "salePrice", label: "销售单价", type: "number", coerce: "decimal", step: "0.01", section: "价格库存" },
-    { name: "inventoryCount", label: "库存数", type: "number", coerce: "int", step: "1", defaultValue: 1, section: "价格库存" },
-    { name: "remarks", label: "备注", type: "textarea", span: 2, section: "销售与去向" }
-  ],
-  part: [
-    { name: "partCode", label: "配件编码", required: true },
-    { name: "partName", label: "配件名称", type: "select", options: configValueOptions, allowCustom: true, required: true },
-    { name: "partBrand", label: "品牌" },
-    { name: "specification", label: "规格" },
-    { name: "partCategory", label: "分类", type: "select", options: configPartCategoryOptions, allowCustom: true },
-    { name: "applicableModels", label: "适配车型", span: 2 },
-    { name: "source", label: "来源" },
-    { name: "sourceMachineId", label: "来源车辆 ID", type: "number", coerce: "int", step: "1" },
-    { name: "quantity", label: "数量", type: "number", coerce: "int", step: "1", required: true, defaultValue: 0 },
-    { name: "unit", label: "单位", defaultValue: "件" },
-    { name: "purchasePrice", label: "采购价", type: "number", coerce: "decimal", step: "0.01" },
-    { name: "salePrice", label: "销售价", type: "number", coerce: "decimal", step: "0.01" },
-    { name: "settlementPrice", label: "结算价", type: "number", coerce: "decimal", step: "0.01" },
-    { name: "manufacturingDate", label: "生产日期", type: "date", coerce: "date" },
-    { name: "inboundDate", label: "入库时间", type: "datetime-local", coerce: "datetime" },
-    { name: "remarks", label: "备注", type: "textarea", span: 2 }
-  ],
-  repair: [
-    { name: "repairDate", label: "维修时间", type: "datetime-local", coerce: "datetime", required: true, defaultValue: nowInputDateTime },
-    { name: "status", label: "状态", type: "toggle", options: statusOptions(), defaultValue: "PENDING" },
-    { name: "machineId", label: "车号", type: "select", coerce: "int", required: true, options: vehicleOptions },
-    { name: "customerId", label: "客户", type: "select", coerce: "int", required: true, options: customerOptions },
-    { name: "faultDescription", label: "故障描述", type: "textarea", span: 2, required: true },
-    { name: "repairContent", label: "维修内容", type: "textarea", span: 2 },
-    { name: "repairPersonChoice", label: "维修人员", type: "select", required: true, options: repairPersonOptions },
-    { name: "usedPartIds", label: "使用配件", type: "select", coerce: "intList", options: repairPartOptions },
-    { name: "repairFee", label: "维修费", type: "number", coerce: "decimal", step: "0.01" },
-    { name: "partsFee", label: "配件费", type: "number", coerce: "decimal", step: "0.01" },
-    { name: "totalFee", label: "总费用", type: "number", coerce: "decimal", step: "0.01", readOnly: true },
-    { name: "remarks", label: "备注", type: "textarea", span: 2 }
-  ],
-  configItem: [
-    { name: "category", label: "大类", type: "select", options: vehicleCategoryOptions, allowCustom: true, required: true },
-    { name: "subCategory", label: "子类", type: "select", options: configSubCategoryOptions, allowCustom: true },
-    { name: "itemName", label: "配置项名称", type: "select", options: configSubCategoryOptions, allowCustom: true, required: true },
-    { name: "itemCode", label: "配置项编码", defaultValue: nextConfigItemCode },
-    { name: "inputType", label: "输入类型", type: "select", options: inputTypeOptions(), defaultValue: "SELECT" },
-    { name: "unit", label: "单位" },
-    { name: "isRequired", label: "是否必填", type: "checkbox", coerce: "boolean" },
-    { name: "sortOrder", label: "排序", type: "number", coerce: "int", step: "1", defaultValue: 0 }
-  ],
-  configValue: [
-    { name: "configItemId", label: "所属配置项", type: "select", coerce: "int", required: true, options: configItemOptions },
-    { name: "valueLabel", label: "显示值", required: true },
-    { name: "valueCode", label: "值编码" },
-    { name: "isDefault", label: "默认值", type: "checkbox", coerce: "boolean" },
-    { name: "sortOrder", label: "排序", type: "number", coerce: "int", step: "1", defaultValue: 0 },
-    { name: "remark", label: "备注", type: "textarea", span: 2 }
-  ],
-  vehicleStock: [
-    { name: "machineId", label: "整车", type: "select", coerce: "int", required: true, options: vehicleOptions },
-    { name: "quantity", label: "数量", type: "number", coerce: "int", step: "1", required: true, defaultValue: 1 },
-    { name: "operator", label: "操作人" },
-    { name: "remark", label: "备注", type: "textarea", span: 2 }
-  ],
-  vehicleOutbound: [
-    { name: "machineId", label: "车号/产品编号", type: "select", coerce: "int", required: true, options: vehicleOutboundOptions, section: "销售车辆" },
-    { name: "salesDate", label: "销售日期", type: "date", coerce: "date", defaultValue: todayInputDate, section: "销售车辆" },
-    { name: "settlementPrice", label: "结算价", type: "number", coerce: "decimal", step: "0.01", required: true, section: "价格收款" },
-    { name: "salePrice", label: "销售单价", type: "number", coerce: "decimal", step: "0.01", section: "价格收款" },
-    { name: "paymentSettled", label: "车款是否结清", type: "checkbox", coerce: "boolean", section: "价格收款" },
-    { name: "paymentRemark", label: "收款情况", type: "textarea", span: 2, section: "价格收款" },
-    { name: "customerMode", label: "客户录入", type: "select", required: true, options: customerEntryModeOptions, defaultValue: "existing", section: "客户资料" },
-    { name: "customerId", label: "客户", type: "select", coerce: "int", required: true, options: customerOptions, section: "客户资料" },
-    { name: "invoiceStatus", label: "开发票情况", section: "票据与报销售" },
-    { name: "invoiceIssuedDate", label: "开票日期", type: "date", coerce: "date", section: "票据与报销售" },
-    { name: "salesReported", label: "是否报销售", type: "checkbox", coerce: "boolean", section: "票据与报销售" },
-    { name: "salesReportDate", label: "报销售日期", type: "date", coerce: "date", section: "票据与报销售" },
-    { name: "invoiceApplied", label: "是否申请发票", type: "checkbox", coerce: "boolean", section: "票据与报销售" },
-    { name: "invoiceApplicationDate", label: "发票申请日期", type: "date", coerce: "date", section: "票据与报销售" },
-    { name: "registrationStatus", label: "是否上牌", section: "票据与报销售" },
-    { name: "contractType", label: "合同", section: "票据与报销售" },
-    { name: "operator", label: "经办人", section: "备注" },
-    { name: "orderRemark", label: "备注", type: "textarea", span: 2, section: "备注" }
-  ],
-  vehicleOutboundQuickCustomer: [
-    { name: "customerCompanyName", label: "客户", required: true, span: 2, section: "客户资料" },
-    { name: "customerAddress", label: "地址", span: 2, section: "客户资料" },
-    { name: "customerContactName", label: "联系人", section: "客户资料" },
-    { name: "customerContactPhone", label: "电话", section: "客户资料" },
-    { name: "customerTaxOrIdNumber", label: "税号/身份证号", span: 2, section: "客户资料" },
-    { name: "customerRemarks", label: "客户备注", type: "textarea", span: 2, section: "客户资料" }
-  ],
-  partStock: [
-    { name: "partCode", label: "配件", type: "select", required: true, options: partCodeOptions },
-    { name: "quantity", label: "数量", type: "number", coerce: "int", step: "1", required: true, defaultValue: 1 },
-    { name: "operator", label: "操作人" },
-    { name: "remark", label: "备注", type: "textarea", span: 2 }
-  ],
-  partOutbound: [
-    { name: "partCode", label: "配件", type: "select", required: true, options: partCodeOptions },
-    { name: "quantity", label: "数量", type: "number", coerce: "int", step: "1", required: true, defaultValue: 1 },
-    { name: "customerId", label: "客户", type: "select", coerce: "int", required: true, options: customerOptions },
-    { name: "settlementPrice", label: "结算价", type: "number", coerce: "decimal", step: "0.01" },
-    { name: "operator", label: "操作人" },
-    { name: "orderRemark", label: "订单备注", type: "textarea", span: 2 }
-  ],
-  rental: [
-    { name: "machineId", label: "租赁车辆", type: "select", coerce: "int", required: true, options: vehicleRentalOptions, section: "租赁车辆" },
-    { name: "customerId", label: "租赁去向（客户）", type: "select", coerce: "int", required: true, options: customerOptions, section: "租赁信息" },
-    { name: "destination", label: "具体去向/地址", span: 2, section: "租赁信息" },
-    { name: "monthlyRentalPrice", label: "月租价格", type: "number", coerce: "decimal", step: "0.01", required: true, section: "租赁信息" },
-    { name: "startDate", label: "开始日期", type: "date", coerce: "date", defaultValue: todayInputDate, section: "租赁信息" },
-    { name: "endDate", label: "结束日期", type: "date", coerce: "date", section: "租赁信息" },
-    { name: "status", label: "租赁状态", type: "toggle", options: rentalStatusOptions, defaultValue: "ACTIVE", section: "租赁信息" },
-    { name: "operator", label: "经办人", section: "备注" },
-    { name: "remark", label: "备注", type: "textarea", span: 2, section: "备注" }
-  ],
-  customer: [
-    { name: "companyName", label: "公司名称", required: true },
-    { name: "address", label: "地址", span: 2 },
-    { name: "contactName", label: "联系人姓名" },
-    { name: "contactPhone", label: "联系人电话" },
-    { name: "taxOrIdNumber", label: "税号/身份证号", span: 2 },
-    { name: "remarks", label: "备注", type: "textarea", span: 2 }
-  ],
-  outboundOrder: [
-    { name: "salesDate", label: "销售日期", type: "date", coerce: "date" },
-    { name: "settlementPrice", label: "结算价", type: "number", coerce: "decimal", step: "0.01" },
-    { name: "salePrice", label: "销售单价", type: "number", coerce: "decimal", step: "0.01" },
-    { name: "paymentSettled", label: "车款结清", type: "checkbox", coerce: "boolean" },
-    { name: "paymentRemark", label: "收款情况", type: "textarea", span: 2 },
-    { name: "salesReported", label: "已报销售", type: "checkbox", coerce: "boolean" },
-    { name: "invoiceApplied", label: "申请发票", type: "checkbox", coerce: "boolean" },
-    { name: "salesReportDate", label: "报销售日期", type: "date", coerce: "date" },
-    { name: "invoiceApplicationDate", label: "发票申请日期", type: "date", coerce: "date" },
-    { name: "invoiceStatus", label: "开票情况" },
-    { name: "invoiceIssuedDate", label: "开票日期", type: "date", coerce: "date" },
-    { name: "registrationStatus", label: "上牌情况" },
-    { name: "contractType", label: "合同" },
-    { name: "orderRemark", label: "订单备注", type: "textarea", span: 2 },
-    { name: "operator", label: "经办人" }
-  ],
-  invoiceUpload: [
-    { name: "invoiceFile", label: "发票文件", type: "file", required: true, span: 2, accept: ".pdf,.ofd,.jpg,.jpeg,.png,.webp,application/pdf,image/jpeg,image/png,image/webp" }
-  ],
-  contractUpload: [
-    { name: "contractFile", label: "合同文件", type: "file", required: true, span: 2, accept: ".pdf,.ofd,.doc,.docx,.jpg,.jpeg,.png,.webp,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,image/jpeg,image/png,image/webp" }
-  ],
-  partReplace: [
-    { name: "machineId", label: "整车", type: "select", coerce: "int", required: true, options: vehicleOptions },
-    { name: "machineConfigId", label: "原车配件", type: "select", coerce: "int", required: true, options: machineConfigOptions },
-    { name: "newPartId", label: "同类型库存配件", type: "select", coerce: "int", required: true, options: compatiblePartOptions },
-    { name: "operator", label: "操作人" },
-    { name: "remark", label: "备注", type: "textarea", span: 2 }
-  ],
-  vehiclePartInstall: [
-    { name: "machineId", type: "hidden", coerce: "int" },
-    { name: "configItemId", label: "配件分类", type: "select", coerce: "int", required: true, options: installPartCategoryOptions },
-    { name: "newPartId", label: "仓库配件", type: "select", coerce: "int", required: true, options: installPartOptions },
-    { name: "quantity", label: "数量", type: "number", coerce: "int", step: "1", required: true, defaultValue: 1 }
-  ],
-  modificationOrder: [
-    { name: "vehicleModelKey", label: "车型", type: "select", required: true, options: vehicleModelOptions },
-    { name: "machineId", label: "车号", type: "select", coerce: "int", required: true, options: vehicleNumberOptions },
-    { name: "machineConfigId", label: "原配置", type: "select", coerce: "int", required: true, options: machineConfigOptions },
-    { name: "newPartId", label: "新配件", type: "select", coerce: "int", required: true, options: compatiblePartOptions },
-    { name: "quantity", label: "数量", type: "number", coerce: "int", step: "1", required: true, placeholderValue: 1 },
-    { name: "oldPartAction", label: "旧件处理", type: "select", options: oldPartActionOptions, placeholderValue: "STOCK_IN" },
-    { name: "customerName", label: "客户名称" },
-    { name: "salesOrderNo", label: "销售单号" },
-    { name: "operator", label: "操作人" },
-    { name: "remark", label: "备注", type: "textarea", span: 2 }
-  ],
-  user: [
-    { name: "username", label: "用户名", required: true },
-    { name: "password", label: "初始密码", type: "password", required: true },
-    { name: "role", label: "角色", type: "select", options: userRoleOptions, required: true, defaultValue: "USER" },
-    { name: "jobTag", label: "职务", type: "select", options: jobTagOptions, required: true, defaultValue: "CLERK" }
-  ],
-  userUsername: [
-    { name: "username", label: "新用户名", required: true }
-  ],
-  userPassword: [
-    { name: "password", label: "新密码", type: "password", required: true }
-  ],
-  switchUser: [
-    { name: "username", label: "用户名", required: true },
-    { name: "password", label: "密码", type: "password", required: true }
-  ]
-};
+const fields = createFields({
+  nowInputDateTime,
+  todayInputDate,
+  powerTypeOptions,
+  stockStatusOptions,
+  configValueOptions,
+  configPartCategoryOptions,
+  vehicleOptions,
+  customerOptions,
+  supplierOptions,
+  repairPersonOptions,
+  repairPartOptions,
+  statusOptions,
+  vehicleCategoryOptions,
+  configSubCategoryOptions,
+  nextConfigItemCode,
+  inputTypeOptions,
+  configItemOptions,
+  customerEntryModeOptions,
+  vehicleOutboundOptions,
+  partCodeOptions,
+  machineConfigOptions,
+  compatiblePartOptions,
+  discountConfigValueOptions,
+  oldPartActionOptions,
+  installPartCategoryOptions,
+  installPartOptions,
+  vehicleModelOptions,
+  vehicleRentalOptions,
+  vehicleNumberOptions,
+  userRoleOptions,
+  jobTagOptions,
+  rentalStatusOptions,
+  purchaseConfigValueOptions,
+  purchaseStatusOptions,
+  stocktakingResourceTypeOptions,
+  stocktakingResourceOptions,
+  stocktakingStatusOptions
+});
 
 const pagedTabs = {
   vehicles: { endpoint: endpoints.vehicle.list, dataKey: "vehicles", searchKey: "vehicles", permission: null, sortDesc: true },
@@ -360,6 +65,9 @@ const pagedTabs = {
   outboundOrders: { endpoint: endpoints.outboundOrder.list, dataKey: "outboundOrders", searchKey: "outboundOrders", permission: "stock:adjust", sortDesc: true },
   rentals: { endpoint: endpoints.rental.list, dataKey: "rentals", searchKey: "rentals", permission: "stock:adjust", sortDesc: true },
   customers: { endpoint: endpoints.customer.list, dataKey: "customers", searchKey: "customers", permission: null, sortDesc: false },
+  suppliers: { endpoint: endpoints.supplier.list, dataKey: "suppliers", searchKey: "suppliers", permission: "stock:adjust", sortDesc: false },
+  purchases: { endpoint: endpoints.purchaseOrder.list, dataKey: "purchaseOrders", searchKey: "purchases", permission: "stock:adjust", sortDesc: true },
+  stocktakes: { endpoint: endpoints.stocktaking.list, dataKey: "stocktakingRecords", searchKey: "stocktakes", permission: "stock:adjust", sortDesc: true },
   repairs: { endpoint: endpoints.repair.list, dataKey: "repairs", searchKey: "repairs", permission: null, sortDesc: true },
   logs: { endpoint: endpoints.logs, dataKey: "operationLogs", searchKey: "logs", permission: "log:read", sortDesc: false },
   users: { endpoint: endpoints.user.list, dataKey: "users", searchKey: "users", permission: "user:read", sortDesc: true }
@@ -369,8 +77,13 @@ const activeTabPageKeys = {
   modifications: "modificationOrders"
 };
 
+const summaryTabs = new Set(["outboundOrders", "rentals", "suppliers", "purchases", "stocktakes"]);
+
 let els;
 let searchReloadTimer = null;
+let detailDrawerCloseTimer = null;
+let modalPointerDownStartedOnOverlay = false;
+let detailPointerDownStartedOnOverlay = false;
 
 document.addEventListener("DOMContentLoaded", () => {
   els = {
@@ -386,6 +99,8 @@ document.addEventListener("DOMContentLoaded", () => {
     content: document.getElementById("moduleContent"),
     modalOverlay: document.getElementById("modalOverlay"),
     modalCard: document.getElementById("modalCard"),
+    detailDrawerOverlay: document.getElementById("detailDrawerOverlay"),
+    detailDrawer: document.getElementById("detailDrawer"),
     toastHost: document.getElementById("toastHost")
   };
 
@@ -395,16 +110,35 @@ document.addEventListener("DOMContentLoaded", () => {
   els.mainNav.addEventListener("click", handleNav);
   els.content.addEventListener("click", handleContentClick);
   els.content.addEventListener("keydown", handleContentKeydown);
+  els.content.addEventListener("pointerover", handleContentPointerOver);
+  els.content.addEventListener("pointerout", handleContentPointerOut);
+  els.content.addEventListener("focusin", handleContentFocusIn);
+  els.content.addEventListener("focusout", handleContentFocusOut);
   els.content.addEventListener("input", handleContentInput);
   els.content.addEventListener("change", handleContentChange);
+  els.modalOverlay.addEventListener("pointerdown", handleModalOverlayPointerDown);
   els.modalOverlay.addEventListener("click", handleOverlayClick);
   els.modalCard.addEventListener("click", handleModalClick);
   els.modalCard.addEventListener("input", handleModalInput);
   els.modalCard.addEventListener("focusin", handleModalFocusIn);
   els.modalCard.addEventListener("change", handleModalChange);
   els.modalCard.addEventListener("submit", handleModalSubmit);
+  els.detailDrawerOverlay.addEventListener("pointerdown", handleDetailDrawerOverlayPointerDown);
+  els.detailDrawerOverlay.addEventListener("click", handleDetailDrawerOverlayClick);
+  els.detailDrawer.addEventListener("click", handleDetailDrawerClick);
   document.addEventListener("keydown", event => {
-    if (event.key === "Escape" && state.modal) closeModal();
+    if (event.key === "Escape" && state.modal) {
+      closeModal();
+      return;
+    }
+    if (event.key === "Escape" && state.detailDrawer) {
+      closeDetailDrawer();
+      return;
+    }
+    if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "k" && !state.modal && !isTypingTarget(event.target)) {
+      event.preventDefault();
+      focusPrimarySearch();
+    }
   });
 
   if (state.token) {
@@ -421,12 +155,79 @@ function registerClientWorker() {
   navigator.serviceWorker.register("/sw.js").catch(() => {});
 }
 
+function restorePersistedListState() {
+  let persisted = null;
+  try {
+    persisted = JSON.parse(localStorage.getItem(LIST_STATE_STORAGE_KEY) || "null");
+  } catch (error) {
+    return;
+  }
+  if (!persisted || typeof persisted !== "object") return;
+  if (persisted.activeTab && tabs[persisted.activeTab]) {
+    state.activeTab = persisted.activeTab;
+  }
+  if (persisted.search && typeof persisted.search === "object") {
+    state.search = { ...state.search, ...pickKnownKeys(persisted.search, state.search) };
+  }
+  if (persisted.filters && typeof persisted.filters === "object") {
+    state.filters = {
+      ...state.filters,
+      ...Object.fromEntries(Object.entries(persisted.filters).map(([key, value]) => [
+        key,
+        { ...(state.filters[key] || {}), ...(value || {}) }
+      ]))
+    };
+  }
+  if (persisted.pages && typeof persisted.pages === "object") {
+    for (const [key, value] of Object.entries(persisted.pages)) {
+      if (!state.pages[key] || !value) continue;
+      state.pages[key].page = Math.max(0, Number(value.page || 0));
+      state.pages[key].size = Math.max(1, Number(value.size || state.pages[key].size));
+    }
+  }
+  if (persisted.sorts && typeof persisted.sorts === "object") {
+    state.sorts = persisted.sorts;
+  }
+  if (Number.isFinite(Number(persisted.selectedStatsYear))) {
+    state.selectedStatsYear = Number(persisted.selectedStatsYear);
+  }
+  if (Number.isFinite(Number(persisted.visibleLogRows))) {
+    state.visibleLogRows = Math.max(LOG_PAGE_SIZE, Number(persisted.visibleLogRows));
+  }
+}
+
+function persistListState() {
+  try {
+    const pages = Object.fromEntries(Object.entries(state.pages).map(([key, page]) => [
+      key,
+      { page: Number(page.page || 0), size: Number(page.size || LIST_PAGE_SIZE) }
+    ]));
+    localStorage.setItem(LIST_STATE_STORAGE_KEY, JSON.stringify({
+      activeTab: state.activeTab,
+      search: state.search,
+      filters: state.filters,
+      pages,
+      sorts: state.sorts || {},
+      selectedStatsYear: state.selectedStatsYear,
+      visibleLogRows: state.visibleLogRows
+    }));
+  } catch (error) {
+    // Storage may be unavailable in private browsing or locked-down WebViews.
+  }
+}
+
+function pickKnownKeys(source, targetShape) {
+  return Object.fromEntries(Object.entries(source).filter(([key]) => Object.prototype.hasOwnProperty.call(targetShape, key)));
+}
+
 async function handleLogin(event) {
   event.preventDefault();
+  const submitButton = event.currentTarget.querySelector("button[type='submit']");
   const form = new FormData(event.currentTarget);
   const username = String(form.get("username") || "").trim();
   const password = String(form.get("password") || "");
 
+  setLoginPending(submitButton, true);
   try {
     const data = await api("/api/auth/login", {
       method: "POST",
@@ -440,7 +241,17 @@ async function handleLogin(event) {
     await enterApp();
   } catch (error) {
     showToast(error.message || "登录失败", "error");
+  } finally {
+    setLoginPending(submitButton, false);
   }
+}
+
+function setLoginPending(button, pending) {
+  if (!button) return;
+  button.disabled = pending;
+  button.setAttribute("aria-busy", pending ? "true" : "false");
+  const label = button.querySelector("[data-login-label]");
+  if (label) label.textContent = pending ? "登录中..." : "登录";
 }
 
 async function enterApp() {
@@ -472,8 +283,11 @@ function logout(message) {
   state.user = null;
   state.vehicleDetail = null;
   state.selectedVehicleId = null;
+  state.detailDrawer = null;
+  state.batchSelections = {};
   clearSession();
   closeModal();
+  closeDetailDrawer();
   showLogin();
   if (message) showToast(message, "info");
 }
@@ -533,6 +347,7 @@ async function ensureConfigData(force = false) {
 
 async function loadOverviewData() {
   await Promise.all([
+    hasPermission("stock:adjust") ? loadTodoCenter() : Promise.resolve(),
     loadPagedTab("vehicles", { force: true, silent: true, withVehicleReferences: false }),
     loadPagedTab("parts", { force: true, silent: true }),
     loadPagedTab("repairs", { force: true, silent: true }),
@@ -540,6 +355,10 @@ async function loadOverviewData() {
     loadPagedTab("rentals", { force: true, silent: true })
   ]);
   await loadVehicleFlowReferences({ force: true });
+}
+
+async function loadTodoCenter() {
+  state.data.todoCenter = await api(endpoints.todos);
 }
 
 async function loadVehicleModelData(options = {}) {
@@ -559,11 +378,20 @@ async function loadPagedTab(tab, options = {}) {
 
   const pageState = state.pages[tab];
   pageState.loading = true;
-  const payload = await api(pageUrl(config.endpoint, pageState, state.search[config.searchKey] || ""));
+  const keyword = state.search[config.searchKey] || "";
+  const [payload, summary] = await Promise.all([
+    api(pageUrl(config.endpoint, pageState, keyword)),
+    loadListSummary(tab, keyword)
+  ]);
   const rows = pageContent(payload);
   state.data[config.dataKey] = config.dataKey === "operationLogs"
     ? sortLogs(rows)
     : sortById(rows, config.sortDesc !== false);
+  if (summary) {
+    state.data.summaries[tab] = summary;
+  } else if (summaryTabs.has(tab)) {
+    delete state.data.summaries[tab];
+  }
   assignPageState(pageState, payload);
 
   if (tab === "vehicles" && options.withVehicleReferences !== false) {
@@ -572,6 +400,20 @@ async function loadPagedTab(tab, options = {}) {
   if (tab === "repairs" && hasPermission("stock:adjust") && !state.reference.rentalsLoaded) {
     state.data.rentals = sortById(await api(endpoints.rental.list));
     state.reference.rentalsLoaded = true;
+  }
+}
+
+async function loadListSummary(tab, keyword = "") {
+  if (!summaryTabs.has(tab) || !endpoints.listSummary) return null;
+  const params = new URLSearchParams({ type: tab });
+  if (keyword && keyword.trim()) {
+    params.set("keyword", keyword.trim());
+  }
+  try {
+    return await api(`${endpoints.listSummary}?${params.toString()}`);
+  } catch (error) {
+    console.warn("List summary failed", error);
+    return null;
   }
 }
 
@@ -679,8 +521,13 @@ async function loadVehicleModelDetail(modelKey, selectedMachineId = null, should
 async function handleNav(event) {
   const button = event.target.closest("[data-tab]");
   if (!button) return;
+  if (button.dataset.tab === state.activeTab) {
+    scrollToWorkspaceTop();
+    return;
+  }
   state.activeTab = button.dataset.tab;
   els.content.innerHTML = renderLoading();
+  syncShell();
   try {
     await loadCurrentTab({ force: true });
     renderCurrentTab();
@@ -704,6 +551,84 @@ async function handleContentClick(event) {
       await loadAllData();
       renderCurrentTab();
       showToast("数据已刷新", "success");
+      return;
+    }
+    if (action === "clear-search") {
+      const key = control.dataset.searchFor;
+      if (!key) return;
+      state.search[key] = "";
+      const tab = tabForSearchKey(key);
+      if (key === "logs") state.visibleLogRows = LOG_PAGE_SIZE;
+      if (tab && tab === activePagedTab()) {
+        resetPage(state.pages[tab]);
+        if (tab !== "vehicles") {
+          els.content.innerHTML = renderLoading();
+          await loadPagedTab(tab, { force: true });
+        }
+      }
+      renderCurrentTab();
+      const nextInput = els.content.querySelector(`[data-search-for="${key}"]`);
+      if (nextInput) nextInput.focus();
+      return;
+    }
+    if (action === "open-detail") {
+      openDetailDrawer(kind, id);
+      return;
+    }
+    if (action === "close-detail") {
+      closeDetailDrawer();
+      return;
+    }
+    if (action === "apply-filter") {
+      const key = control.dataset.filterFor;
+      const name = control.dataset.filterName;
+      if (!key || !name) return;
+      state.filters[key] = {
+        ...(state.filters[key] || {}),
+        [name]: control.dataset.filterValue || ""
+      };
+      if (state.pages[key]) resetPage(state.pages[key]);
+      renderCurrentTab();
+      return;
+    }
+    if (action === "sort-table") {
+      applyTableSort(control.dataset.tableKey, control.dataset.sortKey);
+      renderCurrentTab();
+      return;
+    }
+    if (action === "toggle-row-select") {
+      toggleBatchSelection(control.dataset.batchKind, id, control.checked);
+      renderCurrentTab();
+      return;
+    }
+    if (action === "toggle-visible-select") {
+      toggleVisibleBatchSelection(control.dataset.batchKind, (control.dataset.visibleIds || "").split(",").filter(Boolean), control.checked);
+      renderCurrentTab();
+      return;
+    }
+    if (action === "clear-batch-selection") {
+      clearBatchSelection(control.dataset.batchKind);
+      renderCurrentTab();
+      return;
+    }
+    if (action === "batch-export") {
+      exportSelectedRows(control.dataset.batchKind);
+      return;
+    }
+    if (action === "batch-complete-repairs") {
+      await batchCompleteRepairs();
+      return;
+    }
+    if (action === "batch-receive-purchases") {
+      await batchReceivePurchases();
+      return;
+    }
+    if (action === "batch-complete-stocktakes") {
+      await batchCompleteStocktakes();
+      return;
+    }
+    if (action === "batch-delete-stocktake-drafts") {
+      await batchDeleteStocktakeDrafts();
       return;
     }
     if (action === "export-excel") {
@@ -834,6 +759,18 @@ async function handleContentClick(event) {
       await toggleOutboundOrderLock(id, control.dataset.locked === "true");
       return;
     }
+    if (action === "toggle-purchase-received") {
+      await togglePurchaseReceived(id);
+      return;
+    }
+    if (action === "purchase-freight") {
+      await openEntityModal("purchaseFreight", findEntity("purchaseOrder", id));
+      return;
+    }
+    if (action === "complete-stocktaking") {
+      await completeStocktaking(id);
+      return;
+    }
     if (action === "user-username") {
       await openEntityModal("userUsername", findEntity("user", id));
       return;
@@ -911,10 +848,65 @@ async function handleContentClick(event) {
 function handleContentKeydown(event) {
   if (event.key !== "Enter" && event.key !== " ") return;
   if (event.target.closest("button, a, input, select, textarea")) return;
-  const selectable = event.target.closest("[data-select-action]");
+  const selectable = event.target.closest("[data-select-action], [data-action]");
   if (!selectable || !els.content.contains(selectable)) return;
   event.preventDefault();
   selectable.click();
+}
+
+function handleContentPointerOver(event) {
+  const column = event.target.closest(".finance-chart-column");
+  if (!column || !els.content.contains(column)) return;
+  setActiveFinanceColumn(column);
+}
+
+function handleContentPointerOut(event) {
+  const chart = event.target.closest(".finance-chart");
+  if (!chart) return;
+  if (event.relatedTarget && chart.contains(event.relatedTarget)) return;
+  clearActiveFinanceChart(chart);
+}
+
+function handleContentFocusIn(event) {
+  const column = event.target.closest(".finance-chart-column");
+  if (!column || !els.content.contains(column)) return;
+  setActiveFinanceColumn(column);
+}
+
+function handleContentFocusOut(event) {
+  const chart = event.target.closest(".finance-chart");
+  if (!chart) return;
+  window.setTimeout(() => {
+    if (chart.contains(document.activeElement)) return;
+    clearActiveFinanceChart(chart);
+  }, 0);
+}
+
+function setActiveFinanceColumn(column) {
+  const chart = column.closest(".finance-chart");
+  if (!chart) return;
+  const activeIndex = column.dataset.financeColumnIndex || "";
+  if (chart.dataset.activeIndex === activeIndex) return;
+  chart.dataset.activeIndex = activeIndex;
+  chart.querySelectorAll(".finance-chart-column.is-active, .finance-point.is-active").forEach(item => {
+    item.classList.remove("is-active");
+  });
+  column.classList.add("is-active");
+  chart.querySelectorAll("[data-finance-point-index]").forEach(point => {
+    if (point.dataset.financePointIndex === activeIndex) {
+      point.classList.add("is-active");
+    }
+  });
+}
+
+function clearActiveFinanceChart(chart) {
+  delete chart.dataset.activeIndex;
+  chart.querySelectorAll(".finance-chart-column.is-active, .finance-point.is-active").forEach(item => {
+    item.classList.remove("is-active");
+  });
+  if (chart.contains(document.activeElement) && typeof document.activeElement.blur === "function") {
+    document.activeElement.blur();
+  }
 }
 
 function handleContentInput(event) {
@@ -982,6 +974,7 @@ async function handleContentChange(event) {
       ...(state.filters[key] || {}),
       [name]: filter.value
     };
+    if (state.pages[key]) resetPage(state.pages[key]);
     renderCurrentTab();
     return;
   }
@@ -1007,14 +1000,50 @@ async function handleContentChange(event) {
   }
 }
 
-function handleOverlayClick(event) {
-  if (event.target === els.modalOverlay) closeModal();
+function handleModalOverlayPointerDown(event) {
+  modalPointerDownStartedOnOverlay = event.target === els.modalOverlay;
 }
 
-function handleModalClick(event) {
+function handleOverlayClick(event) {
+  if (event.target === els.modalOverlay && modalPointerDownStartedOnOverlay) {
+    closeModal();
+  }
+  modalPointerDownStartedOnOverlay = false;
+}
+
+function handleDetailDrawerOverlayPointerDown(event) {
+  detailPointerDownStartedOnOverlay = event.target === els.detailDrawerOverlay;
+}
+
+function handleDetailDrawerOverlayClick(event) {
+  if (event.target === els.detailDrawerOverlay && detailPointerDownStartedOnOverlay) {
+    closeDetailDrawer();
+  }
+  detailPointerDownStartedOnOverlay = false;
+}
+
+function handleDetailDrawerClick(event) {
+  if (event.target.closest("[data-action='close-detail']")) {
+    closeDetailDrawer();
+    return;
+  }
+  if (event.target.closest("[data-action], [data-select-action]")) {
+    handleContentClick(event);
+  }
+}
+
+async function handleModalClick(event) {
   const configAction = event.target.closest("[data-config-action]");
   if (configAction) {
     event.preventDefault();
+    if (configAction.dataset.configAction === "remove") {
+      const confirmed = await confirmDanger({
+        title: "确认移除配置",
+        target: "当前入库配置行",
+        impact: "该配置行会从当前表单中移除；保存前不会写入后台。"
+      });
+      if (!confirmed) return;
+    }
     updateConfigSelectionRows(configAction);
     return;
   }
@@ -1055,6 +1084,12 @@ function handleModalInput(event) {
     const form = event.target.closest("form");
     if (form?.dataset.kind === "repair" && ["repairFee", "partsFee"].includes(event.target.name)) {
       syncRepairTotalFee(form);
+    }
+    if (["vehicleOutbound", "partStock", "outboundOrder"].includes(form?.dataset.kind) && isPaymentField(event.target.name)) {
+      syncPaymentFields(form, event.target.name);
+    }
+    if (form?.dataset.kind === "purchaseOrder" && ["quantity", "unitPrice", "totalAmount"].includes(event.target.name)) {
+      syncPurchaseAmount(form, event.target.name);
     }
     return;
   }
@@ -1117,7 +1152,7 @@ async function handleModalChange(event) {
     return;
   }
   if (state.modal?.item && event.target.name) {
-    state.modal.item[event.target.name] = event.target.value;
+    state.modal.item[event.target.name] = event.target.type === "checkbox" ? event.target.checked : event.target.value;
   }
 
   if (kind === "configItem") {
@@ -1138,10 +1173,42 @@ async function handleModalChange(event) {
     if (event.target.name === "customerId") {
       syncCustomerAddress(form, Number(event.target.value || 0));
     }
+    if (event.target.name === "usedPartIds") {
+      syncRepairPartFee(form, event.target.value);
+    }
   }
 
   if (kind === "rental" && event.target.name === "customerId") {
     syncRentalCustomerDestination(form, Number(event.target.value || 0));
+  }
+
+  if (kind === "rental" && event.target.name === "machineId") {
+    syncRentalVehicleDefaults(form, Number(event.target.value || 0));
+  }
+
+  if (kind === "stocktaking" && event.target.name === "resourceType") {
+    state.modal.item.resourceId = null;
+    state.modal.item.actualQuantity = 0;
+    renderModal();
+    return;
+  }
+
+  if (kind === "stocktaking" && event.target.name === "resourceId") {
+    syncStocktakingQuantity(form, Number(event.target.value || 0));
+  }
+
+  if (kind === "purchaseOrder" && ["quantity", "unitPrice", "totalAmount"].includes(event.target.name)) {
+    syncPurchaseAmount(form, event.target.name);
+  }
+
+  if (kind === "purchaseOrder" && event.target.name === "configItemId") {
+    state.modal.item.configValueId = null;
+    renderModal();
+    return;
+  }
+
+  if (kind === "purchaseOrder" && event.target.name === "configValueId") {
+    syncPurchaseResourceDefaults(form);
   }
 
   if (kind === "vehicleInbound" && event.target.name === "machineType") {
@@ -1161,6 +1228,10 @@ async function handleModalChange(event) {
     syncVehicleOutboundDefaults(Number(event.target.value || 0));
     renderModal();
     return;
+  }
+
+  if (["vehicleOutbound", "partStock", "outboundOrder"].includes(kind) && isPaymentField(event.target.name)) {
+    syncPaymentFields(form, event.target.name);
   }
 
   if (kind === "partStock" && state.modal?.item?.direction === "outbound" && event.target.name === "partCode") {
@@ -1230,6 +1301,11 @@ async function handleModalSubmit(event) {
   const activeModelKey = state.vehicleDetail?.modelKey || item.__modelKey || "";
 
   if (kind === "invoiceUpload" || kind === "contractUpload") {
+    if (!(await confirmDanger(modalDangerConfirmation(kind, item, {}) || {
+      title: kind === "invoiceUpload" ? "确认上传发票" : "确认上传合同",
+      target: entityDisplayName("outboundOrder", item),
+      impact: "如已有文件，本次上传会替换原文件。"
+    }))) return;
     try {
       if (kind === "invoiceUpload") {
         await uploadInvoiceForOrder(item, form);
@@ -1247,7 +1323,12 @@ async function handleModalSubmit(event) {
   }
 
   const payload = serializeForm(kind, form);
+  if (kind === "purchaseOrder") {
+    enrichPurchaseOrderPayload(payload, form);
+  }
   attachVersion(payload, item);
+  const dangerConfirmation = modalDangerConfirmation(kind, item, payload);
+  if (dangerConfirmation && !(await confirmDanger(dangerConfirmation))) return;
 
   try {
     if (kind === "switchUser") {
@@ -1275,7 +1356,7 @@ async function handleModalSubmit(event) {
           stockStatus: "PENDING_INBOUND"
         }
       });
-      showToast("车型已新增", "success");
+      showContextSuccess("车型已新增", entityDisplayName("vehicle", payload), "可继续入库具体车号");
     } else if (kind === "vehicleInbound") {
       const configs = buildInboundConfigs(item);
       const savedVehicle = await api("/api/inventory/inbound", {
@@ -1288,7 +1369,7 @@ async function handleModalSubmit(event) {
       if (savedVehicle?.id) {
         state.selectedVehicleId = Number(savedVehicle.id);
       }
-      showToast("此车型入库成功", "success");
+      showContextSuccess("车型入库成功", entityDisplayName("vehicle", { ...payload, id: savedVehicle?.id }), "车辆详情已更新");
     } else if (kind === "vehicleOutbound") {
       const machine = findEntity("vehicle", Number(payload.machineId || 0));
       const customerResult = await ensureVehicleOutboundCustomer(payload);
@@ -1304,6 +1385,10 @@ async function handleModalSubmit(event) {
           salesDate: payload.salesDate,
           settlementPrice: payload.settlementPrice,
           salePrice: payload.salePrice,
+          receivableAmount: payload.receivableAmount,
+          receivedAmount: payload.receivedAmount,
+          paymentDueDate: payload.paymentDueDate,
+          lastPaymentDate: payload.lastPaymentDate,
           paymentSettled: payload.paymentSettled,
           paymentRemark: payload.paymentRemark,
           salesReported: payload.salesReported,
@@ -1318,7 +1403,7 @@ async function handleModalSubmit(event) {
           orderRemark: payload.orderRemark
         }
       });
-      showToast(customerResult.created ? "已新建客户并创建整车出库订单" : "整车出库订单已创建", "success");
+      showContextSuccess(customerResult.created ? "已新建客户并创建整车出库订单" : "整车出库订单已创建", entityDisplayName("vehicle", machine), "收款、报销售和发票跟进已生成");
     } else if (kind === "rental") {
       const machine = findEntity("vehicle", Number(payload.machineId || item.machineId || 0));
       const body = {
@@ -1336,10 +1421,10 @@ async function handleModalSubmit(event) {
       };
       if (item.id) {
         await api(endpoints.rental.update(item.id), { method: "PUT", body });
-        showToast("租赁记录已更新", "success");
+        showContextSuccess("租赁记录已更新", entityDisplayName("vehicle", machine), body.destination || "租赁列表已刷新");
       } else {
         await api(endpoints.rental.create, { method: "POST", body });
-        showToast("租赁记录已创建", "success");
+        showContextSuccess("租赁记录已创建", entityDisplayName("vehicle", machine), body.destination || "租赁列表已刷新");
       }
     } else if (kind === "vehicleStock") {
       attachStockVersion(payload, "vehicle");
@@ -1347,7 +1432,7 @@ async function handleModalSubmit(event) {
         method: "PUT",
         body: { quantity: payload.quantity, operator: payload.operator, remark: payload.remark, version: payload.version }
       });
-      showToast(item.direction === "inbound" ? "整车入库成功" : "整车出库成功", "success");
+      showContextSuccess(item.direction === "inbound" ? "整车入库成功" : "整车出库成功", entityDisplayName("vehicle", findEntity("vehicle", Number(payload.machineId || 0))), `数量：${payload.quantity || 0}`);
     } else if (kind === "partStock") {
       attachStockVersion(payload, "part");
       if (item.direction === "outbound") {
@@ -1359,51 +1444,61 @@ async function handleModalSubmit(event) {
             quantity: payload.quantity,
             customerId: payload.customerId,
             settlementPrice: payload.settlementPrice,
+            receivableAmount: payload.receivableAmount,
+            receivedAmount: payload.receivedAmount,
+            paymentDueDate: payload.paymentDueDate,
+            lastPaymentDate: payload.lastPaymentDate,
+            paymentSettled: payload.paymentSettled,
+            paymentRemark: payload.paymentRemark,
             operator: payload.operator,
             orderRemark: payload.orderRemark
           }
         });
-        showToast("配件出库订单已创建", "success");
+        showContextSuccess("配件出库订单已创建", payload.partCode, `数量：${payload.quantity || 0}`);
       } else {
         await api(`/api/parts/${item.direction}`, {
           method: "PUT",
           body: { partCode: payload.partCode, quantity: payload.quantity, operator: payload.operator, remark: payload.remark, version: payload.version }
         });
-        showToast("配件入库成功", "success");
+        showContextSuccess("配件入库成功", payload.partCode, `数量：${payload.quantity || 0}`);
       }
     } else if (kind === "partReplace") {
       enrichPartReplacePayload(payload);
       await api(endpoints.partReplace.create, { method: "POST", body: payload });
-      showToast("配件替换成功，旧件已自动入库", "success");
+      showContextSuccess("配件替换成功", entityDisplayName("vehicle", findEntity("vehicle", Number(payload.machineId || 0))), "旧件已自动入库");
     } else if (kind === "vehiclePartInstall") {
       enrichVehiclePartInstallPayload(payload);
       await api(endpoints.partReplace.install, { method: "POST", body: payload });
-      showToast("配件装车成功", "success");
+      showContextSuccess("配件装车成功", entityDisplayName("vehicle", findEntity("vehicle", Number(payload.machineId || 0))), `数量：${payload.quantity || 0}`);
     } else if (kind === "modificationOrder") {
       enrichPartReplacePayload(payload);
       await api(endpoints.modificationOrder.create, {
         method: "POST",
         body: buildModificationOrderPayload(payload)
       });
-      showToast("改装工单已创建", "success");
+      showContextSuccess("改装工单已创建", entityDisplayName("vehicle", findEntity("vehicle", Number(payload.machineId || 0))), "待完成后同步库存和车辆配置");
     } else if (kind === "user") {
       await api(endpoints.user.create, { method: "POST", body: payload });
-      showToast("用户创建成功", "success");
+      showContextSuccess("用户创建成功", payload.username, "权限与职务已保存");
     } else if (kind === "userUsername") {
       await api(endpoints.user.updateUsername(item.id), { method: "PUT", body: payload });
-      showToast("用户名修改成功", "success");
+      showContextSuccess("用户名修改成功", payload.username, "用户列表已刷新");
     } else if (kind === "userPassword") {
       await api(endpoints.user.updatePassword(item.id), { method: "PUT", body: payload });
-      showToast("用户密码修改成功", "success");
+      showContextSuccess("用户密码修改成功", entityDisplayName("user", item), "请使用新密码登录");
     } else if (kind === "outboundOrder") {
       await api(endpoints.outboundOrder.update(item.id), { method: "PUT", body: payload });
-      showToast("订单状态已更新", "success");
+      showContextSuccess("订单状态已更新", entityDisplayName("outboundOrder", item), "收款、报销售和发票状态已保存");
+    } else if (kind === "purchaseFreight") {
+      const baseUrl = `${endpoints.purchaseOrder.freight(item.id)}?freightAmount=${encodeURIComponent(payload.freightAmount ?? 0)}`;
+      await api(withVersion(baseUrl, item), { method: "PUT" });
+      showContextSuccess("采购运费已更新", entityDisplayName("purchaseOrder", item), money(payload.freightAmount ?? 0));
     } else if (item.id && endpoints[kind].update) {
       await api(endpoints[kind].update(item.id), { method: "PUT", body: payload });
-      showToast("保存成功", "success");
+      showContextSuccess(`${entityLabel(kind)}已保存`, entityDisplayName(kind, { ...item, ...payload }), "当前筛选和页码已保留");
     } else {
       await api(endpoints[kind].create, { method: "POST", body: payload });
-      showToast("新增成功", "success");
+      showContextSuccess(`${entityLabel(kind)}已新增`, entityDisplayName(kind, payload), "当前列表已刷新");
     }
     closeModal();
     resetPageAfterMutation(kind);
@@ -1427,10 +1522,17 @@ async function handleModalSubmit(event) {
 async function deleteEntity(kind, id) {
   if (!id || !endpoints[kind]?.delete) return;
   const item = findEntity(kind, id);
-  const message = kind === "user" ? "确认删除这个用户？" : "确认删除这条数据？";
-  if (!confirm(message)) return;
+  if (!(await confirmDanger({
+    title: `删除${entityLabel(kind)}`,
+    target: entityDisplayName(kind, item),
+    impact: "删除后将从当前列表移除；如该数据被业务单据引用，后端会阻止删除。"
+  }))) return;
   await api(withVersion(endpoints[kind].delete(id), item), { method: "DELETE" });
-  showToast("删除成功", "success");
+  showContextSuccess(`${entityLabel(kind)}已删除`, entityDisplayName(kind, item), "相关列表已刷新");
+  if (state.detailDrawer?.kind === kind && Number(state.detailDrawer.id) === Number(id)) {
+    closeDetailDrawer();
+  }
+  toggleBatchSelection(kind, id, false);
   markReferenceDataStale(referenceKindsForMutation(kind));
   if (kind === "configValue") {
     await loadConfigValues(state.selectedConfigItemId);
@@ -1448,14 +1550,18 @@ async function completeModificationOrder(id) {
     renderCurrentTab();
     return;
   }
-  if (!confirm("确认完成这张改装工单？完成后会扣减新配件库存、旧件入库，并更新车辆配置。")) return;
+  if (!(await confirmDanger({
+    title: "完成改装工单",
+    target: entityDisplayName("modificationOrder", order),
+    impact: "将扣减新配件库存、旧件入库，并更新车辆配置。"
+  }))) return;
   const activeModelKey = state.vehicleDetail?.modelKey;
   const targetMachineId = order.machineId || state.selectedVehicleId;
   await api(endpoints.modificationOrder.complete(id), {
     method: "PUT",
     body: { version: order.version }
   });
-  showToast("改装工单已完成", "success");
+  showContextSuccess("改装工单已完成", entityDisplayName("modificationOrder", order), "车辆配置与配件库存已同步");
   markReferenceDataStale(["vehicle", "part"]);
   await loadAllData();
   if (targetMachineId) {
@@ -1468,6 +1574,58 @@ async function completeModificationOrder(id) {
   renderCurrentTab();
 }
 
+async function completeStocktaking(id) {
+  const record = findEntity("stocktaking", id);
+  if (!record.id) {
+    showToast("盘点记录已刷新，请再试一次", "info");
+    await loadAllData();
+    renderCurrentTab();
+    return;
+  }
+  if (!(await confirmDanger({
+    title: "盘点入账",
+    target: entityDisplayName("stocktaking", record),
+    impact: "将按实盘数量同步库存，入账后不能作为草稿继续编辑。"
+  }))) return;
+  await api(withVersion(endpoints.stocktaking.complete(id), record), { method: "PUT" });
+  showContextSuccess("盘点已入账", entityDisplayName("stocktaking", record), "库存数量已同步");
+  markReferenceDataStale(["vehicle", "part"]);
+  resetPageAfterMutation("stocktaking");
+  await loadAllData();
+  renderCurrentTab();
+}
+
+async function completeStocktakingDirect(record) {
+  await api(withVersion(endpoints.stocktaking.complete(record.id), record), { method: "PUT" });
+}
+
+async function togglePurchaseReceived(id) {
+  const order = findEntity("purchaseOrder", id);
+  if (!order.id) {
+    showToast("采购订单已刷新，请再试一次", "info");
+    await loadAllData();
+    renderCurrentTab();
+    return;
+  }
+  const nextReceived = order.status !== "RECEIVED";
+  if (!(await confirmDanger({
+    title: nextReceived ? "确认采购收货" : "撤销采购收货",
+    target: entityDisplayName("purchaseOrder", order),
+    impact: nextReceived ? "订单会标记为已收货，并可能影响采购库存和成本跟踪。" : "订单会回到待收货状态，请确认业务状态仍允许撤销。"
+  }))) return;
+  const url = withVersion(`${endpoints.purchaseOrder.received(id)}?received=${nextReceived ? "true" : "false"}`, order);
+  await api(url, { method: "PUT" });
+  showToast(nextReceived ? "采购订单已收货，运费默认为 0" : "采购订单已改为待收货", "success");
+  resetPageAfterMutation("purchaseOrder");
+  await loadAllData();
+  renderCurrentTab();
+}
+
+async function setPurchaseReceivedDirect(order, received) {
+  const url = withVersion(`${endpoints.purchaseOrder.received(order.id)}?received=${received ? "true" : "false"}`, order);
+  await api(url, { method: "PUT" });
+}
+
 async function cancelModificationOrder(id) {
   const order = findModificationOrder(id);
   if (!order.id) {
@@ -1476,14 +1634,18 @@ async function cancelModificationOrder(id) {
     renderCurrentTab();
     return;
   }
-  if (!confirm("确认取消这张改装工单？")) return;
+  if (!(await confirmDanger({
+    title: "取消改装工单",
+    target: entityDisplayName("modificationOrder", order),
+    impact: "取消后该工单不会再进入完成流转。"
+  }))) return;
   const activeModelKey = state.vehicleDetail?.modelKey;
   const targetMachineId = order.machineId || state.selectedVehicleId;
   await api(endpoints.modificationOrder.cancel(id), {
     method: "PUT",
     body: { version: order.version }
   });
-  showToast("改装工单已取消", "success");
+  showContextSuccess("改装工单已取消", entityDisplayName("modificationOrder", order), "车辆和配件数据已刷新");
   markReferenceDataStale(["vehicle", "part"]);
   await loadAllData();
   if (targetMachineId) {
@@ -1648,11 +1810,11 @@ async function uploadInvoiceForOrder(order, form) {
   }
   const formData = new FormData();
   formData.append("file", file);
-  await api(endpoints.outboundOrder.uploadInvoice(order.id), {
+  await api(withVersion(endpoints.outboundOrder.uploadInvoice(order.id), order), {
     method: "POST",
     body: formData
   });
-  showToast("发票已上传", "success");
+  showContextSuccess("发票已上传", entityDisplayName("outboundOrder", order), file.name);
 }
 
 async function uploadContractForOrder(order, form) {
@@ -1665,11 +1827,11 @@ async function uploadContractForOrder(order, form) {
   }
   const formData = new FormData();
   formData.append("file", file);
-  await api(endpoints.outboundOrder.uploadContract(order.id), {
+  await api(withVersion(endpoints.outboundOrder.uploadContract(order.id), order), {
     method: "POST",
     body: formData
   });
-  showToast("合同已上传", "success");
+  showContextSuccess("合同已上传", entityDisplayName("outboundOrder", order), file.name);
 }
 
 async function downloadInvoice(order) {
@@ -1794,6 +1956,11 @@ async function toggleOutboundOrderStatus(id, field) {
   if (!order?.id || !field) return;
   const overrides = orderStatusToggleOverrides(order, field);
   if (!overrides) return;
+  if (!(await confirmDanger({
+    title: "确认切换订单状态",
+    target: entityDisplayName("outboundOrder", order),
+    impact: "该操作会更新收款、报销售、发票或合同等关键跟进状态，请确认与实际业务一致。"
+  }))) return;
 
   await api(endpoints.outboundOrder.update(order.id), {
     method: "PUT",
@@ -1809,6 +1976,11 @@ async function toggleRepairStatus(id) {
   const repair = findEntity("repair", id);
   if (!repair?.id || !hasPermission("repair:write")) return;
   const nextStatus = repair.status === "COMPLETED" ? "PENDING" : "COMPLETED";
+  if (!(await confirmDanger({
+    title: nextStatus === "COMPLETED" ? "确认完成维修" : "撤回维修完成状态",
+    target: entityDisplayName("repair", repair),
+    impact: nextStatus === "COMPLETED" ? "该维修记录会标记为已完成。" : "该维修记录会重新标记为待处理。"
+  }))) return;
   await api(endpoints.repair.updateStatus(repair.id), {
     method: "PUT",
     body: {
@@ -1822,10 +1994,102 @@ async function toggleRepairStatus(id) {
   renderCurrentTab();
 }
 
+async function setRepairStatusDirect(repair, status) {
+  await api(endpoints.repair.updateStatus(repair.id), {
+    method: "PUT",
+    body: {
+      version: repair.version,
+      status
+    }
+  });
+}
+
+async function batchCompleteRepairs() {
+  const rows = selectedRows("repair").filter(row => row.status !== "COMPLETED");
+  if (!rows.length) {
+    showToast("没有可完成的维修记录", "info");
+    return;
+  }
+  if (!(await confirmDanger({
+    title: "批量完成维修",
+    target: `${rows.length} 条维修记录`,
+    impact: "所选记录会统一标记为已完成。"
+  }))) return;
+  await Promise.all(rows.map(row => setRepairStatusDirect(row, "COMPLETED")));
+  showContextSuccess("维修记录已批量完成", `${rows.length} 条`, "列表已刷新");
+  clearBatchSelection("repair");
+  markReferenceDataStale(["repair"]);
+  await loadAllData();
+  renderCurrentTab();
+}
+
+async function batchReceivePurchases() {
+  const rows = selectedRows("purchaseOrder").filter(row => row.status !== "RECEIVED" && row.status !== "CANCELED");
+  if (!rows.length) {
+    showToast("没有可收货的采购订单", "info");
+    return;
+  }
+  if (!(await confirmDanger({
+    title: "批量收货",
+    target: `${rows.length} 条采购订单`,
+    impact: "所选订单会统一标记为已收货，运费默认为 0。"
+  }))) return;
+  await Promise.all(rows.map(row => setPurchaseReceivedDirect(row, true)));
+  showContextSuccess("采购订单已批量收货", `${rows.length} 条`, "采购列表已刷新");
+  clearBatchSelection("purchaseOrder");
+  resetPageAfterMutation("purchaseOrder");
+  await loadAllData();
+  renderCurrentTab();
+}
+
+async function batchCompleteStocktakes() {
+  const rows = selectedRows("stocktaking").filter(row => row.status !== "COMPLETED");
+  if (!rows.length) {
+    showToast("没有可入账的盘点记录", "info");
+    return;
+  }
+  if (!(await confirmDanger({
+    title: "批量盘点入账",
+    target: `${rows.length} 条盘点记录`,
+    impact: "所选盘点会同步库存数量，入账后不能作为草稿继续编辑。"
+  }))) return;
+  await Promise.all(rows.map(completeStocktakingDirect));
+  showContextSuccess("盘点记录已批量入账", `${rows.length} 条`, "库存数量已同步");
+  clearBatchSelection("stocktaking");
+  markReferenceDataStale(["vehicle", "part"]);
+  resetPageAfterMutation("stocktaking");
+  await loadAllData();
+  renderCurrentTab();
+}
+
+async function batchDeleteStocktakeDrafts() {
+  const rows = selectedRows("stocktaking").filter(row => row.status !== "COMPLETED");
+  if (!rows.length) {
+    showToast("没有可删除的盘点草稿", "info");
+    return;
+  }
+  if (!(await confirmDanger({
+    title: "批量删除盘点草稿",
+    target: `${rows.length} 条盘点草稿`,
+    impact: "仅删除未入账草稿；删除后不可从列表恢复。"
+  }))) return;
+  await Promise.all(rows.map(row => api(withVersion(endpoints.stocktaking.delete(row.id), row), { method: "DELETE" })));
+  showContextSuccess("盘点草稿已批量删除", `${rows.length} 条`, "盘点列表已刷新");
+  clearBatchSelection("stocktaking");
+  resetPageAfterMutation("stocktaking");
+  await loadAllData();
+  renderCurrentTab();
+}
+
 async function toggleUserJobTag(id) {
   const user = findEntity("user", id);
   if (!user?.id || !canUpdateUserJobTag(user)) return;
   const nextTag = nextJobTag(user.jobTag);
+  if (!(await confirmDanger({
+    title: "确认切换用户职务",
+    target: entityDisplayName("user", user),
+    impact: `用户职务将切换为${jobTagLabel(nextTag)}，可能影响维修人员选择和业务分配。`
+  }))) return;
   await api(endpoints.user.updateJobTag(user.id), {
     method: "PUT",
     body: {
@@ -1843,6 +2107,11 @@ async function toggleUserEnabled(id) {
   const user = findEntity("user", id);
   if (!user?.id || !canUpdateUserEnabled(user)) return;
   const nextEnabled = !Boolean(user.enabled);
+  if (!(await confirmDanger({
+    title: nextEnabled ? "确认启用用户" : "确认停用用户",
+    target: entityDisplayName("user", user),
+    impact: nextEnabled ? "启用后该用户可以继续登录和参与业务。" : "停用后该用户将无法继续登录使用系统。"
+  }))) return;
   await api(endpoints.user.updateEnabled(user.id), {
     method: "PUT",
     body: {
@@ -1859,6 +2128,11 @@ async function toggleUserEnabled(id) {
 async function toggleOutboundOrderLock(id, locked) {
   const order = findEntity("outboundOrder", id);
   if (!order?.id || !canManageOrderLock()) return;
+  if (!(await confirmDanger({
+    title: locked ? "确认锁定订单" : "确认解锁订单",
+    target: entityDisplayName("outboundOrder", order),
+    impact: locked ? "锁定后关联记录仅管理员可见，请确认订单不再需要普通流程编辑。" : "解锁后关联记录会恢复普通流程可见性。"
+  }))) return;
   const params = new URLSearchParams({ locked: String(locked) });
   if (order.version !== undefined && order.version !== null) {
     params.set("version", String(order.version));
@@ -1915,6 +2189,10 @@ function buildOutboundOrderStatusPayload(order, overrides) {
     settlementPrice: order.settlementPrice,
     salesDate: order.salesDate,
     salePrice: order.salePrice,
+    receivableAmount: order.receivableAmount,
+    receivedAmount: order.receivedAmount,
+    paymentDueDate: order.paymentDueDate,
+    lastPaymentDate: order.lastPaymentDate,
     paymentSettled: Boolean(order.paymentSettled),
     paymentRemark: order.paymentRemark,
     salesReported: Boolean(order.salesReported),
@@ -1961,9 +2239,10 @@ async function openEntityModal(kind, item = {}) {
 }
 
 async function ensureModalDependencies(kind) {
-  const needsVehicles = ["vehicleStock", "vehicleOutbound", "partReplace", "vehiclePartInstall", "modificationOrder", "vehicleInbound", "rental", "repair"].includes(kind);
-  const needsParts = ["part", "partStock", "partReplace", "vehiclePartInstall", "modificationOrder", "repair"].includes(kind);
+  const needsVehicles = ["vehicleStock", "vehicleOutbound", "partReplace", "vehiclePartInstall", "modificationOrder", "vehicleInbound", "rental", "repair", "stocktaking"].includes(kind);
+  const needsParts = ["part", "partStock", "partReplace", "vehiclePartInstall", "modificationOrder", "repair", "stocktaking"].includes(kind);
   const needsCustomers = ["vehicleOutbound", "partStock", "partOutbound", "customer", "rental", "repair"].includes(kind);
+  const needsSuppliers = kind === "purchaseOrder";
   const needsRentals = ["vehicleOutbound", "rental", "repair"].includes(kind);
   const needsRepairUsers = kind === "repair";
   const requests = [];
@@ -1985,6 +2264,12 @@ async function ensureModalDependencies(kind) {
       state.reference.customersLoaded = true;
     }));
   }
+  if (needsSuppliers && !state.reference.suppliersLoaded && hasPermission("stock:adjust")) {
+    requests.push(api(endpoints.supplier.list).then(rows => {
+      state.data.suppliers = sortById(rows, false);
+      state.reference.suppliersLoaded = true;
+    }));
+  }
   if (needsRentals && !state.reference.rentalsLoaded && hasPermission("stock:adjust")) {
     requests.push(api(endpoints.rental.list).then(rows => {
       state.data.rentals = sortById(rows);
@@ -2004,6 +2289,7 @@ function markReferenceDataStale(kinds = []) {
   if (!kinds.length || kinds.includes("vehicle")) state.reference.vehiclesLoaded = false;
   if (!kinds.length || kinds.includes("part")) state.reference.partsLoaded = false;
   if (!kinds.length || kinds.includes("customer")) state.reference.customersLoaded = false;
+  if (!kinds.length || kinds.includes("supplier")) state.reference.suppliersLoaded = false;
   if (!kinds.length || kinds.includes("outboundOrder")) state.reference.outboundOrdersLoaded = false;
   if (!kinds.length || kinds.includes("rental")) state.reference.rentalsLoaded = false;
   if (!kinds.length || kinds.includes("repairUser")) state.reference.repairUsersLoaded = false;
@@ -2025,6 +2311,10 @@ function referenceKindsForMutation(kind) {
     rental: ["vehicle", "rental"],
     repair: ["vehicle", "part", "customer", "rental"],
     customer: ["customer"],
+    supplier: ["supplier"],
+    purchaseOrder: ["supplier"],
+    purchaseFreight: [],
+    stocktaking: ["vehicle", "part"],
     invoiceUpload: ["outboundOrder"],
     contractUpload: ["outboundOrder"],
     user: ["repairUser"]
@@ -2043,7 +2333,11 @@ function resetPageAfterMutation(kind) {
     vehiclePartInstall: "vehicles",
     customer: "customers",
     repair: "repairs",
-    outboundOrder: "outboundOrders"
+    outboundOrder: "outboundOrders",
+    supplier: "suppliers",
+    purchaseOrder: "purchases",
+    purchaseFreight: "purchases",
+    stocktaking: "stocktakes"
   };
   const tab = mapping[kind];
   if (tab && state.pages[tab]) {
@@ -2053,6 +2347,7 @@ function resetPageAfterMutation(kind) {
 
 function closeModal() {
   state.modal = null;
+  modalPointerDownStartedOnOverlay = false;
   els.modalOverlay.classList.add("is-hidden");
   els.modalOverlay.setAttribute("aria-hidden", "true");
   els.modalCard.innerHTML = "";
@@ -2181,6 +2476,15 @@ function renderCurrentTab() {
     case "customers":
       els.content.innerHTML = renderCustomers();
       break;
+    case "suppliers":
+      els.content.innerHTML = renderSuppliers();
+      break;
+    case "purchases":
+      els.content.innerHTML = renderPurchaseOrders();
+      break;
+    case "stocktakes":
+      els.content.innerHTML = renderStocktakes();
+      break;
     case "repairs":
       els.content.innerHTML = renderRepairs();
       break;
@@ -2199,6 +2503,8 @@ function renderCurrentTab() {
     default:
       els.content.innerHTML = renderOverview();
   }
+  renderDetailDrawer();
+  persistListState();
 }
 
 function scrollToWorkspaceTop() {
@@ -2210,6 +2516,222 @@ function scrollToVehicleDetail() {
     const target = document.getElementById("vehicleDetailSurface");
     if (target) target.scrollIntoView({ block: "start", behavior: "smooth" });
   });
+}
+
+function openDetailDrawer(kind, id) {
+  const item = findEntity(kind, Number(id || 0));
+  if (!item?.id) return;
+  state.detailDrawer = { kind, id: Number(id) };
+  renderCurrentTab();
+}
+
+function closeDetailDrawer() {
+  state.detailDrawer = null;
+  if (!els?.detailDrawerOverlay) return;
+  if (detailDrawerCloseTimer) {
+    window.clearTimeout(detailDrawerCloseTimer);
+    detailDrawerCloseTimer = null;
+  }
+  els.detailDrawerOverlay.classList.remove("is-open");
+  els.detailDrawerOverlay.setAttribute("aria-hidden", "true");
+  const hideDrawer = () => {
+    els.detailDrawerOverlay.classList.add("is-hidden");
+    els.detailDrawer.innerHTML = "";
+    detailDrawerCloseTimer = null;
+  };
+  if (els.detailDrawerOverlay.classList.contains("is-hidden")) {
+    hideDrawer();
+    return;
+  }
+  detailDrawerCloseTimer = window.setTimeout(hideDrawer, DETAIL_DRAWER_TRANSITION_MS);
+}
+
+function renderDetailDrawer() {
+  if (!els?.detailDrawerOverlay) return;
+  const drawer = state.detailDrawer;
+  if (!drawer) {
+    closeDetailDrawer();
+    return;
+  }
+  const item = findEntity(drawer.kind, Number(drawer.id));
+  if (!item?.id) {
+    closeDetailDrawer();
+    return;
+  }
+  if (detailDrawerCloseTimer) {
+    window.clearTimeout(detailDrawerCloseTimer);
+    detailDrawerCloseTimer = null;
+  }
+  const title = detailTitle(drawer.kind, item);
+  els.detailDrawer.innerHTML = `
+    <div class="detail-drawer-head">
+      <div>
+        <div class="detail-drawer-kicker">${escapeHtml(entityLabel(drawer.kind))}</div>
+        <h2>${escapeHtml(title)}</h2>
+      </div>
+      <button class="btn btn-ghost btn-sm" type="button" data-action="close-detail">关闭</button>
+    </div>
+    <div class="detail-drawer-body">
+      ${renderDetailGrid(detailFields(drawer.kind, item))}
+      ${renderDetailDrawerActions(drawer.kind, item)}
+    </div>
+  `;
+  els.detailDrawerOverlay.classList.remove("is-hidden");
+  els.detailDrawerOverlay.setAttribute("aria-hidden", "false");
+  requestAnimationFrame(() => {
+    els.detailDrawerOverlay.classList.add("is-open");
+  });
+}
+
+function detailTitle(kind, item) {
+  return {
+    part: item.partName || item.partCode,
+    modificationOrder: item.workOrderNo || item.machineProductNumber,
+    outboundOrder: item.orderNo || item.resourceCode,
+    rental: item.rentalNo || item.vehicleNumber,
+    customer: item.companyName || item.contactName,
+    supplier: item.supplierName || item.contactName,
+    purchaseOrder: item.purchaseNo || item.resourceName,
+    stocktaking: item.stocktakingNo || item.resourceName,
+    repair: item.customerName || item.vehicleNumber,
+    user: item.username
+  }[kind] || `ID ${item.id}`;
+}
+
+function detailFields(kind, item) {
+  const fields = {
+    part: [
+      ["编码", item.partCode],
+      ["名称", item.partName],
+      ["品牌", item.partBrand],
+      ["分类", item.partCategory],
+      ["适配车型", item.applicableModels],
+      ["库存", `${item.quantity ?? 0}${item.unit || ""}`],
+      ["采购价", money(item.purchasePrice)],
+      ["销售价", money(item.salePrice)],
+      ["结算价", money(item.settlementPrice)],
+      ["来源", item.source],
+      ["备注", item.remarks]
+    ],
+    modificationOrder: [
+      ["工单号", item.workOrderNo],
+      ["车辆", item.machineProductNumber],
+      ["客户", item.customerName],
+      ["销售单", item.salesOrderNo],
+      ["状态", repairStatusText(item.status) || item.status],
+      ["创建时间", dateTime(item.createdAt)],
+      ["备注", item.remark]
+    ],
+    outboundOrder: [
+      ["订单号", item.orderNo],
+      ["出库类型", resourceTypeLabel(item.resourceType)],
+      ["出库项", [item.resourceCode, item.resourceName].filter(Boolean).join(" / ")],
+      ["客户", item.customerName],
+      ["销售日期", dateValue(item.salesDate)],
+      ["应收", money(item.receivableAmount ?? item.settlementPrice)],
+      ["已收", money(item.receivedAmount)],
+      ["欠款", money(receivableOutstanding(item))],
+      ["车款结清", yesNoText(item.paymentSettled)],
+      ["报销售", yesNoText(item.salesReported)],
+      ["发票申请", yesNoText(item.invoiceApplied)],
+      ["合同", item.contractType],
+      ["备注", item.orderRemark]
+    ],
+    rental: [
+      ["租赁单", item.rentalNo],
+      ["车号", item.vehicleNumber],
+      ["车辆", [item.machineName, item.specificationModel].filter(Boolean).join(" / ")],
+      ["客户", item.customerName],
+      ["去向", item.destination],
+      ["月租价", money(rentalMonthlyPrice(item))],
+      ["开始日期", dateValue(item.startDate)],
+      ["结束日期", dateValue(item.endDate)],
+      ["状态", item.status === "RETURNED" ? "已归还" : "租赁中"],
+      ["备注", item.remark]
+    ],
+    customer: [
+      ["公司名称", item.companyName],
+      ["地址", item.address],
+      ["联系人", item.contactName],
+      ["电话", item.contactPhone],
+      ["税号/身份证号", item.taxOrIdNumber],
+      ["备注", item.remarks]
+    ],
+    supplier: [
+      ["供应商", item.supplierName],
+      ["类型", item.supplierType],
+      ["联系人", item.contactName],
+      ["电话", item.contactPhone],
+      ["地址", item.address],
+      ["税号", item.taxNumber],
+      ["备注", item.remarks]
+    ],
+    purchaseOrder: [
+      ["采购单", item.purchaseNo],
+      ["供应商", item.supplierName],
+      ["采购内容", [item.resourceCode, item.resourceName].filter(Boolean).join(" / ")],
+      ["规格", item.specificationModel],
+      ["数量", `${item.quantity ?? 0}${item.unit || ""}`],
+      ["金额", money(item.totalAmount)],
+      ["运费", money(item.freightAmount)],
+      ["状态", item.status],
+      ["备注", item.remark]
+    ],
+    stocktaking: [
+      ["盘点单", item.stocktakingNo],
+      ["对象类型", purchaseResourceLabel(item.resourceType)],
+      ["盘点对象", [item.resourceCode, item.resourceName].filter(Boolean).join(" / ")],
+      ["账面数量", stockText(item.bookQuantity)],
+      ["实盘数量", stockText(item.actualQuantity)],
+      ["差异", stockText(item.differenceQuantity)],
+      ["状态", item.status === "COMPLETED" ? "已入账" : "草稿"],
+      ["备注", item.remark]
+    ],
+    repair: [
+      ["维修时间", dateTime(item.repairDate)],
+      ["车号", item.vehicleNumber],
+      ["客户", item.customerName],
+      ["地址", item.customerAddress],
+      ["维修人", item.repairPerson],
+      ["故障描述", item.faultDescription],
+      ["总费用", money(item.totalFee)],
+      ["状态", repairStatusText(item.status)]
+    ],
+    user: [
+      ["用户名", item.username],
+      ["角色", (item.roles || []).join(" / ")],
+      ["职务", jobTagLabel(item.jobTag)],
+      ["状态", item.enabled ? "启用" : "停用"],
+      ["创建时间", dateTime(item.createdAt)]
+    ]
+  }[kind] || Object.entries(item).slice(0, 8).map(([key, value]) => [key, value]);
+  return fields.map(([label, value]) => ({ label, value }));
+}
+
+function renderDetailDrawerActions(kind, item) {
+  const actions = {
+    part: rowActions("part", item, ["stockIn", "stockOut", "edit", "delete"]),
+    modificationOrder: modificationOrderActions(item),
+    outboundOrder: outboundOrderActions(item),
+    rental: rowActions("rental", item, ["edit", "delete"]),
+    customer: rowActions("customer", item, ["edit", "delete"]),
+    supplier: rowActions("supplier", item, ["edit", "delete"]),
+    purchaseOrder: `${purchaseStatusControl(item)}${rowActions("purchaseOrder", item, ["edit", "delete"])}`,
+    stocktaking: stocktakingActions(item),
+    repair: `${repairStatusToggle(item)}${rowActions("repair", item, ["edit", "delete"])}`,
+    user: userActions(item)
+  }[kind] || "";
+  return actions ? `<div class="detail-drawer-actions">${actions}</div>` : "";
+}
+
+function focusPrimarySearch() {
+  const input = els.content.querySelector("[data-search-for]");
+  if (!input) {
+    showToast("当前页面没有搜索框", "info");
+    return;
+  }
+  input.focus();
+  input.select();
 }
 
 function syncShell() {
@@ -2229,6 +2751,16 @@ function syncShell() {
       && (!requiredPermissions.length || hasAnyPermission(...requiredPermissions));
     button.classList.toggle("is-hidden", !allowed);
     button.classList.toggle("is-active", button.dataset.tab === state.activeTab);
+    if (button.dataset.tab === state.activeTab) {
+      button.setAttribute("aria-current", "page");
+    } else {
+      button.removeAttribute("aria-current");
+    }
+  });
+  els.mainNav.querySelectorAll("[data-nav-group]").forEach(group => {
+    const hasVisibleItem = [...group.querySelectorAll("[data-tab]")]
+      .some(button => !button.classList.contains("is-hidden"));
+    group.classList.toggle("is-hidden", !hasVisibleItem);
   });
 }
 
@@ -2238,21 +2770,26 @@ function renderOverview() {
   const parts = state.data.parts;
   const repairs = state.data.repairs;
   const orders = state.data.outboundOrders;
+  const todoCenter = state.data.todoCenter || {};
   const inStockRows = vehicleRows.filter(row => !row.orderId && Number(row.inventoryCount || 0) > 0);
   const lowStockParts = parts.filter(item => Number(item.quantity || 0) <= 0);
   const missingInvoiceOrders = orders.filter(item => isInvoiceUploadReady(item) && !item.invoiceFileAvailable);
   const missingContractOrders = orders.filter(item => isContractUploadReady(item) && !item.contractFileAvailable);
   const pendingRepairs = repairs.filter(item => item.status !== "COMPLETED").length;
   const lowParts = lowStockParts.length;
-  const unsettledOrders = orders.filter(item => !item.paymentSettled).length;
-  const pendingSalesReports = orders.filter(item => item.paymentSettled && !item.salesReported).length;
-  const pendingInvoices = orders.filter(item => item.paymentSettled && item.salesReported && !item.invoiceApplied).length;
-  const missingInvoiceFiles = missingInvoiceOrders.length;
-  const missingContractFiles = missingContractOrders.length;
+  const unsettledOrders = todoCenter.pendingPaymentCount ?? orders.filter(item => !item.paymentSettled).length;
+  const pendingSalesReports = todoCenter.pendingSalesReportCount ?? orders.filter(item => item.paymentSettled && !item.salesReported).length;
+  const pendingInvoices = todoCenter.pendingInvoiceApplicationCount ?? orders.filter(item => item.paymentSettled && item.salesReported && !item.invoiceApplied).length;
+  const missingInvoiceFiles = todoCenter.pendingInvoiceFileCount ?? missingInvoiceOrders.length;
+  const missingContractFiles = todoCenter.pendingContractFileCount ?? missingContractOrders.length;
+  const outstandingAmount = todoCenter.outstandingAmount ?? receivableOutstandingTotal(orders);
+  const overduePaymentCount = todoCenter.overduePaymentCount ?? orders.filter(item => Number(item.overdueDays || 0) > 0).length;
   const vehicleTotal = pageTotal("vehicles", vehicles.length);
   const partTotal = pageTotal("parts", parts.length);
   const orderTotal = pageTotal("outboundOrders", orders.length);
-  const workItems = overviewWorkItems(vehicleRows, orders, repairs, parts).slice(0, 12);
+  const workItems = (Array.isArray(todoCenter.items) && todoCenter.items.length
+    ? overviewTodoItems(todoCenter)
+    : overviewWorkItems(vehicleRows, orders, repairs, parts)).slice(0, 12);
   const recentVehicleRows = vehicleRows
     .filter(row => row.orderId || Number(row.inventoryCount || 0) > 0)
     .slice(0, 8);
@@ -2260,10 +2797,11 @@ function renderOverview() {
   return `
     <div class="page overview-page">
       <section class="summary-grid">
-        ${summaryCard("整车档案", vehicleTotal, `${inStockRows.length} 台在库待销售`)}
-        ${summaryCard("出库订单", orderTotal, `${unsettledOrders} 单待收款`)}
-        ${summaryCard("销售闭环", pendingSalesReports + pendingInvoices, `${missingInvoiceFiles} 单待发票文件`)}
-        ${summaryCard("合同文件", missingContractFiles, `${orders.filter(isContractUploadReady).length} 单标记有合同`)}
+        ${summaryCard("整车档案", vehicleTotal, `${inStockRows.length} 台在库待销售`, { action: "go-tab", data: { tab: "vehicles" } })}
+        ${summaryCard("出库订单", orderTotal, `${unsettledOrders} 单待收款`, { action: "go-tab", data: { tab: "outboundOrders" } })}
+        ${summaryCard("应收账款", money(outstandingAmount), `${overduePaymentCount} 单逾期`, { action: "go-tab", data: { tab: "outboundOrders" } })}
+        ${summaryCard("销售闭环", pendingSalesReports + pendingInvoices, `${missingInvoiceFiles} 单待发票文件`, { action: "go-tab", data: { tab: "outboundOrders" } })}
+        ${summaryCard("合同文件", missingContractFiles, `${orders.filter(isContractUploadReady).length} 单标记有合同`, { action: "go-tab", data: { tab: "outboundOrders" } })}
       </section>
 
       <section class="overview-stage-grid">
@@ -2320,6 +2858,41 @@ function overviewStageButton(label, count, tab, data = {}, type = "primary") {
   `;
 }
 
+function overviewTodoItems(todoCenter = {}) {
+  if (!Array.isArray(todoCenter.items)) return [];
+  return todoCenter.items.map(item => {
+    const action = todoItemAction(item);
+    return overviewItem(
+      item.label,
+      item.title,
+      todoItemDetail(item),
+      item.priority || "primary",
+      action.name,
+      action.data,
+      item.sortTime || item.dueDate || ""
+    );
+  });
+}
+
+function todoItemAction(item = {}) {
+  if (item.type === "ORDER_INVOICE_FILE") return { name: "upload-invoice", data: { id: item.resourceId } };
+  if (item.type === "ORDER_CONTRACT_FILE") return { name: "upload-contract", data: { id: item.resourceId } };
+  if (item.resourceType === "OUTBOUND_ORDER") return { name: "edit", data: { kind: "outboundOrder", id: item.resourceId } };
+  if (item.resourceType === "REPAIR") return { name: "toggle-repair-status", data: { id: item.resourceId } };
+  if (item.resourceType === "PART") return { name: "edit", data: { kind: "part", id: item.resourceId } };
+  if (item.resourceType === "RENTAL") return { name: "edit", data: { kind: "rental", id: item.resourceId } };
+  return { name: "go-tab", data: { tab: "overview" } };
+}
+
+function todoItemDetail(item = {}) {
+  const fragments = [];
+  if (item.detail) fragments.push(item.detail);
+  if (Number(item.amount || 0) > 0) fragments.push(money(item.amount));
+  if (item.dueDate) fragments.push(`到期 ${dateValue(item.dueDate)}`);
+  if (Number(item.overdueDays || 0) > 0) fragments.push(`逾期 ${item.overdueDays} 天`);
+  return fragments.join(" · ") || "-";
+}
+
 function overviewWorkItems(vehicleRows, orders, repairs, parts) {
   const items = [];
   orders.forEach(order => {
@@ -2364,7 +2937,7 @@ function renderOverviewAttachmentItems(invoiceOrders, contractOrders) {
   return `
     <div class="overview-attachment-list">
       ${rows.map(item => `
-        <div class="overview-attachment-row">
+        <div class="overview-attachment-row is-clickable" data-action="${escapeAttr(item.action)}" data-id="${escapeAttr(item.id)}" tabindex="0" role="button">
           <div class="overview-task-main">
             ${badge(item.type, item.type === "合同" ? "teal" : "primary")}
             <strong>${escapeHtml(item.title)}</strong>
@@ -2392,7 +2965,7 @@ function renderOverviewWorkItems(items) {
   return `
     <div class="overview-task-list">
       ${items.map(item => `
-        <div class="overview-task-row">
+        <div class="overview-task-row is-clickable" ${actionAttrs(item)} tabindex="0" role="button">
           <div class="overview-task-main">
             ${badge(item.label, item.type)}
             <strong>${escapeHtml(item.title || "-")}</strong>
@@ -2406,16 +2979,20 @@ function renderOverviewWorkItems(items) {
 }
 
 function overviewActionButton(item) {
-  const attrs = Object.entries(item.data || {})
-    .filter(([, value]) => value !== undefined && value !== null && value !== "")
-    .map(([key, value]) => `data-${toDataAttrName(key)}="${escapeAttr(value)}"`)
-    .join(" ");
   const label = item.action === "upload-invoice" ? "上传发票"
     : item.action === "upload-contract" ? "上传合同"
       : item.action === "toggle-repair-status" ? "完成"
       : item.action === "vehicle-outbound-direct" ? "登记销售"
         : "处理";
-  return `<button class="btn btn-sm" type="button" data-action="${escapeAttr(item.action)}" ${attrs}>${icon(item.action?.startsWith("upload") ? "upload" : item.action === "toggle-repair-status" ? "swap" : "edit")}${label}</button>`;
+  return `<button class="btn btn-sm" type="button" ${actionAttrs(item)}>${icon(item.action?.startsWith("upload") ? "upload" : item.action === "toggle-repair-status" ? "swap" : "edit")}${label}</button>`;
+}
+
+function actionAttrs(item = {}) {
+  const attrs = [`data-action="${escapeAttr(item.action || "go-tab")}"`];
+  Object.entries(item.data || {})
+    .filter(([, value]) => value !== undefined && value !== null && value !== "")
+    .forEach(([key, value]) => attrs.push(`data-${toDataAttrName(key)}="${escapeAttr(value)}"`));
+  return attrs.join(" ");
 }
 
 function renderOverviewShortcuts() {
@@ -2439,17 +3016,10 @@ function renderVehicles() {
 
   return `
     <div class="page">
-      <div class="toolbar">
-        <div class="toolbar-main">
-          ${searchBox("vehicles", "搜索车型、型号、供应商或车号")}
-          ${vehicleFilterControls()}
-        </div>
-        <div class="toolbar-actions">
-          ${hasPermission("vehicle:write") ? renderVehicleModelMenu() : ""}
-          ${exportButton("vehicles")}
-          <button class="btn btn-ghost" type="button" data-action="refresh">${icon("refresh")}刷新</button>
-        </div>
-      </div>
+      ${renderToolbar("vehicles", "搜索车型、型号、供应商或车号", null, "", null, {
+        main: [vehicleFilterControls()],
+        actions: [hasPermission("vehicle:write") ? renderVehicleModelMenu() : ""]
+      })}
       ${renderVehicleDetail()}
       ${renderVehicleModelPanel(modelRows)}
       ${renderPagination("vehicles")}
@@ -2491,6 +3061,7 @@ function renderVehicleModelPanel(rows) {
     { label: "销售单价", key: "salePrice", formatter: money },
     { label: "操作", html: true, render: row => vehicleModelActions(row) }
   ], rows, {
+    tableKey: "vehicles",
     selectableRow: row => ({
       action: "detail-vehicle",
       data: { modelKey: row.modelKey },
@@ -2651,16 +3222,12 @@ function renderParts() {
 
   return `
     <div class="page">
-      <div class="toolbar">
-        ${searchBox("parts", "搜索编码、名称、品牌、分类")}
-        <div class="toolbar-actions">
-          ${hasPermission("part:write") ? `<button class="btn btn-primary" type="button" data-action="create" data-kind="part">${icon("plus")}新增配件</button>` : ""}
-          ${hasPermission("stock:adjust") ? `<button class="btn" type="button" data-action="part-stock" data-direction="inbound">${icon("plus")}配件入库</button>` : ""}
-          ${hasPermission("stock:adjust") ? `<button class="btn" type="button" data-action="part-stock" data-direction="outbound">${icon("minus")}配件出库</button>` : ""}
-          ${exportButton("parts")}
-          <button class="btn btn-ghost" type="button" data-action="refresh">${icon("refresh")}刷新</button>
-        </div>
-      </div>
+      ${renderToolbar("parts", "搜索编码、名称、品牌、分类", "part", "新增配件", "part:write", {
+        actions: [
+          hasPermission("stock:adjust") ? `<button class="btn" type="button" data-action="part-stock" data-direction="inbound">${icon("plus")}配件入库</button>` : "",
+          hasPermission("stock:adjust") ? `<button class="btn" type="button" data-action="part-stock" data-direction="outbound">${icon("minus")}配件出库</button>` : ""
+        ]
+      })}
       ${renderExportableSurface("配件列表", "parts", renderTable([
         { label: "编码", key: "partCode" },
         { label: "名称", key: "partName" },
@@ -2670,7 +3237,7 @@ function renderParts() {
         { label: "销售价", key: "salePrice", formatter: money },
         { label: "来源", key: "source" },
         { label: "操作", html: true, render: row => rowActions("part", row, ["stockIn", "stockOut", "edit", "delete"]) }
-      ], rows))}
+      ], rows, listTableOptions("part", "parts")))}
       ${renderPagination("parts")}
     </div>
   `;
@@ -2683,13 +3250,9 @@ function renderModificationOrders() {
 
   return `
     <div class="page">
-      <div class="toolbar">
-        ${searchBox("modificationOrders", "搜索工单号、客户、销售单或状态")}
-        <div class="toolbar-actions">
-          ${hasPermission("replace:write") ? `<button class="btn btn-primary" type="button" data-action="create" data-kind="modificationOrder">${icon("plus")}新建改装工单</button>` : ""}
-          <button class="btn btn-ghost" type="button" data-action="refresh">${icon("refresh")}刷新</button>
-        </div>
-      </div>
+      ${renderToolbar("modificationOrders", "搜索工单号、客户、销售单或状态", "modificationOrder", "新建改装工单", "replace:write", {
+        exportType: false
+      })}
       ${renderSurface("改装工单列表", renderTable([
         { label: "工单号", key: "workOrderNo" },
         { label: "车辆", html: true, render: row => modificationOrderMachineSummary(row) },
@@ -2699,7 +3262,7 @@ function renderModificationOrders() {
         { label: "替换明细", html: true, render: row => modificationLineSummary(row.lines) },
         { label: "创建时间", key: "createdAt", formatter: dateTime },
         { label: "操作", html: true, render: row => modificationOrderActions(row) }
-      ], rows))}
+      ], rows, listTableOptions("modificationOrder", null)))}
       ${renderPagination("modificationOrders")}
     </div>
   `;
@@ -2719,28 +3282,27 @@ function renderOutboundOrders() {
     "orderNo", "resourceType", "resourceCode", "resourceName", "customerName", "operator", "orderRemark",
     "paymentRemark", "invoiceStatus", "invoiceOriginalName", "registrationStatus", "contractType", "contractOriginalName"
   ]);
-  const unsettledOrders = rows.filter(item => !item.paymentSettled).length;
-  const pendingReports = rows.filter(item => !item.salesReported).length;
-  const pendingInvoices = rows.filter(item => !item.invoiceApplied).length;
-  const settledOrders = rows.filter(item => item.paymentSettled).length;
-  const uploadedInvoices = rows.filter(item => item.invoiceFileAvailable).length;
-  const uploadedContracts = rows.filter(item => item.contractFileAvailable).length;
 
   return `
     <div class="page">
-      <section class="summary-grid">
-        ${summaryCard("出库订单", rows.length, `${unsettledOrders} 单待收款`)}
-        ${summaryCard("待报销售", pendingReports, `${rows.filter(item => item.resourceType === "MACHINE").length} 单整机订单`)}
-        ${summaryCard("待申请发票", pendingInvoices, `${uploadedInvoices} 单已上传发票`)}
-        ${summaryCard("已结清车款", settledOrders, `${uploadedContracts} 单已上传合同`)}
-      </section>
-      <div class="toolbar">
-        ${searchBox("outboundOrders", "搜索订单号、客户、车号、收款情况、开票情况或备注")}
-        <div class="toolbar-actions">
-          ${exportButton("outboundOrders")}
-          <button class="btn btn-ghost" type="button" data-action="refresh">${icon("refresh")}刷新</button>
-        </div>
-      </div>
+      ${renderBackendSummary("outboundOrders", () => {
+        const unsettledOrders = rows.filter(item => !item.paymentSettled).length;
+        const pendingReports = rows.filter(item => !item.salesReported).length;
+        const pendingInvoices = rows.filter(item => !item.invoiceApplied).length;
+        const settledOrders = rows.filter(item => item.paymentSettled).length;
+        const uploadedInvoices = rows.filter(item => item.invoiceFileAvailable).length;
+        const uploadedContracts = rows.filter(item => item.contractFileAvailable).length;
+        const outstandingAmount = receivableOutstandingTotal(rows);
+        const overdueOrders = rows.filter(item => Number(item.overdueDays || 0) > 0).length;
+        return `<section class="summary-grid">
+          ${summaryCard("出库订单", rows.length, `${unsettledOrders} 单待收款`)}
+          ${summaryCard("应收欠款", money(outstandingAmount), `${overdueOrders} 单逾期`)}
+          ${summaryCard("待报销售", pendingReports, `${rows.filter(item => item.resourceType === "MACHINE").length} 单整机订单`)}
+          ${summaryCard("待申请发票", pendingInvoices, `${uploadedInvoices} 单已上传发票`)}
+          ${summaryCard("已结清车款", settledOrders, `${uploadedContracts} 单已上传合同`)}
+        </section>`;
+      })}
+      ${renderToolbar("outboundOrders", "搜索订单号、客户、车号、收款情况、开票情况或备注", null, "", null)}
       ${renderExportableSurface("出库订单列表", "outboundOrders", renderTable([
         { label: "订单号", html: true, render: row => orderNoSummary(row) },
         { label: "出库项", html: true, render: row => orderResourceSummary(row) },
@@ -2753,7 +3315,7 @@ function renderOutboundOrders() {
         { label: "上牌/合同", html: true, render: row => orderContractSummary(row) },
         { label: "订单备注", key: "orderRemark" },
         { label: "操作", html: true, render: row => outboundOrderActions(row) }
-      ], rows))}
+      ], rows, listTableOptions("outboundOrder", "outboundOrders")))}
       ${renderPagination("outboundOrders")}
     </div>
   `;
@@ -2763,18 +3325,20 @@ function renderRentals() {
   const rows = filterRows(state.data.rentals, state.search.rentals, [
     "rentalNo", "vehicleNumber", "machineName", "specificationModel", "customerName", "customerAddress", "destination", "status", "operator", "remark"
   ]);
-  const activeRows = rows.filter(item => item.status === "ACTIVE");
-  const returnedRows = rows.filter(item => item.status === "RETURNED");
-  const rentalIncome = rows.reduce((sum, item) => sum + Number(rentalMonthlyPrice(item) || 0), 0);
 
   return `
     <div class="page">
-      <section class="summary-grid">
-        ${summaryCard("租赁记录", rows.length, `${activeRows.length} 台租赁中`)}
-        ${summaryCard("月租收入", money(rentalIncome), `${returnedRows.length} 单已归还`)}
-        ${summaryCard("租赁车辆", new Set(rows.map(item => item.machineId).filter(Boolean)).size, "按具体车号记录")}
-        ${summaryCard("待归还", activeRows.length, activeRows.length ? "请持续跟进租赁去向" : "暂无进行中租赁")}
-      </section>
+      ${renderBackendSummary("rentals", () => {
+        const activeRows = rows.filter(item => item.status === "ACTIVE");
+        const returnedRows = rows.filter(item => item.status === "RETURNED");
+        const rentalIncome = rows.reduce((sum, item) => sum + Number(rentalMonthlyPrice(item) || 0), 0);
+        return `<section class="summary-grid">
+          ${summaryCard("租赁记录", rows.length, `${activeRows.length} 台租赁中`)}
+          ${summaryCard("月租收入", money(rentalIncome), `${returnedRows.length} 单已归还`)}
+          ${summaryCard("租赁车辆", new Set(rows.map(item => item.machineId).filter(Boolean)).size, "按具体车号记录")}
+          ${summaryCard("待归还", activeRows.length, activeRows.length ? "请持续跟进租赁去向" : "暂无进行中租赁")}
+        </section>`;
+      })}
       ${renderToolbar("rentals", "搜索租赁单、车号、客户、去向或经办人", "rental", "新增租赁", "stock:adjust")}
       ${renderExportableSurface("租赁记录", "rentals", renderTable([
         { label: "租赁单", html: true, render: row => rentalNoSummary(row) },
@@ -2786,7 +3350,7 @@ function renderRentals() {
         { label: "经办人", key: "operator" },
         { label: "备注", key: "remark" },
         { label: "操作", html: true, render: row => rowActions("rental", row, ["edit", "delete"]) }
-      ], rows))}
+      ], rows, listTableOptions("rental", "rentals")))}
       ${renderPagination("rentals")}
     </div>
   `;
@@ -2837,6 +3401,7 @@ function orderPriceSummary(row) {
     <div class="cell-stack">
       <span>结算 ${escapeHtml(money(row.settlementPrice) || "-")}</span>
       <span class="helper-inline">销售 ${escapeHtml(money(row.salePrice) || "-")}</span>
+      <span class="helper-inline">应收 ${escapeHtml(money(row.receivableAmount ?? row.settlementPrice) || "-")}</span>
     </div>
   `;
 }
@@ -2851,12 +3416,27 @@ function orderNoSummary(row) {
 }
 
 function orderPaymentSummary(row) {
+  const outstanding = receivableOutstanding(row);
   return `
     <div class="cell-stack">
       ${orderStatusToggle(row, "paymentSettled", Boolean(row.paymentSettled), "已结清", "未结清")}
+      <span class="helper-inline">已收 ${escapeHtml(money(row.receivedAmount) || "¥0.00")} · 欠款 ${escapeHtml(money(outstanding) || "¥0.00")}</span>
+      <span class="helper-inline">到期 ${escapeHtml(dateValue(row.paymentDueDate) || "-")} · 最近收款 ${escapeHtml(dateValue(row.lastPaymentDate) || "-")}</span>
+      ${Number(row.overdueDays || 0) > 0 ? `<span class="helper-inline danger-text">逾期 ${escapeHtml(row.overdueDays)} 天</span>` : ""}
       ${row.paymentRemark ? `<span class="helper-inline">${escapeHtml(row.paymentRemark)}</span>` : `<span class="helper-inline">未填写收款情况</span>`}
     </div>
   `;
+}
+
+function receivableOutstanding(row = {}) {
+  if (row.outstandingAmount !== undefined && row.outstandingAmount !== null) {
+    return Number(row.outstandingAmount);
+  }
+  return Math.max(0, Number(row.receivableAmount ?? row.settlementPrice ?? 0) - Number(row.receivedAmount ?? 0));
+}
+
+function receivableOutstandingTotal(rows = []) {
+  return rows.reduce((sum, row) => sum + receivableOutstanding(row), 0);
 }
 
 function orderSalesReportSummary(row) {
@@ -2946,8 +3526,102 @@ function renderCustomers() {
         { label: "税号/身份证号", key: "taxOrIdNumber" },
         { label: "备注", key: "remarks" },
         { label: "操作", html: true, render: row => rowActions("customer", row, ["edit", "delete"]) }
-      ], rows))}
+      ], rows, listTableOptions("customer", "customers")))}
       ${renderPagination("customers")}
+    </div>
+  `;
+}
+
+function renderSuppliers() {
+  const rows = filterRows(state.data.suppliers, state.search.suppliers, [
+    "supplierName", "supplierType", "contactName", "contactPhone", "address", "taxNumber", "remarks"
+  ]);
+
+  return `
+    <div class="page">
+      ${renderBackendSummary("suppliers", () => {
+        const typed = rows.filter(item => item.supplierType).length;
+        return `<section class="summary-grid">
+          ${summaryCard("供应商总数", pageTotal("suppliers", rows.length), `${typed} 家已标记类型`)}
+          ${summaryCard("采购订单供应商", uniqueSupplierCount(), "已被采购订单引用")}
+          ${summaryCard("联系人", rows.filter(item => item.contactName || item.contactPhone).length, "可直接联系")}
+        </section>`;
+      })}
+      ${renderToolbar("suppliers", "搜索供应商、联系人、电话或税号", "supplier", "新增供应商", "stock:adjust")}
+      ${renderExportableSurface("供应商列表", "suppliers", renderTable([
+        { label: "供应商", html: true, render: row => supplierSummary(row) },
+        { label: "类型", key: "supplierType" },
+        { label: "联系人", key: "contactName" },
+        { label: "电话", key: "contactPhone" },
+        { label: "税号", key: "taxNumber" },
+        { label: "备注", key: "remarks" },
+        { label: "操作", html: true, render: row => rowActions("supplier", row, ["edit", "delete"]) }
+      ], rows, listTableOptions("supplier", "suppliers")))}
+      ${renderPagination("suppliers")}
+    </div>
+  `;
+}
+
+function renderPurchaseOrders() {
+  const rows = filterRows(state.data.purchaseOrders, state.search.purchases, [
+    "purchaseNo", "supplierName", "resourceType", "resourceCode", "resourceName", "specificationModel", "status", "operator", "remark"
+  ]);
+
+  return `
+    <div class="page">
+      ${renderBackendSummary("purchases", () => {
+        const totalAmount = rows.reduce((sum, row) => sum + Number(row.totalAmount || 0), 0);
+        const received = rows.filter(row => row.status === "RECEIVED").length;
+        const pending = rows.filter(row => row.status !== "RECEIVED" && row.status !== "CANCELED").length;
+        const freightTotal = rows.reduce((sum, row) => sum + Number(row.freightAmount || 0), 0);
+        return `<section class="summary-grid">
+          ${summaryCard("采购订单", pageTotal("purchases", rows.length), `${pending} 单待跟进`)}
+          ${summaryCard("采购金额", money(totalAmount), "当前筛选合计")}
+          ${summaryCard("已收货", received, `运费 ${money(freightTotal)}`)}
+        </section>`;
+      })}
+      ${renderToolbar("purchases", "搜索采购单号、供应商、配件、配置项或经办人", "purchaseOrder", "新增配件采购", "stock:adjust")}
+      ${renderExportableSurface("采购订单", "purchases", renderTable([
+        { label: "采购单", html: true, render: row => purchaseOrderSummary(row) },
+        { label: "供应商", key: "supplierName" },
+        { label: "配件入库内容", html: true, render: row => purchaseResourceSummary(row) },
+        { label: "数量", html: true, render: row => `${escapeHtml(row.quantity || 0)} <span class="helper-inline">${escapeHtml(row.unit || "")}</span>` },
+        { label: "金额", key: "totalAmount", formatter: money },
+        { label: "状态", html: true, render: row => purchaseStatusControl(row) },
+        { label: "操作", html: true, render: row => rowActions("purchaseOrder", row, ["edit", "delete"]) }
+      ], rows, listTableOptions("purchaseOrder", "purchases")))}
+      ${renderPagination("purchases")}
+    </div>
+  `;
+}
+function renderStocktakes() {
+  const rows = filterRows(state.data.stocktakingRecords, state.search.stocktakes, [
+    "stocktakingNo", "resourceType", "resourceCode", "resourceName", "specificationModel", "status", "operator", "remark"
+  ]);
+
+  return `
+    <div class="page">
+      ${renderBackendSummary("stocktakes", () => {
+        const drafts = rows.filter(row => row.status !== "COMPLETED").length;
+        const completed = rows.filter(row => row.status === "COMPLETED").length;
+        const differences = rows.filter(row => Number(row.differenceQuantity || 0) !== 0).length;
+        return `<section class="summary-grid">
+          ${summaryCard("盘点记录", pageTotal("stocktakes", rows.length), `${drafts} 条待入账`)}
+          ${summaryCard("已入账", completed, "库存已同步")}
+          ${summaryCard("有差异", differences, "账实不一致")}
+        </section>`;
+      })}
+      ${renderToolbar("stocktakes", "搜索盘点单、资源编码、名称、型号或盘点人", "stocktaking", "新增盘点", "stock:adjust")}
+      ${renderExportableSurface("库存盘点", "stocktakes", renderTable([
+        { label: "盘点单", html: true, render: row => stocktakingSummary(row) },
+        { label: "盘点对象", html: true, render: row => purchaseResourceSummary(row) },
+        { label: "账面", key: "bookQuantity", formatter: stockText },
+        { label: "实盘", key: "actualQuantity", formatter: stockText },
+        { label: "差异", html: true, render: row => stocktakingDifference(row) },
+        { label: "状态", html: true, render: row => stocktakingStatusBadge(row.status) },
+        { label: "操作", html: true, render: row => stocktakingActions(row) }
+      ], rows, listTableOptions("stocktaking", "stocktakes")))}
+      ${renderPagination("stocktakes")}
     </div>
   `;
 }
@@ -2968,7 +3642,7 @@ function renderRepairs() {
         { label: "状态", html: true, render: row => repairStatusToggle(row) },
         { label: "总费用", key: "totalFee", formatter: money },
         { label: "操作", html: true, render: row => rowActions("repair", row, ["edit", "delete"]) }
-      ], rows))}
+      ], rows, listTableOptions("repair", "repairs")))}
       ${renderPagination("repairs")}
     </div>
   `;
@@ -3041,21 +3715,9 @@ function renderStatistics() {
         ${summaryCard("租赁收入", money(annual.rentalIncome), `${annual.rentalOrders || 0} 单租赁`)}
       </section>
 
-      ${renderSurface("月度收支走势", renderFinanceBars(monthlyRows))}
+      ${renderSurface("月度收支走势", renderFinanceTrend(monthlyRows))}
 
-      <section class="grid-two">
-        ${renderSurface("月度财报", renderTable([
-          { label: "月份", key: "period" },
-          { label: "入库成本", key: "inboundCost", formatter: money },
-          { label: "出库收入", key: "outboundRevenue", formatter: money },
-          { label: "出库成本", key: "outboundCost", formatter: money },
-          { label: "维修收入", key: "repairIncome", formatter: money },
-          { label: "租赁收入", key: "rentalIncome", formatter: money },
-          { label: "折价收入", key: "modificationIncome", formatter: money },
-          { label: "折价支出", key: "modificationExpense", formatter: money },
-          { label: "毛利", key: "grossProfit", formatter: money }
-        ], monthlyRows))}
-        ${renderSurface("年度对比", renderTable([
+      ${renderSurface("年度对比", renderTable([
           { label: "年份", key: "period" },
           { label: "总收入", key: "totalIncome", formatter: money },
           { label: "入库成本", key: "inboundCost", formatter: money },
@@ -3064,7 +3726,6 @@ function renderStatistics() {
           { label: "租赁单", key: "rentalOrders" },
           { label: "折价工单", key: "modificationOrders" }
         ], yearlyRows))}
-      </section>
 
       <section class="grid-two">
         ${renderSurface("出入库分类收支", renderTable([
@@ -3125,16 +3786,16 @@ function renderOperationLogs() {
 
   return `
     <div class="page page-logs">
-      <div class="toolbar logs-toolbar">
-        ${searchBox("logs", "搜索日志类型、对象、操作人或备注")}
-        <div class="toolbar-actions">
+      ${renderToolbar("logs", "搜索日志类型、对象、操作人或备注", null, "", null, {
+        className: "logs-toolbar",
+        exportType: false,
+        actions: [`
           <div class="logs-summary">
             <span>共 ${escapeHtml(state.data.operationLogs.length)} 条</span>
             <span>当前显示 ${escapeHtml(visibleRows.length)} / ${escapeHtml(rows.length)} 条</span>
           </div>
-          <button class="btn btn-ghost" type="button" data-action="refresh">${icon("refresh")}刷新</button>
-        </div>
-      </div>
+        `]
+      })}
       ${renderSurface("关键操作审计", renderTable([
         { label: "时间", key: "createdAt", formatter: dateTime },
         { label: "类型", html: true, render: row => logCategoryBadge(row.category) },
@@ -3162,17 +3823,17 @@ function renderConfigs() {
 
   return `
     <div class="page">
-      <div class="toolbar">
-        <div class="toolbar-actions">
-          ${searchBox("configItems", "搜索配置项")}
-          ${searchBox("configValues", "搜索配置值")}
-        </div>
-        <div class="toolbar-actions">
-          ${hasPermission("config:write") ? `<button class="btn btn-primary" type="button" data-action="create" data-kind="configItem">${icon("plus")}新增配置项</button>` : ""}
-          ${hasPermission("config:write") ? `<button class="btn" type="button" data-action="create" data-kind="configValue">${icon("plus")}新增配置值</button>` : ""}
-          <button class="btn btn-ghost" type="button" data-action="refresh">${icon("refresh")}刷新</button>
-        </div>
-      </div>
+      ${renderToolbar(null, "", null, "", null, {
+        searches: [
+          { key: "configItems", placeholder: "搜索配置项" },
+          { key: "configValues", placeholder: "搜索配置值" }
+        ],
+        exportType: false,
+        actions: [
+          hasPermission("config:write") ? `<button class="btn btn-primary" type="button" data-action="create" data-kind="configItem">${icon("plus")}新增配置项</button>` : "",
+          hasPermission("config:write") ? `<button class="btn" type="button" data-action="create" data-kind="configValue">${icon("plus")}新增配置值</button>` : ""
+        ]
+      })}
 
       <section class="config-layout">
         <div class="config-pane config-items-pane">
@@ -3206,13 +3867,9 @@ function renderUsers() {
 
   return `
     <div class="page">
-      <div class="toolbar">
-        ${searchBox("users", "搜索用户名、角色或职务")}
-        <div class="toolbar-actions">
-          ${hasPermission("user:write") ? `<button class="btn btn-primary" type="button" data-action="create" data-kind="user">${icon("plus")}新建用户</button>` : ""}
-          <button class="btn btn-ghost" type="button" data-action="refresh">${icon("refresh")}刷新</button>
-        </div>
-      </div>
+      ${renderToolbar("users", "搜索用户名、角色或职务", "user", "新建用户", "user:write", {
+        exportType: false
+      })}
       ${renderSurface("用户列表", renderTable([
         { label: "用户名", key: "username" },
         { label: "角色", html: true, render: row => roleBadges(row.roles) },
@@ -3220,7 +3877,7 @@ function renderUsers() {
         { label: "状态", html: true, render: row => userEnabledControl(row) },
         { label: "创建时间", key: "createdAt", formatter: dateTime },
         { label: "操作", html: true, render: row => userActions(row) }
-      ], rows))}
+      ], rows, listTableOptions("user", null, { selectable: false, batch: false })))}
       ${renderPagination("users")}
     </div>
   `;
@@ -3236,12 +3893,9 @@ function renderDetailGrid(items) {
 
 function renderVehicleArchiveSurface(machine = {}) {
   const actions = machine?.id && hasPermission("vehicle:write")
-    ? `<div class="toolbar-actions detail-action-row">
-      <button class="btn btn-sm" type="button" data-action="edit" data-kind="vehicle" data-id="${escapeAttr(machine.id)}">${icon("edit")}编辑档案</button>
-    </div>`
+    ? `<button class="btn btn-sm" type="button" data-action="edit" data-kind="vehicle" data-id="${escapeAttr(machine.id)}">${icon("edit")}编辑档案</button>`
     : "";
   return renderSurface("入库档案", `
-    ${actions}
     ${renderDetailGrid([
     { label: "名称", value: machine.name },
     { label: "规格型号", value: machine.specificationModel },
@@ -3260,7 +3914,7 @@ function renderVehicleArchiveSurface(machine = {}) {
     { label: "结算价", value: money(machine.settlementPrice) },
     { label: "销售单价", value: money(machine.salePrice) }
   ])}
-  `);
+  `, actions);
 }
 
 function renderVehicleSalesSurface(machine = {}, order = null) {
@@ -3268,6 +3922,11 @@ function renderVehicleSalesSurface(machine = {}, order = null) {
     ${renderDetailGrid([
       { label: "销售日期", value: dateValue(order?.salesDate || machine.salesDate) },
       { label: "车款结清", value: yesNoText(order?.paymentSettled) },
+      { label: "应收金额", value: money(order?.receivableAmount ?? order?.settlementPrice) },
+      { label: "已收金额", value: money(order?.receivedAmount) },
+      { label: "欠款金额", value: money(order ? receivableOutstanding(order) : 0) },
+      { label: "收款到期日", value: dateValue(order?.paymentDueDate) },
+      { label: "最近收款日", value: dateValue(order?.lastPaymentDate) },
       { label: "收款情况", value: order?.paymentRemark },
       { label: "报销售状态", value: machine.isSalesReported || yesNoText(order?.salesReported) },
       { label: "报销售日期", value: dateValue(order?.salesReportDate || machine.salesReportDate) },
@@ -3316,9 +3975,8 @@ function renderVehiclePartsSurface(machine = {}, parts = []) {
     { label: "操作", html: true, render: row => hasPermission("part:write") ? `<button class="btn btn-sm" type="button" data-action="edit" data-kind="part" data-id="${escapeAttr(row.id)}">${icon("edit")}编辑</button>` : "" }
   ], parts) : emptyState("此车还没有关联配件");
   return renderSurface(`关联配件 · ${escapeHtml(machine.vehicleProductNumber || "-")}`, `
-    <div class="toolbar-actions detail-action-row">${actions}</div>
     ${body}
-  `);
+  `, actions);
 }
 
 function renderVehicleDetail() {
@@ -3333,7 +3991,7 @@ function renderVehicleDetail() {
   const vehicleParts = state.vehicleDetail.parts || [];
   const order = latestVehicleOutboundOrder(machine.id);
   return `
-    <section class="surface" id="vehicleDetailSurface">
+    <section class="surface detail-surface-pop" id="vehicleDetailSurface">
       <div class="surface-head">
         <h2 class="surface-title">车辆详情 · ${escapeHtml(machine.vehicleProductNumber || "")}</h2>
         <div class="toolbar-actions">
@@ -3392,7 +4050,7 @@ function renderVehicleModelDetail() {
   const manualSelected = isManualForklift(selected.machineType || model.machineType);
   const order = latestVehicleOutboundOrder(selected.id);
   return `
-    <section class="surface" id="vehicleDetailSurface">
+    <section class="surface detail-surface-pop" id="vehicleDetailSurface">
       <div class="surface-head">
         <h2 class="surface-title">车型详情 · ${escapeHtml(vehicleModelLabel(model))}</h2>
         <div class="toolbar-actions">
@@ -3411,7 +4069,7 @@ function renderVehicleModelDetail() {
           ${detailItem("库存台数", `${model.inventoryCount || 0} 台`)}
           ${detailItem("销售单价", money(model.salePrice))}
         </div>
-        <div class="grid-two">
+        <div class="grid-two vehicle-model-detail-grid">
           ${renderSurface("库存车号", `
             <div class="vehicle-unit-grid">
               ${detail.vehicles.length ? detail.vehicles.map(vehicle => renderVehicleUnitCard(vehicle, detail.modelKey, vehicle.id === selected.id)).join("") : emptyState("此车型还没有库存车")}
@@ -3476,24 +4134,38 @@ function renderVehicleUnitCard(vehicle, modelKey, active) {
   `;
 }
 
-function renderToolbar(moduleKey, placeholder, kind, createLabel, createPermission) {
+function renderToolbar(moduleKey, placeholder, kind, createLabel, createPermission, options = {}) {
+  const searches = options.searches || (moduleKey && placeholder ? [{ key: moduleKey, placeholder }] : []);
+  const mainItems = [
+    ...searches.map(item => searchBox(item.key, item.placeholder)),
+    ...(options.main || [])
+  ].filter(Boolean);
+  const canCreate = options.create !== false
+    && kind
+    && createLabel
+    && (!createPermission || hasPermission(createPermission));
+  const actions = [
+    canCreate ? `<button class="btn btn-primary" type="button" data-action="create" data-kind="${escapeAttr(kind)}">${icon("plus")}${escapeHtml(createLabel)}</button>` : "",
+    ...(options.actions || []),
+    options.exportType === false ? "" : exportButton(options.exportType || moduleKey),
+    options.refresh === false ? "" : `<button class="btn btn-ghost" type="button" data-action="refresh">${icon("refresh")}刷新</button>`
+  ].filter(Boolean);
+  const className = ["toolbar", options.className || ""].filter(Boolean).join(" ");
   return `
-    <div class="toolbar">
-      ${searchBox(moduleKey, placeholder)}
-      <div class="toolbar-actions">
-        ${!createPermission || hasPermission(createPermission) ? `<button class="btn btn-primary" type="button" data-action="create" data-kind="${kind}">${icon("plus")}${createLabel}</button>` : ""}
-        ${exportButton(moduleKey)}
-        <button class="btn btn-ghost" type="button" data-action="refresh">${icon("refresh")}刷新</button>
-      </div>
+    <div class="${escapeAttr(className)}">
+      <div class="toolbar-main">${mainItems.join("")}</div>
+      <div class="toolbar-actions">${actions.join("")}</div>
     </div>
   `;
 }
 
 function searchBox(key, placeholder) {
+  const value = state.search[key] || "";
   return `
     <label class="search-box">
       <span class="search-icon">${icons.search}</span>
-      <input class="input" data-search-for="${escapeAttr(key)}" value="${escapeAttr(state.search[key] || "")}" placeholder="${escapeAttr(placeholder)}">
+      <input class="input" type="search" data-search-for="${escapeAttr(key)}" value="${escapeAttr(value)}" placeholder="${escapeAttr(placeholder)}" aria-label="${escapeAttr(placeholder)}" autocomplete="off" spellcheck="false">
+      ${value ? `<button class="search-clear" type="button" data-action="clear-search" data-search-for="${escapeAttr(key)}" aria-label="清空搜索">×</button>` : ""}
     </label>
   `;
 }
@@ -3502,19 +4174,23 @@ function vehicleFilterControls() {
   const filters = state.filters.vehicles;
   return `
     <div class="filter-row">
-      ${filterSelect("vehicles", "power", filters.power, "全部动力", powerTypeOptions())}
-      ${filterSelect("vehicles", "supplier", filters.supplier, "全部供应商", supplierFilterOptions())}
-      ${filterSelect("vehicles", "stock", filters.stock, "全部库存", stockFilterOptions())}
+      ${filterButtonGroup("vehicles", "power", filters.power, "动力", "全部动力", powerTypeOptions())}
+      ${filterButtonGroup("vehicles", "stock", filters.stock, "库存", "全部库存", stockFilterOptions())}
+      ${filterButtonGroup("vehicles", "supplier", filters.supplier, "供应商", "全部供应商", supplierFilterOptions())}
     </div>
   `;
 }
 
-function filterSelect(key, name, value, placeholder, options) {
+function filterButtonGroup(key, name, value, label, placeholder, options) {
+  const normalizedOptions = [{ value: "", label: placeholder }, ...(options || [])];
   return `
-    <select class="filter-select" data-filter-for="${escapeAttr(key)}" data-filter-name="${escapeAttr(name)}">
-      <option value="">${escapeHtml(placeholder)}</option>
-      ${options.map(option => `<option value="${escapeAttr(option.value)}"${String(option.value) === String(value) ? " selected" : ""}>${escapeHtml(option.label)}</option>`).join("")}
-    </select>
+    <div class="filter-group" role="group" aria-label="${escapeAttr(label)}">
+      <span class="filter-label">${escapeHtml(label)}</span>
+      ${normalizedOptions.map(option => {
+        const active = String(option.value) === String(value || "");
+        return `<button class="filter-chip${active ? " is-active" : ""}" type="button" data-action="apply-filter" data-filter-for="${escapeAttr(key)}" data-filter-name="${escapeAttr(name)}" data-filter-value="${escapeAttr(option.value)}" aria-pressed="${active ? "true" : "false"}">${escapeHtml(option.label)}</button>`;
+      }).join("")}
+    </div>
   `;
 }
 
@@ -3532,11 +4208,12 @@ function renderVehicleModelMenu(options = {}) {
   `;
 }
 
-function renderSurface(title, body) {
+function renderSurface(title, body, actions = "") {
   return `
     <section class="surface">
       <div class="surface-head">
         <h2 class="surface-title">${title}</h2>
+        ${actions ? `<div class="section-actions">${actions}</div>` : ""}
       </div>
       <div class="surface-body">${body}</div>
     </section>
@@ -3556,21 +4233,130 @@ function renderYearOptions(selectedYear, yearlyRows) {
     .join("");
 }
 
-function renderFinanceBars(rows) {
-  const values = rows.flatMap(row => [Number(row.totalIncome || 0), Number(row.inboundCost || 0)]);
-  const max = Math.max(1, ...values);
+function renderFinanceTrend(rows) {
   return `
-    <div class="finance-bars">
-      ${(rows || []).map(row => `
-        <div class="finance-bar-row">
-          <div class="finance-period">${escapeHtml(row.period?.slice(5) || row.period || "-")}</div>
-          <div class="finance-bar-track">
-            <span class="finance-bar income" style="width:${barWidth(row.totalIncome, max)}%"></span>
-            <span class="finance-bar cost" style="width:${barWidth(row.inboundCost, max)}%"></span>
-          </div>
-          <div class="finance-bar-value">${escapeHtml(money(row.totalIncome))}</div>
-        </div>
-      `).join("")}
+    <div class="finance-trend-layout">
+      ${renderFinanceBars(rows)}
+      <section class="finance-inline-report" aria-label="月度财报">
+        <h3>月度财报</h3>
+        ${renderMonthlyFinanceTable(rows)}
+      </section>
+    </div>
+  `;
+}
+
+function renderMonthlyFinanceTable(rows) {
+  return renderTable([
+    { label: "月份", key: "period" },
+    { label: "入库成本", key: "inboundCost", formatter: money },
+    { label: "出库收入", key: "outboundRevenue", formatter: money },
+    { label: "出库成本", key: "outboundCost", formatter: money },
+    { label: "维修收入", key: "repairIncome", formatter: money },
+    { label: "租赁收入", key: "rentalIncome", formatter: money },
+    { label: "折价收入", key: "modificationIncome", formatter: money },
+    { label: "折价支出", key: "modificationExpense", formatter: money },
+    { label: "毛利", key: "grossProfit", formatter: money }
+  ], rows);
+}
+
+function renderFinanceBars(rows) {
+  const chartRows = (rows || []).map(row => ({
+    ...row,
+    periodLabel: row.period?.slice(5) || row.period || "-",
+    totalIncome: financeNumber(row.totalIncome),
+    inboundCost: financeNumber(row.inboundCost),
+    outboundRevenue: financeNumber(row.outboundRevenue),
+    outboundCost: financeNumber(row.outboundCost),
+    repairIncome: financeNumber(row.repairIncome),
+    rentalIncome: financeNumber(row.rentalIncome),
+    modificationIncome: financeNumber(row.modificationIncome),
+    modificationExpense: financeNumber(row.modificationExpense),
+    grossProfit: financeNumber(row.grossProfit)
+  }));
+
+  if (!chartRows.length) {
+    return emptyState("暂无月度收支走势数据");
+  }
+
+  const totalIncome = chartRows.reduce((sum, row) => sum + row.totalIncome, 0);
+  const totalCost = chartRows.reduce((sum, row) => sum + row.inboundCost, 0);
+  const totalProfit = chartRows.reduce((sum, row) => sum + row.grossProfit, 0);
+  const rawMax = Math.max(1, ...chartRows.flatMap(row => [row.totalIncome, row.inboundCost]));
+  const max = niceFinanceMax(rawMax);
+  const chart = { width: 720, height: 300, left: 58, right: 24, top: 24, bottom: 42 };
+  const plotWidth = chart.width - chart.left - chart.right;
+  const plotHeight = chart.height - chart.top - chart.bottom;
+  const baseY = chart.top + plotHeight;
+  const xFor = index => chartRows.length === 1
+    ? chart.left + plotWidth / 2
+    : chart.left + (index / (chartRows.length - 1)) * plotWidth;
+  const yFor = value => chart.top + plotHeight - (Math.max(0, value) / max) * plotHeight;
+  const incomePath = financeLinePath(chartRows, "totalIncome", xFor, yFor);
+  const costPath = financeLinePath(chartRows, "inboundCost", xFor, yFor);
+  const incomeArea = financeAreaPath(chartRows, "totalIncome", xFor, yFor, baseY);
+  const costArea = financeAreaPath(chartRows, "inboundCost", xFor, yFor, baseY);
+  const ticks = [0, 0.25, 0.5, 0.75, 1].map(ratio => max * ratio);
+  const labelEvery = Math.max(1, Math.ceil(chartRows.length / 8));
+
+  return `
+    <div class="finance-chart-card">
+      <div class="finance-chart-stats" aria-label="收支汇总">
+        <span class="finance-chart-stat primary"><small>收入合计</small><strong>${escapeHtml(formatChartMoney(totalIncome))}</strong></span>
+        <span class="finance-chart-stat warn"><small>入库成本</small><strong>${escapeHtml(formatChartMoney(totalCost))}</strong></span>
+        <span class="finance-chart-stat teal"><small>毛利</small><strong>${escapeHtml(formatChartMoney(totalProfit))}</strong></span>
+      </div>
+      <div class="finance-chart" role="img" aria-label="月度收入与入库成本折线图">
+        <svg class="finance-chart-svg" viewBox="0 0 ${chart.width} ${chart.height}" aria-hidden="true">
+          ${ticks.map(value => {
+            const y = yFor(value);
+            return `
+              <g>
+                <line class="finance-grid-line" x1="${chart.left}" y1="${roundChart(y)}" x2="${chart.width - chart.right}" y2="${roundChart(y)}"></line>
+                <text class="finance-axis-label" x="${chart.left - 10}" y="${roundChart(y + 4)}" text-anchor="end">${escapeHtml(formatAxisMoney(value))}</text>
+              </g>
+            `;
+          }).join("")}
+          <line class="finance-axis-line" x1="${chart.left}" y1="${baseY}" x2="${chart.width - chart.right}" y2="${baseY}"></line>
+          <path class="finance-area income" d="${escapeAttr(incomeArea)}"></path>
+          <path class="finance-area cost" d="${escapeAttr(costArea)}"></path>
+          <path class="finance-line income" d="${escapeAttr(incomePath)}"></path>
+          <path class="finance-line cost" d="${escapeAttr(costPath)}"></path>
+          ${chartRows.map((row, index) => {
+            const x = xFor(index);
+            return `
+              <circle class="finance-point income" data-finance-point-index="${escapeAttr(index)}" cx="${roundChart(x)}" cy="${roundChart(yFor(row.totalIncome))}" r="4"></circle>
+              <circle class="finance-point cost" data-finance-point-index="${escapeAttr(index)}" cx="${roundChart(x)}" cy="${roundChart(yFor(row.inboundCost))}" r="4"></circle>
+              ${(index % labelEvery === 0 || index === chartRows.length - 1) ? `<text class="finance-x-label" x="${roundChart(x)}" y="${chart.height - 14}" text-anchor="middle">${escapeHtml(row.periodLabel)}</text>` : ""}
+            `;
+          }).join("")}
+        </svg>
+        ${chartRows.map((row, index) => {
+          const x = xFor(index);
+          const leftBoundary = index === 0 ? chart.left : (xFor(index - 1) + x) / 2;
+          const rightBoundary = index === chartRows.length - 1 ? chart.width - chart.right : (x + xFor(index + 1)) / 2;
+          const left = (leftBoundary / chart.width) * 100;
+          const width = ((rightBoundary - leftBoundary) / chart.width) * 100;
+          const guideLeft = ((x - leftBoundary) / Math.max(1, rightBoundary - leftBoundary)) * 100;
+          const edgeClass = index === 0 ? " is-start" : index === chartRows.length - 1 ? " is-end" : "";
+          return `
+            <div class="finance-chart-column${edgeClass}" data-finance-column-index="${escapeAttr(index)}" tabindex="0" style="left:${roundChart(left)}%;width:${roundChart(width)}%;--finance-guide-left:${roundChart(guideLeft)}%" aria-label="${escapeAttr(row.periodLabel)} 收支详情">
+              <span class="finance-guide"></span>
+              <span class="finance-tooltip">
+                <strong>${escapeHtml(row.periodLabel)}</strong>
+                ${financeTooltipRow("总收入", row.totalIncome, "primary")}
+                ${financeTooltipRow("入库成本", row.inboundCost, "warn")}
+                ${financeTooltipRow("出库收入", row.outboundRevenue)}
+                ${financeTooltipRow("出库成本", row.outboundCost)}
+                ${financeTooltipRow("维修收入", row.repairIncome)}
+                ${financeTooltipRow("租赁收入", row.rentalIncome)}
+                ${financeTooltipRow("折价收入", row.modificationIncome)}
+                ${financeTooltipRow("折价支出", row.modificationExpense)}
+                ${financeTooltipRow("毛利", row.grossProfit, "teal")}
+              </span>
+            </div>
+          `;
+        }).join("")}
+      </div>
       <div class="finance-legend">
         <span><i class="legend-dot income"></i>收入</span>
         <span><i class="legend-dot cost"></i>入库成本</span>
@@ -3579,40 +4365,242 @@ function renderFinanceBars(rows) {
   `;
 }
 
-function barWidth(value, max) {
+function financeNumber(value) {
   const numeric = Number(value || 0);
-  if (!Number.isFinite(numeric) || numeric <= 0) return 0;
-  return Math.max(3, Math.min(100, Math.round((numeric / max) * 100)));
+  return Number.isFinite(numeric) ? numeric : 0;
 }
 
-function summaryCard(label, value, foot) {
+function niceFinanceMax(value) {
+  const numeric = Math.max(1, Number(value || 0));
+  const exponent = Math.floor(Math.log10(numeric));
+  const base = 10 ** exponent;
+  const scaled = numeric / base;
+  const niceScaled = scaled <= 1 ? 1 : scaled <= 2 ? 2 : scaled <= 5 ? 5 : 10;
+  return niceScaled * base;
+}
+
+function financeLinePath(rows, key, xFor, yFor) {
+  if (rows.length === 1) {
+    const x = xFor(0);
+    const y = yFor(rows[0][key]);
+    return `M ${roundChart(x - 18)} ${roundChart(y)} L ${roundChart(x + 18)} ${roundChart(y)}`;
+  }
+  return rows.map((row, index) => `${index ? "L" : "M"} ${roundChart(xFor(index))} ${roundChart(yFor(row[key]))}`).join(" ");
+}
+
+function financeAreaPath(rows, key, xFor, yFor, baseY) {
+  if (rows.length === 1) {
+    const x = xFor(0);
+    const y = yFor(rows[0][key]);
+    return `M ${roundChart(x - 18)} ${roundChart(baseY)} L ${roundChart(x - 18)} ${roundChart(y)} L ${roundChart(x + 18)} ${roundChart(y)} L ${roundChart(x + 18)} ${roundChart(baseY)} Z`;
+  }
+  const line = rows.map((row, index) => `${index ? "L" : "M"} ${roundChart(xFor(index))} ${roundChart(yFor(row[key]))}`).join(" ");
+  return `${line} L ${roundChart(xFor(rows.length - 1))} ${roundChart(baseY)} L ${roundChart(xFor(0))} ${roundChart(baseY)} Z`;
+}
+
+function financeTooltipRow(label, value, tone = "") {
+  return `<span class="finance-tooltip-row ${escapeAttr(tone)}"><em>${escapeHtml(label)}</em><b>${escapeHtml(money(value) || "¥0.00")}</b></span>`;
+}
+
+function formatChartMoney(value) {
+  const numeric = financeNumber(value);
+  const abs = Math.abs(numeric);
+  if (abs >= 100000000) return `¥${trimChartNumber(numeric / 100000000)}亿`;
+  if (abs >= 10000) return `¥${trimChartNumber(numeric / 10000)}万`;
+  return money(numeric) || "¥0.00";
+}
+
+function formatAxisMoney(value) {
+  const numeric = financeNumber(value);
+  const abs = Math.abs(numeric);
+  if (abs >= 100000000) return `${trimChartNumber(numeric / 100000000)}亿`;
+  if (abs >= 10000) return `${trimChartNumber(numeric / 10000)}万`;
+  return trimChartNumber(numeric);
+}
+
+function trimChartNumber(value) {
+  return Number(value).toFixed(1).replace(/\.0$/, "");
+}
+
+function roundChart(value) {
+  return Math.round(Number(value || 0) * 100) / 100;
+}
+
+function summaryCard(label, value, foot, options = {}) {
+  const attrs = options.action
+    ? `type="button" class="summary-card summary-card-button${options.active ? " is-active" : ""}" data-action="${escapeAttr(options.action)}" ${Object.entries(options.data || {}).map(([key, itemValue]) => `data-${toDataAttrName(key)}="${escapeAttr(itemValue)}"`).join(" ")}`
+    : `class="summary-card${options.active ? " is-active" : ""}"`;
+  const tag = options.action ? "button" : "article";
   return `
-    <article class="summary-card">
+    <${tag} ${attrs}>
       <div class="summary-label">${escapeHtml(label)}</div>
       <div class="summary-value">${escapeHtml(value)}</div>
       <div class="summary-foot">${escapeHtml(foot)}</div>
-    </article>
+    </${tag}>
   `;
 }
 
-function renderTable(columns, rows, options = {}) {
-  if (!rows.length) return emptyState("暂无数据");
+function renderBackendSummary(tab, fallbackFactory) {
+  const cards = state.data.summaries?.[tab]?.cards;
+  if (Array.isArray(cards) && cards.length) {
+    return `<section class="summary-grid">${cards.map(card => summaryCard(card.label, summaryValue(card), card.foot || "")).join("")}</section>`;
+  }
+  return typeof fallbackFactory === "function" ? fallbackFactory() : "";
+}
+
+function summaryValue(card = {}) {
+  return card.format === "money" ? money(card.value) : display(card.value);
+}
+
+function listEmptyStateMeta(kind) {
+  return {
+    part: {
+      title: "暂无配件",
+      message: "先新增配件，后续入库、出库和采购都可直接引用。",
+      actionKind: "part",
+      actionLabel: "新增配件",
+      permission: "part:write"
+    },
+    modificationOrder: {
+      title: "暂无改装工单",
+      message: "新建改装工单后，可以跟踪替换明细和完成入账。",
+      actionKind: "modificationOrder",
+      actionLabel: "新建改装工单",
+      permission: "replace:write"
+    },
+    outboundOrder: {
+      title: "暂无出库订单",
+      message: "完成车辆或配件出库后，这里会生成销售与发票跟进记录。"
+    },
+    rental: {
+      title: "暂无租赁记录",
+      message: "新增租赁后，可以记录车辆去向、租期和月租。",
+      actionKind: "rental",
+      actionLabel: "新增租赁",
+      permission: "stock:adjust"
+    },
+    customer: {
+      title: "暂无客户",
+      message: "先新增客户，后续销售、维修和租赁可直接带出资料。",
+      actionKind: "customer",
+      actionLabel: "新增客户",
+      permission: "vehicle:write"
+    },
+    supplier: {
+      title: "暂无供应商",
+      message: "先新增供应商，后续采购单可直接引用。",
+      actionKind: "supplier",
+      actionLabel: "新增供应商",
+      permission: "stock:adjust"
+    },
+    purchaseOrder: {
+      title: "暂无采购订单",
+      message: "新增采购后，可以同步跟踪收货状态和采购成本。",
+      actionKind: "purchaseOrder",
+      actionLabel: "新增配件采购",
+      permission: "stock:adjust"
+    },
+    stocktaking: {
+      title: "暂无盘点记录",
+      message: "新增盘点后，可以核对账面和实盘数量并入账。",
+      actionKind: "stocktaking",
+      actionLabel: "新增盘点",
+      permission: "stock:adjust"
+    },
+    repair: {
+      title: "暂无维修记录",
+      message: "新增维修后，可以跟踪故障、用料和结算状态。",
+      actionKind: "repair",
+      actionLabel: "新增维修",
+      permission: "repair:write"
+    },
+    user: {
+      title: "暂无用户",
+      message: "新建用户后，可以分配角色、职务和账号状态。",
+      actionKind: "user",
+      actionLabel: "新建用户",
+      permission: "user:write"
+    }
+  }[kind] || {
+    title: "暂无数据",
+    message: `暂无${entityLabel(kind)}`
+  };
+}
+
+function createListEmptyState(kind) {
+  const meta = listEmptyStateMeta(kind);
+  const canCreate = meta.actionKind && (!meta.permission || hasPermission(meta.permission));
   return `
-    <div class="table-wrap">
+    <div class="empty-state empty-state-actionable">
+      <div class="empty-state-main">
+        <strong>${escapeHtml(meta.title)}</strong>
+        ${canCreate ? `<button class="btn btn-primary" type="button" data-action="create" data-kind="${escapeAttr(meta.actionKind)}">${icon("plus")}${escapeHtml(meta.actionLabel)}</button>` : ""}
+      </div>
+      <span>${escapeHtml(meta.message)}</span>
+    </div>
+  `;
+}
+
+function renderTableEmptyState(options) {
+  if (typeof options.emptyState === "function") return options.emptyState();
+  if (options.emptyState) return options.emptyState;
+  return emptyState("暂无数据");
+}
+
+function listTableOptions(kind, exportType, options = {}) {
+  return {
+    tableKey: options.tableKey || exportType || kind,
+    emptyState: options.emptyState === undefined ? () => createListEmptyState(kind) : options.emptyState,
+    selectableRow: options.selectable === false ? null : row => ({
+      action: "open-detail",
+      data: { kind, id: row.id },
+      active: state.detailDrawer?.kind === kind && Number(state.detailDrawer?.id) === Number(row.id),
+      label: `查看${entityLabel(kind)}详情`
+    }),
+    batch: options.batch === false ? null : {
+      kind,
+      exportType,
+      actions: batchActionsForKind(kind)
+    }
+  };
+}
+
+function renderTable(columns, rows, options = {}) {
+  const tableKey = options.tableKey || null;
+  const preparedColumns = prepareTableColumns(columns);
+  const visibleRows = tableKey ? sortRowsForTable(tableKey, preparedColumns, rows) : rows;
+  if (!visibleRows.length) return renderTableEmptyState(options);
+  const batch = options.batch;
+  const visibleIds = visibleRows.map(row => String(row.id)).filter(Boolean);
+  const selectedIds = batch ? selectedIdSet(batch.kind) : new Set();
+  const allVisibleSelected = batch && visibleIds.length > 0 && visibleIds.every(id => selectedIds.has(id));
+  const tableColumns = batch ? [
+    {
+      label: `<input class="row-check" type="checkbox" data-action="toggle-visible-select" data-batch-kind="${escapeAttr(batch.kind)}" data-visible-ids="${escapeAttr(visibleIds.join(","))}" aria-label="选择当前页" ${allVisibleSelected ? "checked" : ""}>`,
+      htmlLabel: true,
+      html: true,
+      render: row => `<input class="row-check" type="checkbox" data-action="toggle-row-select" data-batch-kind="${escapeAttr(batch.kind)}" data-id="${escapeAttr(row.id)}" aria-label="选择此行" ${selectedIds.has(String(row.id)) ? "checked" : ""}>`
+    },
+    ...preparedColumns
+  ] : preparedColumns;
+  return `
+    ${batch ? renderBatchToolbar(batch, visibleRows) : ""}
+    <div class="table-wrap" tabindex="0" aria-label="数据表格，可横向滚动">
       <table>
         <thead>
-          <tr>${columns.map(column => `<th>${escapeHtml(column.label)}</th>`).join("")}</tr>
+          <tr>${tableColumns.map(column => renderTableHeader(column, tableKey)).join("")}</tr>
         </thead>
         <tbody>
-          ${rows.map(row => {
+          ${visibleRows.map(row => {
             const selectable = options.selectableRow ? options.selectableRow(row) : null;
             const rowClass = [
               selectable ? "table-row-selectable" : "",
-              selectable?.active ? "table-row-active" : ""
+              selectable?.active ? "table-row-active" : "",
+              batch && selectedIds.has(String(row.id)) ? "table-row-checked" : ""
             ].filter(Boolean).join(" ");
             return `
               <tr${rowClass ? ` class="${rowClass}"` : ""}${renderSelectableAttrs(selectable)}>
-                ${columns.map(column => `<td>${renderCell(column, row)}</td>`).join("")}
+                ${tableColumns.map(column => `<td data-label="${escapeAttr(tableCellLabel(column))}">${renderCell(column, row)}</td>`).join("")}
               </tr>
             `;
           }).join("")}
@@ -3622,12 +4610,87 @@ function renderTable(columns, rows, options = {}) {
   `;
 }
 
+function prepareTableColumns(columns) {
+  return (columns || []).map((column, index) => ({
+    ...column,
+    sortId: column.sortKey || column.key || `column-${index}`,
+    sortable: column.sortable !== false && !column.htmlLabel && !column.html && Boolean(column.sortValue || column.key || column.render)
+  }));
+}
+
+function renderTableHeader(column, tableKey) {
+  if (column.htmlLabel) return `<th>${column.label}</th>`;
+  const label = escapeHtml(column.label);
+  if (!tableKey || !column.sortable) return `<th>${label}</th>`;
+  const sort = state.sorts?.[tableKey];
+  const active = sort?.key === column.sortId;
+  const direction = active ? sort.direction : "";
+  const indicator = active ? (direction === "desc" ? "↓" : "↑") : "↕";
+  return `
+    <th>
+      <button class="table-sort-button${active ? " is-active" : ""}" type="button" data-action="sort-table" data-table-key="${escapeAttr(tableKey)}" data-sort-key="${escapeAttr(column.sortId)}" aria-sort="${active ? (direction === "desc" ? "descending" : "ascending") : "none"}">
+        <span>${label}</span><span class="sort-indicator" aria-hidden="true">${indicator}</span>
+      </button>
+    </th>
+  `;
+}
+
+function tableCellLabel(column) {
+  if (column.cardLabel !== undefined) return column.cardLabel;
+  if (column.htmlLabel) return "选择";
+  return String(column.label || "");
+}
+
+function applyTableSort(tableKey, sortKey) {
+  if (!tableKey || !sortKey) return;
+  const current = state.sorts?.[tableKey];
+  const nextDirection = current?.key === sortKey && current.direction === "asc" ? "desc" : "asc";
+  state.sorts = {
+    ...(state.sorts || {}),
+    [tableKey]: { key: sortKey, direction: nextDirection }
+  };
+}
+
+function sortRowsForTable(tableKey, columns, rows) {
+  const sort = state.sorts?.[tableKey];
+  if (!sort?.key) return rows;
+  const column = columns.find(item => item.sortId === sort.key);
+  if (!column) return rows;
+  const direction = sort.direction === "desc" ? -1 : 1;
+  return [...rows].sort((left, right) => compareTableValues(tableSortValue(column, left), tableSortValue(column, right)) * direction);
+}
+
+function tableSortValue(column, row) {
+  if (column.sortValue) return column.sortValue(row);
+  if (column.key) return row[column.key];
+  if (column.render && !column.html) return column.render(row);
+  return "";
+}
+
+function compareTableValues(left, right) {
+  const leftEmpty = left === null || left === undefined || left === "";
+  const rightEmpty = right === null || right === undefined || right === "";
+  if (leftEmpty && rightEmpty) return 0;
+  if (leftEmpty) return 1;
+  if (rightEmpty) return -1;
+  const leftNumber = Number(left);
+  const rightNumber = Number(right);
+  if (Number.isFinite(leftNumber) && Number.isFinite(rightNumber)) {
+    return leftNumber - rightNumber;
+  }
+  const leftTime = Date.parse(left);
+  const rightTime = Date.parse(right);
+  if (Number.isFinite(leftTime) && Number.isFinite(rightTime)) {
+    return leftTime - rightTime;
+  }
+  return String(left).localeCompare(String(right), "zh-CN", { numeric: true, sensitivity: "base" });
+}
+
 function renderExportableSurface(title, exportType, body) {
   return `
     <section class="surface">
       <div class="surface-head">
         <h2 class="surface-title">${title}</h2>
-        <div class="toolbar-actions">${exportButton(exportType)}</div>
       </div>
       <div class="surface-body">${body}</div>
     </section>
@@ -3788,6 +4851,286 @@ function modificationLineSummary(lines = []) {
       ${line.oldPartAction === "DISCOUNT" ? `<span class="helper-inline">${Number(line.priceDifference || 0) < 0 ? "折价收入" : "折价支出"} ${escapeHtml(money(Math.abs(Number(line.priceDifference || 0))))}</span>` : ""}
     </div>
   `).join("");
+}
+
+function supplierSummary(row = {}) {
+  return `
+    <div class="cell-stack">
+      <strong>${escapeHtml(row.supplierName || "-")}</strong>
+      ${row.address ? `<span class="helper-inline">${escapeHtml(row.address)}</span>` : ""}
+    </div>
+  `;
+}
+
+function renderBatchToolbar(batch, rows) {
+  const selected = selectedRows(batch.kind);
+  if (!selected.length) return "";
+  return `
+    <div class="batch-toolbar">
+      <div class="batch-meta">已选择 ${escapeHtml(selected.length)} 条</div>
+      <div class="batch-actions">
+        <button class="btn btn-sm" type="button" data-action="batch-export" data-batch-kind="${escapeAttr(batch.kind)}">${icon("download")}导出所选</button>
+        ${(batch.actions || []).map(action => `
+          <button class="btn btn-sm${action.danger ? " btn-danger" : ""}" type="button" data-action="${escapeAttr(action.action)}" data-batch-kind="${escapeAttr(batch.kind)}">${icon(action.icon || "swap")}${escapeHtml(action.label)}</button>
+        `).join("")}
+        <button class="btn btn-sm btn-ghost" type="button" data-action="clear-batch-selection" data-batch-kind="${escapeAttr(batch.kind)}">清空选择</button>
+      </div>
+    </div>
+  `;
+}
+
+function selectedIdSet(kind) {
+  return new Set((state.batchSelections?.[kind] || []).map(String));
+}
+
+function selectedRows(kind) {
+  const ids = selectedIdSet(kind);
+  return entityRows(kind).filter(row => ids.has(String(row.id)));
+}
+
+function toggleBatchSelection(kind, id, selected) {
+  if (!kind || !id) return;
+  const ids = selectedIdSet(kind);
+  if (selected) {
+    ids.add(String(id));
+  } else {
+    ids.delete(String(id));
+  }
+  state.batchSelections = {
+    ...(state.batchSelections || {}),
+    [kind]: [...ids]
+  };
+}
+
+function toggleVisibleBatchSelection(kind, visibleIds, selected) {
+  if (!kind) return;
+  const ids = selectedIdSet(kind);
+  visibleIds.forEach(id => {
+    if (selected) ids.add(String(id));
+    else ids.delete(String(id));
+  });
+  state.batchSelections = {
+    ...(state.batchSelections || {}),
+    [kind]: [...ids]
+  };
+}
+
+function clearBatchSelection(kind) {
+  if (!kind) return;
+  state.batchSelections = {
+    ...(state.batchSelections || {}),
+    [kind]: []
+  };
+}
+
+function batchActionsForKind(kind) {
+  if (kind === "repair" && hasPermission("repair:write")) {
+    return [{ action: "batch-complete-repairs", label: "标记完成", icon: "swap" }];
+  }
+  if (kind === "purchaseOrder" && hasPermission("stock:adjust")) {
+    return [{ action: "batch-receive-purchases", label: "标记收货", icon: "download" }];
+  }
+  if (kind === "stocktaking" && hasPermission("stock:adjust")) {
+    return [
+      { action: "batch-complete-stocktakes", label: "批量入账", icon: "swap" },
+      { action: "batch-delete-stocktake-drafts", label: "删除草稿", icon: "trash", danger: true }
+    ];
+  }
+  return [];
+}
+
+function exportSelectedRows(kind) {
+  const rows = selectedRows(kind);
+  if (!rows.length) {
+    showToast("请先选择要导出的数据", "info");
+    return;
+  }
+  const columns = exportColumnsForKind(kind);
+  const csv = "\uFEFF" + [
+    columns.map(column => csvCell(column.label)).join(","),
+    ...rows.map(row => columns.map(column => csvCell(resolveExportValue(row, column))).join(","))
+  ].join("\r\n");
+  const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = `${entityLabel(kind)}-所选-${todayInputDate()}.csv`;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+  showToast("所选数据已导出", "success");
+}
+
+function csvCell(value) {
+  return `"${String(display(value)).replaceAll('"', '""')}"`;
+}
+
+function resolveExportValue(row, column) {
+  const value = typeof column.value === "function" ? column.value(row) : row[column.key];
+  return column.formatter ? column.formatter(value, row) : value;
+}
+
+function exportColumnsForKind(kind) {
+  const common = {
+    part: [
+      { label: "编码", key: "partCode" },
+      { label: "名称", key: "partName" },
+      { label: "分类", key: "partCategory" },
+      { label: "数量", value: row => `${row.quantity ?? 0}${row.unit || ""}` },
+      { label: "销售价", key: "salePrice", formatter: money }
+    ],
+    outboundOrder: [
+      { label: "订单号", key: "orderNo" },
+      { label: "出库项", value: row => `${row.resourceCode || ""} ${row.resourceName || ""}`.trim() },
+      { label: "客户", key: "customerName" },
+      { label: "销售日期", key: "salesDate", formatter: dateValue },
+      { label: "应收", value: row => row.receivableAmount ?? row.settlementPrice, formatter: money }
+    ],
+    rental: [
+      { label: "租赁单", key: "rentalNo" },
+      { label: "车号", key: "vehicleNumber" },
+      { label: "客户", key: "customerName" },
+      { label: "去向", key: "destination" },
+      { label: "状态", key: "status" }
+    ],
+    customer: [
+      { label: "公司名称", key: "companyName" },
+      { label: "联系人", key: "contactName" },
+      { label: "电话", key: "contactPhone" },
+      { label: "税号/身份证号", key: "taxOrIdNumber" }
+    ],
+    supplier: [
+      { label: "供应商", key: "supplierName" },
+      { label: "类型", key: "supplierType" },
+      { label: "联系人", key: "contactName" },
+      { label: "电话", key: "contactPhone" },
+      { label: "税号", key: "taxNumber" }
+    ],
+    purchaseOrder: [
+      { label: "采购单", key: "purchaseNo" },
+      { label: "供应商", key: "supplierName" },
+      { label: "内容", value: row => `${row.resourceCode || ""} ${row.resourceName || ""}`.trim() },
+      { label: "数量", value: row => `${row.quantity ?? 0}${row.unit || ""}` },
+      { label: "金额", key: "totalAmount", formatter: money },
+      { label: "状态", key: "status" }
+    ],
+    stocktaking: [
+      { label: "盘点单", key: "stocktakingNo" },
+      { label: "对象", value: row => `${row.resourceCode || ""} ${row.resourceName || ""}`.trim() },
+      { label: "账面", key: "bookQuantity" },
+      { label: "实盘", key: "actualQuantity" },
+      { label: "差异", key: "differenceQuantity" },
+      { label: "状态", key: "status" }
+    ],
+    repair: [
+      { label: "维修时间", key: "repairDate", formatter: dateTime },
+      { label: "车号", key: "vehicleNumber" },
+      { label: "客户", key: "customerName" },
+      { label: "维修人", key: "repairPerson" },
+      { label: "费用", key: "totalFee", formatter: money },
+      { label: "状态", key: "status" }
+    ],
+    modificationOrder: [
+      { label: "工单号", key: "workOrderNo" },
+      { label: "车辆", key: "machineProductNumber" },
+      { label: "客户", key: "customerName" },
+      { label: "状态", key: "status" }
+    ]
+  };
+  return common[kind] || [{ label: "ID", key: "id" }];
+}
+
+function purchaseOrderSummary(row = {}) {
+  return `
+    <div class="cell-stack">
+      <strong>${escapeHtml(row.purchaseNo || "-")}</strong>
+      <span class="helper-inline">${escapeHtml(dateValue(row.orderDate) || "-")}${row.expectedArrivalDate ? ` / 预计 ${escapeHtml(dateValue(row.expectedArrivalDate))}` : ""}</span>
+    </div>
+  `;
+}
+
+function purchaseResourceSummary(row = {}) {
+  return `
+    <div class="cell-stack">
+      <strong>${escapeHtml(row.resourceCode || row.resourceName || "-")}</strong>
+      <span class="helper-inline">${escapeHtml(purchaseResourceLabel(row.resourceType))}${row.resourceName && row.resourceCode ? ` / ${escapeHtml(row.resourceName)}` : ""}${row.specificationModel ? ` / ${escapeHtml(row.specificationModel)}` : ""}</span>
+    </div>
+  `;
+}
+
+function stocktakingSummary(row = {}) {
+  return `
+    <div class="cell-stack">
+      <strong>${escapeHtml(row.stocktakingNo || "-")}</strong>
+      <span class="helper-inline">${escapeHtml(dateValue(row.stocktakingDate) || "-")}${row.operator ? ` / ${escapeHtml(row.operator)}` : ""}</span>
+    </div>
+  `;
+}
+
+function stocktakingDifference(row = {}) {
+  const value = Number(row.differenceQuantity || 0);
+  return badge(value > 0 ? `+${value}` : String(value), value === 0 ? "teal" : value > 0 ? "warn" : "danger");
+}
+
+function stocktakingActions(row = {}) {
+  if (!hasPermission("stock:adjust")) return "";
+  const completed = row.status === "COMPLETED";
+  return `
+    <div class="action-row">
+      ${!completed ? `<button class="btn btn-sm btn-primary" type="button" data-action="complete-stocktaking" data-id="${escapeAttr(row.id)}">${icon("swap")}入账</button>` : ""}
+      ${!completed ? `<button class="btn btn-sm" type="button" data-action="edit" data-kind="stocktaking" data-id="${escapeAttr(row.id)}">${icon("edit")}编辑</button>` : ""}
+      ${!completed ? `<button class="btn btn-sm btn-danger" type="button" data-action="delete" data-kind="stocktaking" data-id="${escapeAttr(row.id)}">${icon("trash")}删除</button>` : ""}
+    </div>
+  `;
+}
+
+function purchaseStatusBadge(status) {
+  const map = {
+    ORDERED: ["已下单", "primary"],
+    PARTIAL: ["部分到货", "warn"],
+    ARRIVED: ["已到货", "teal"],
+    RECEIVED: ["已收货", "teal"],
+    CANCELED: ["已取消", "danger"]
+  };
+  const [label, type] = map[status] || [status || "未设置", "primary"];
+  return badge(label, type);
+}
+
+function purchaseStatusControl(row = {}) {
+  const received = row.status === "RECEIVED";
+  if (!hasPermission("stock:adjust")) {
+    return purchaseStatusBadge(row.status);
+  }
+  return `
+    <div class="cell-stack">
+      <button class="status-toggle ${received ? "teal" : "primary"}" type="button" data-action="toggle-purchase-received" data-id="${escapeAttr(row.id)}" aria-pressed="${received ? "true" : "false"}" title="点击切换收货状态">${escapeHtml(received ? "已收货" : "待收货")}</button>
+      ${received ? `<span class="helper-inline">运费 ${escapeHtml(money(row.freightAmount ?? 0))}</span>` : ""}
+      ${received ? `<button class="btn btn-sm" type="button" data-action="purchase-freight" data-id="${escapeAttr(row.id)}">${icon("edit")}修改运费</button>` : ""}
+    </div>
+  `;
+}
+function stocktakingStatusBadge(status) {
+  const map = {
+    DRAFT: ["草稿", "primary"],
+    COMPLETED: ["已入账", "teal"]
+  };
+  const [label, type] = map[status] || [status || "未设置", "primary"];
+  return badge(label, type);
+}
+
+function purchaseResourceLabel(value) {
+  const labels = {
+    MACHINE: "整车",
+    PART: "配件"
+  };
+  return labels[value] || value || "-";
+}
+
+function uniqueSupplierCount() {
+  return new Set((state.data.purchaseOrders || [])
+    .map(row => row.supplierId || row.supplierName)
+    .filter(Boolean)).size;
 }
 
 function jobTagControl(row = {}) {
@@ -4196,6 +5539,12 @@ function defaultEntity(kind) {
   if (kind === "repair") {
     return repairDefaults();
   }
+  if (kind === "purchaseOrder") {
+    return { resourceType: "PART", quantity: 1, unit: "件", status: "ORDERED", orderDate: todayInputDate() };
+  }
+  if (kind === "stocktaking") {
+    return { resourceType: "PART", actualQuantity: 0, status: "DRAFT", stocktakingDate: todayInputDate() };
+  }
   const entity = {};
   if (kind === "configValue" && state.selectedConfigItemId) {
     const selectedItem = state.data.configItems.find(item => Number(item.id) === Number(state.selectedConfigItemId));
@@ -4303,6 +5652,7 @@ function vehicleOutboundDefaultsForMachine(machine = {}, modelKey = null) {
     const salePrice = machine.salePrice || machine.settlementPrice || "";
     setPrefill(entity, "settlementPrice", settlement, settlement ? `预填：${money(settlement)}` : undefined);
     setPrefill(entity, "salePrice", salePrice, salePrice ? `预填：${money(salePrice)}` : undefined);
+    setPrefill(entity, "receivableAmount", settlement, settlement ? `预填：${money(settlement)}` : undefined);
   } else {
     entity.__placeholders = {
       ...entity.__placeholders,
@@ -4339,10 +5689,12 @@ function syncVehicleOutboundDefaults(machineId) {
   const machine = findEntity("vehicle", Number(machineId || 0));
   clearPrefill(state.modal.item, "settlementPrice");
   clearPrefill(state.modal.item, "salePrice");
+  clearPrefill(state.modal.item, "receivableAmount");
   const settlement = machine.settlementPrice || machine.salePrice || "";
   const salePrice = machine.salePrice || machine.settlementPrice || "";
   setPrefill(state.modal.item, "settlementPrice", settlement, settlement ? `预填：${money(settlement)}` : undefined);
   setPrefill(state.modal.item, "salePrice", salePrice, salePrice ? `预填：${money(salePrice)}` : undefined);
+  setPrefill(state.modal.item, "receivableAmount", settlement, settlement ? `预填：${money(settlement)}` : undefined);
 }
 
 function syncPartOutboundDefaults(partCode) {
@@ -4351,8 +5703,10 @@ function syncPartOutboundDefaults(partCode) {
     state.modal.item.version = part.version;
   }
   clearPrefill(state.modal.item, "settlementPrice");
+  clearPrefill(state.modal.item, "receivableAmount");
   const price = part.settlementPrice || part.salePrice || "";
   setPrefill(state.modal.item, "settlementPrice", price, price ? `预填：${money(price)}` : undefined);
+  setPrefill(state.modal.item, "receivableAmount", price, price ? `预填：${money(price)}` : undefined);
 }
 
 function modificationOrderDefaults(machine = {}, configId = null) {
@@ -4486,6 +5840,115 @@ function syncRentalCustomerDestination(form, customerId) {
   }
 }
 
+function syncRentalVehicleDefaults(form, machineId) {
+  const machine = state.data.vehicles.find(item => Number(item.id) === Number(machineId));
+  if (!machine) return;
+  if (!String(form.elements.destination?.value || "").trim() && machine.destination1) {
+    setFormFieldValue(form, "destination", machine.destination1, false);
+  }
+}
+
+function syncRepairPartFee(form, partId) {
+  const part = state.data.parts.find(item => Number(item.id) === Number(partId));
+  if (!part) return;
+  const price = firstAmount(part.settlementPrice, part.salePrice, part.purchasePrice);
+  if (price !== null && !Number(form.elements.partsFee?.value || 0)) {
+    setFormFieldValue(form, "partsFee", formatDecimal(price), false);
+    syncRepairTotalFee(form);
+  }
+}
+
+function syncStocktakingQuantity(form, resourceId) {
+  const type = String(form.elements.resourceType?.value || "PART").toUpperCase();
+  const rows = type === "MACHINE" ? state.data.vehicles : state.data.parts;
+  const resource = rows.find(item => Number(item.id) === Number(resourceId));
+  if (!resource) return;
+  const quantity = type === "MACHINE" ? resource.inventoryCount : resource.quantity;
+  setFormFieldValue(form, "actualQuantity", quantity ?? 0, false);
+}
+
+function syncPurchaseResourceDefaults(form) {
+  const meta = selectedComboMeta(form, "configValueId");
+  if (!meta) return;
+  if (meta.unit && !String(form.elements.unit?.value || "").trim()) {
+    setFormFieldValue(form, "unit", meta.unit, false);
+  }
+}
+
+function syncPurchaseAmount(form, changedName) {
+  const quantity = amountValue(form.elements.quantity?.value);
+  const unitPrice = amountValue(form.elements.unitPrice?.value);
+  const totalAmount = amountValue(form.elements.totalAmount?.value);
+  if (changedName === "totalAmount" && quantity > 0 && totalAmount > 0) {
+    setFormFieldValue(form, "unitPrice", formatDecimal(totalAmount / quantity), false);
+    return;
+  }
+  if (quantity > 0 && unitPrice > 0) {
+    setFormFieldValue(form, "totalAmount", formatDecimal(quantity * unitPrice), false);
+  }
+}
+
+function isPaymentField(name) {
+  return ["settlementPrice", "salePrice", "receivableAmount", "receivedAmount", "paymentSettled", "lastPaymentDate", "quantity"].includes(name);
+}
+
+function syncPaymentFields(form, changedName) {
+  if (!form) return;
+  const quantity = Math.max(1, amountValue(form.elements.quantity?.value || 1));
+  const settlement = amountValue(form.elements.settlementPrice?.value);
+  const sale = amountValue(form.elements.salePrice?.value);
+  const currentReceivable = amountValue(form.elements.receivableAmount?.value);
+  const unitOrTotal = settlement || sale;
+  if (["settlementPrice", "salePrice", "quantity"].includes(changedName) && unitOrTotal > 0) {
+    const nextReceivable = form.dataset.kind === "partStock" ? unitOrTotal * quantity : unitOrTotal;
+    if (!currentReceivable || changedName === "quantity") {
+      setFormFieldValue(form, "receivableAmount", formatDecimal(nextReceivable), false);
+    }
+  }
+  const receivable = amountValue(form.elements.receivableAmount?.value);
+  const received = amountValue(form.elements.receivedAmount?.value);
+  if (received > 0 && !String(form.elements.lastPaymentDate?.value || "").trim()) {
+    setFormFieldValue(form, "lastPaymentDate", todayInputDate(), false);
+  }
+  if (receivable > 0 && received >= receivable) {
+    setFormFieldValue(form, "paymentSettled", true, false);
+  } else if (changedName === "receivedAmount" && received > 0 && receivable > received) {
+    setFormFieldValue(form, "paymentSettled", false, false);
+  }
+}
+
+function firstAmount(...values) {
+  for (const value of values) {
+    const amount = amountValue(value);
+    if (amount > 0) return amount;
+  }
+  return null;
+}
+
+function amountValue(value) {
+  const amount = Number(value || 0);
+  return Number.isFinite(amount) ? amount : 0;
+}
+
+function formatDecimal(value) {
+  const amount = Number(value || 0);
+  if (!Number.isFinite(amount)) return "";
+  return amount ? amount.toFixed(2) : "0.00";
+}
+
+function enrichPurchaseOrderPayload(payload, form) {
+  payload.resourceType = "PART";
+  const meta = selectedComboMeta(form, "configValueId");
+  if (meta) {
+    payload.resourceCode = meta.valueCode || null;
+    payload.resourceName = meta.valueLabel || null;
+    payload.specificationModel = meta.itemLabel || null;
+    if (!payload.unit && meta.unit) {
+      payload.unit = meta.unit;
+    }
+  }
+}
+
 function selectedComboMeta(form, name) {
   const input = form.elements[name];
   if (!input?.dataset?.selectedMeta) return null;
@@ -4521,7 +5984,17 @@ function setFormFieldValue(form, name, value, shouldNotify = true) {
     return;
   }
   if (form.elements[name]) {
-    form.elements[name].value = value || "";
+    if (form.elements[name].type === "checkbox") {
+      form.elements[name].checked = Boolean(value);
+    } else {
+      form.elements[name].value = value ?? "";
+    }
+    if (state.modal?.item) {
+      state.modal.item[name] = form.elements[name].type === "checkbox" ? form.elements[name].checked : form.elements[name].value;
+    }
+    if (shouldNotify) {
+      form.elements[name].dispatchEvent(new Event("change", { bubbles: true }));
+    }
   }
 }
 
@@ -4593,6 +6066,10 @@ function nextConfigItemCode() {
 }
 
 function findEntity(kind, id) {
+  return entityRows(kind).find(item => item.id === id) || {};
+}
+
+function entityRows(kind) {
   const key = {
     vehicle: "vehicles",
     part: "parts",
@@ -4600,12 +6077,52 @@ function findEntity(kind, id) {
     outboundOrder: "outboundOrders",
     rental: "rentals",
     customer: "customers",
+    supplier: "suppliers",
+    purchaseOrder: "purchaseOrders",
+    stocktaking: "stocktakingRecords",
     repair: "repairs",
     configItem: "configItems",
     configValue: "configValues",
     user: "users"
   }[kind];
-  return (state.data[key] || []).find(item => item.id === id) || {};
+  return state.data[key] || [];
+}
+
+function entityLabel(kind) {
+  return {
+    vehicle: "车辆",
+    part: "配件",
+    modificationOrder: "改装工单",
+    outboundOrder: "出库订单",
+    rental: "租赁记录",
+    customer: "客户",
+    supplier: "供应商",
+    purchaseOrder: "采购订单",
+    stocktaking: "盘点记录",
+    repair: "维修记录",
+    configItem: "配置项",
+    configValue: "配置值",
+    user: "用户"
+  }[kind] || "数据";
+}
+
+function entityDisplayName(kind, item = {}) {
+  const value = {
+    vehicle: item.vehicleProductNumber || item.name || item.id,
+    part: [item.partCode, item.partName].filter(Boolean).join(" / "),
+    modificationOrder: item.workOrderNo || item.machineProductNumber || item.id,
+    outboundOrder: item.orderNo || item.resourceCode || item.id,
+    rental: item.rentalNo || item.vehicleNumber || item.id,
+    customer: item.companyName || item.contactName || item.id,
+    supplier: item.supplierName || item.contactName || item.id,
+    purchaseOrder: item.purchaseNo || item.resourceName || item.id,
+    stocktaking: item.stocktakingNo || item.resourceName || item.id,
+    repair: item.vehicleNumber || item.customerName || item.id,
+    configItem: item.itemName || item.itemCode || item.id,
+    configValue: item.valueLabel || item.valueCode || item.id,
+    user: item.username || item.id
+  }[kind];
+  return display(value || item.id || "-");
 }
 
 function findModificationOrder(id) {
@@ -4628,6 +6145,10 @@ function modalTitle(kind, item) {
     customer: "客户",
     rental: "租赁记录",
     outboundOrder: "出库订单",
+    supplier: "采购供应商",
+    purchaseOrder: "采购订单",
+    purchaseFreight: "修改运费",
+    stocktaking: "库存盘点",
     invoiceUpload: "上传发票",
     contractUpload: "上传合同",
     repair: "维修记录",
@@ -4660,6 +6181,10 @@ function modalSubtitle(kind) {
     customer: "维护出库时可直接下拉选择的客户公司信息。",
     rental: "选择具体在库车号，记录租赁去向、租赁价格和归还状态。",
     outboundOrder: "维护车款结清、报销售、发票申请和订单备注。",
+    supplier: "维护采购供应商、联系人、税号、账号和备注。",
+    purchaseOrder: "从配置字典选择配置项和配置值，自动带入配件名称、编码与规格信息。",
+    purchaseFreight: "运费默认为 0；只在实际产生运费时修改。",
+    stocktaking: "先创建盘点草稿；确认入账后才会同步库存数量。",
     invoiceUpload: "已申请发票或已开票的订单可上传；再次上传会替换原发票文件。",
     contractUpload: "标记为有合同的订单可上传；再次上传会替换原合同文件。",
     repair: "记录维修过程、费用与处理状态。",
@@ -4697,10 +6222,19 @@ function compareConfigItems(a, b) {
 }
 
 function configValueOptionsForItem(configItemId) {
+  const item = state.data.configItems.find(configItem => String(configItem.id) === String(configItemId));
   return (state.data.configValueMap[configItemId] || [])
     .map(value => ({
       value: value.id,
-      label: value.valueLabel || "-"
+      label: value.valueLabel || "-",
+      meta: {
+        configItemId: item?.id,
+        configValueId: value.id,
+        valueLabel: value.valueLabel,
+        valueCode: value.valueCode,
+        itemLabel: item ? configItemLabel(item) : "",
+        unit: item?.unit
+      }
     }));
 }
 
@@ -4998,6 +6532,61 @@ function customerEntryModeOptions() {
   ];
 }
 
+function supplierOptions() {
+  return state.data.suppliers.map(item => ({
+    value: item.id,
+    label: `${item.supplierName || "-"}${item.contactName ? " / " + item.contactName : ""}`,
+    meta: {
+      contactPhone: item.contactPhone,
+      supplierType: item.supplierType
+    }
+  }));
+}
+
+function purchaseStatusOptions() {
+  return [
+    { value: "ORDERED", label: "已下单" },
+    { value: "PARTIAL", label: "部分到货" },
+    { value: "ARRIVED", label: "已到货" },
+    { value: "RECEIVED", label: "已收货" },
+    { value: "CANCELED", label: "已取消" }
+  ];
+}
+function purchaseConfigValueOptions() {
+  const configItemId = effectiveFieldValue(state.modal?.item || {}, "configItemId");
+  if (!configItemId) return [];
+  return configValueOptionsForItem(configItemId);
+}
+
+function stocktakingResourceTypeOptions() {
+  return [
+    { value: "PART", label: "配件" },
+    { value: "MACHINE", label: "整车" }
+  ];
+}
+
+function stocktakingResourceOptions() {
+  const type = String(effectiveFieldValue(state.modal?.item || {}, "resourceType") || "PART").toUpperCase();
+  if (type === "MACHINE") {
+    return state.data.vehicles
+      .filter(item => !item.modelOnly)
+      .map(item => ({
+        value: item.id,
+        label: `${vehicleNumberLabel(item)} / 账面 ${item.inventoryCount ?? 0}`
+      }));
+  }
+  return state.data.parts.map(item => ({
+    value: item.id,
+    label: `${item.partCode || "-"} / ${item.partName || "-"} / 账面 ${item.quantity ?? 0}${item.unit || ""}`
+  }));
+}
+
+function stocktakingStatusOptions() {
+  return [
+    { value: "DRAFT", label: "草稿" }
+  ];
+}
+
 function partCodeOptions() {
   return state.data.parts.map(item => ({
     value: item.partCode,
@@ -5216,6 +6805,9 @@ function canAccessTab(tab) {
     outboundOrders: "stock:adjust",
     rentals: "stock:adjust",
     customers: "vehicle:write",
+    suppliers: "stock:adjust",
+    purchases: "stock:adjust",
+    stocktakes: "stock:adjust",
     stats: "log:read",
     logs: "log:read",
     users: "user:read"
@@ -5229,29 +6821,14 @@ function canWriteEntity(kind) {
     part: "part:write",
     repair: "repair:write",
     rental: "stock:adjust",
+    supplier: "stock:adjust",
+    purchaseOrder: "stock:adjust",
+    stocktaking: "stock:adjust",
     configItem: "config:write",
     configValue: "config:write",
     customer: "vehicle:write"
   };
   return !permissionsByKind[kind] || hasPermission(permissionsByKind[kind]);
-}
-
-function normalizeText(value) {
-  return String(value || "").trim().toLowerCase();
-}
-
-function filterRows(rows, query, keys) {
-  const keyword = String(query || "").trim().toLowerCase();
-  if (!keyword) return rows;
-  return rows.filter(row => keys.some(key => String(row[key] ?? "").toLowerCase().includes(keyword)));
-}
-
-function sortById(rows, desc = true) {
-  return [...(rows || [])].sort((a, b) => desc ? Number(b.id || 0) - Number(a.id || 0) : Number(a.sortOrder || a.id || 0) - Number(b.sortOrder || b.id || 0));
-}
-
-function sortLogs(rows) {
-  return [...(rows || [])].sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0));
 }
 
 function detailItem(label, value) {
@@ -5261,145 +6838,6 @@ function detailItem(label, value) {
       <div class="value">${escapeHtml(display(value))}</div>
     </div>
   `;
-}
-
-function stockBadge(value, unit = "") {
-  const amount = Number(value || 0);
-  const type = amount <= 0 ? "danger" : amount < 5 ? "warn" : "teal";
-  return badge(`${amount}${unit || ""}`, type);
-}
-
-function stockText(value) {
-  return display(value);
-}
-
-function stockStatusLabel(status) {
-  const labels = {
-    PENDING_INBOUND: "待入库",
-    IN_STOCK: "在库",
-    PENDING_MODIFICATION: "待改装",
-    MODIFYING: "改装中",
-    PENDING_OUTBOUND: "待出库",
-    OUTBOUND: "已出库",
-    OUT_OF_STOCK: "已出库",
-    RESERVED: "已预留",
-    LOCKED: "已锁定"
-  };
-  return labels[status] || status || "未设置";
-}
-
-function stockStatusBadge(status) {
-  const types = {
-    PENDING_INBOUND: "primary",
-    IN_STOCK: "teal",
-    PENDING_MODIFICATION: "warn",
-    MODIFYING: "warn",
-    PENDING_OUTBOUND: "primary",
-    OUTBOUND: "primary",
-    OUT_OF_STOCK: "primary",
-    RESERVED: "warn",
-    LOCKED: "danger"
-  };
-  return badge(stockStatusLabel(status), types[status] || "primary");
-}
-
-function rentalStatusBadge(status) {
-  const map = {
-    ACTIVE: ["租赁中", "warn"],
-    RETURNED: ["已归还", "teal"]
-  };
-  const [label, type] = map[status] || [status || "未设置", "primary"];
-  return badge(label, type);
-}
-
-function resourceTypeLabel(value) {
-  const labels = {
-    MACHINE: "整车",
-    PART: "配件",
-    REPAIR: "维修",
-    USER: "用户"
-  };
-  return labels[value] || value;
-}
-
-function statusBadge(status) {
-  const map = {
-    PENDING: ["待处理", "warn"],
-    COMPLETED: ["已完成", "success"]
-  };
-  const [label, type] = map[status] || [status || "未设置", "primary"];
-  return badge(label, type);
-}
-
-function repairStatusText(status) {
-  const map = {
-    PENDING: "待处理",
-    COMPLETED: "已完成"
-  };
-  return map[status] || status || "未设置";
-}
-
-function modificationStatusBadge(status) {
-  const map = {
-    DRAFT: ["草稿", "primary"],
-    WAITING_PARTS: ["待领料", "warn"],
-    IN_PROGRESS: ["改装中", "primary"],
-    COMPLETED: ["已完成", "success"],
-    CANCELED: ["已取消", "danger"]
-  };
-  const [label, type] = map[status] || [status || "未设置", "primary"];
-  return badge(label, type);
-}
-
-function badge(label, type = "primary") {
-  return `<span class="badge ${escapeAttr(type)}">${escapeHtml(label)}</span>`;
-}
-
-function yesNoBadge(value) {
-  return Boolean(value) ? badge("是", "teal") : badge("否", "primary");
-}
-
-function roleBadges(roles = []) {
-  const roleLabels = {
-    SUPER_ADMIN: "超级管理员",
-    ADMIN: "管理员",
-    USER: "普通用户"
-  };
-  return (roles || []).map(role => badge(roleLabels[role] || role, role === "ADMIN" ? "warn" : role === "SUPER_ADMIN" ? "teal" : "primary")).join(" ");
-}
-
-function normalizeJobTag(value, roles = []) {
-  const tag = String(value || "").trim().toUpperCase();
-  if (["MANAGEMENT", "CLERK", "REPAIR"].includes(tag)) return tag;
-  return roles?.some(role => role === "ADMIN" || role === "SUPER_ADMIN") ? "MANAGEMENT" : "CLERK";
-}
-
-function jobTagLabel(tag) {
-  const labels = {
-    MANAGEMENT: "管理",
-    CLERK: "文员",
-    REPAIR: "维修"
-  };
-  return labels[normalizeJobTag(tag)] || "文员";
-}
-
-function jobTagType(tag) {
-  const types = {
-    MANAGEMENT: "primary",
-    CLERK: "teal",
-    REPAIR: "warn"
-  };
-  return types[normalizeJobTag(tag)] || "primary";
-}
-
-function jobTagBadge(tag) {
-  return badge(jobTagLabel(tag), jobTagType(tag));
-}
-
-function nextJobTag(tag) {
-  const order = ["MANAGEMENT", "CLERK", "REPAIR"];
-  const index = order.indexOf(normalizeJobTag(tag));
-  return order[(index + 1) % order.length];
 }
 
 function canUpdateUserJobTag(row = {}) {
@@ -5415,108 +6853,12 @@ function canUpdateUserEnabled(row = {}) {
   return hasPermission("user:write") && row.roles?.every(role => role === "USER");
 }
 
-function logCategoryBadge(category) {
-  const type = category === "配件替换" ? "teal" : category === "维修" ? "warn" : "primary";
-  return badge(category || "-", type);
-}
-
-function operationActionBadge(action) {
-  const labels = {
-    CREATE: "新增",
-    UPDATE: "更新",
-    DELETE: "删除",
-    LOCK: "锁定",
-    UNLOCK: "解锁",
-    CONFIG_UPDATE: "配置更新",
-    REPLACE: "配置替换",
-    USERNAME_UPDATE: "改用户名",
-    PASSWORD_UPDATE: "改密码",
-    PASSWORD_RESET: "重置密码",
-    INBOUND: "入库",
-    OUTBOUND: "出库",
-    PART_REPLACE: "配件替换",
-    PENDING: "待处理",
-    IN_PROGRESS: "处理中",
-    COMPLETED: "已完成"
-  };
-  const type = action === "OUTBOUND" || action === "DELETE"
-    ? "warn"
-    : action === "COMPLETED" || action === "INBOUND" || action === "CREATE"
-      ? "teal"
-      : "primary";
-  return badge(labels[action] || action || "-", type);
-}
-
-function quantityChange(row) {
-  if (row.quantity === null || row.quantity === undefined) return "-";
-  const before = row.beforeQuantity ?? "-";
-  const after = row.afterQuantity ?? "-";
-  return `${escapeHtml(row.quantity)} <span class="helper-inline">(${escapeHtml(before)} -> ${escapeHtml(after)})</span>`;
-}
-
-function money(value) {
-  if (value === null || value === undefined || value === "") return "";
-  const numeric = Number(value);
-  if (Number.isNaN(numeric)) return value;
-  return new Intl.NumberFormat("zh-CN", {
-    style: "currency",
-    currency: "CNY",
-    maximumFractionDigits: 2
-  }).format(numeric);
-}
-
-function dateValue(value) {
-  if (!value) return "";
-  return String(value).slice(0, 10);
-}
-
-function dateTime(value) {
-  if (!value) return "";
-  return String(value).replace("T", " ").slice(0, 16);
-}
-
-function fileSize(value) {
-  const size = Number(value || 0);
-  if (!Number.isFinite(size) || size <= 0) return "-";
-  if (size < 1024) return `${size} B`;
-  if (size < 1024 * 1024) return `${(size / 1024).toFixed(1)} KB`;
-  return `${(size / 1024 / 1024).toFixed(1)} MB`;
-}
-
-function toInputValue(value, field) {
-  if (value === null || value === undefined) return "";
-  if (field.type === "datetime-local") return String(value).slice(0, 16);
-  if (field.type === "date") return String(value).slice(0, 10);
-  return value;
-}
-
-function todayInputDate() {
-  const date = new Date();
-  const offset = date.getTimezoneOffset();
-  return new Date(date.getTime() - offset * 60000).toISOString().slice(0, 10);
-}
-
-function nowInputDateTime() {
-  const date = new Date();
-  const offset = date.getTimezoneOffset();
-  return new Date(date.getTime() - offset * 60000).toISOString().slice(0, 16);
-}
-
-function display(value) {
-  if (value === null || value === undefined || value === "") return "-";
-  return String(value);
-}
-
 function icon(name) {
   return `<span class="btn-icon" aria-hidden="true">${icons[name] || ""}</span>`;
 }
 
-function emptyState(message) {
-  return `<div class="helper">${escapeHtml(message)}</div>`;
-}
-
 function renderLoading() {
-  return `<div class="surface"><div class="surface-body helper">正在加载数据...</div></div>`;
+  return `<div class="surface"><div class="surface-body"><div class="loading-state"><span class="loading-spinner" aria-hidden="true"></span><span>正在加载数据...</span></div></div></div>`;
 }
 
 function renderLoadError(error) {
@@ -5541,27 +6883,196 @@ function showToast(message, type = "info") {
   window.setTimeout(() => toast.remove(), 3600);
 }
 
+function showContextSuccess(message, target = "", detail = "") {
+  const parts = [message, target && `对象：${target}`, detail].filter(Boolean);
+  showToast(parts.join(" · "), "success");
+}
+
+function modalDangerConfirmation(kind, item = {}, payload = {}) {
+  if (kind === "vehicleOutbound") {
+    return {
+      title: "确认整车出库",
+      target: entityDisplayName("vehicle", findEntity("vehicle", Number(payload.machineId || 0))),
+      impact: "将创建整车出库订单并进入收款、报销售和发票跟进流程。"
+    };
+  }
+  if (kind === "vehicleStock") {
+    const outbound = item.direction === "outbound";
+    return {
+      title: outbound ? "确认整车出库调整" : "确认整车入库调整",
+      target: entityDisplayName("vehicle", findEntity("vehicle", Number(payload.machineId || 0))),
+      impact: `库存数量将${outbound ? "减少" : "增加"} ${payload.quantity || 0}，请确认车号和数量无误。`
+    };
+  }
+  if (kind === "partStock") {
+    const outbound = item.direction === "outbound";
+    return {
+      title: outbound ? "确认配件出库" : "确认配件入库调整",
+      target: payload.partCode || entityDisplayName("part", item),
+      impact: outbound ? "将创建配件出库订单并扣减库存。" : `配件库存将增加 ${payload.quantity || 0}，请确认编码和数量无误。`
+    };
+  }
+  if (kind === "partReplace") {
+    return {
+      title: "确认配件替换",
+      target: entityDisplayName("vehicle", findEntity("vehicle", Number(payload.machineId || 0))),
+      impact: "将扣减新配件库存，旧件会按规则处理，并更新车辆配置记录。"
+    };
+  }
+  if (kind === "vehiclePartInstall") {
+    return {
+      title: "确认配件装车",
+      target: entityDisplayName("vehicle", findEntity("vehicle", Number(payload.machineId || 0))),
+      impact: "将从配件库存领料并关联到当前车辆。"
+    };
+  }
+  if (kind === "outboundOrder") {
+    return {
+      title: "确认更新出库订单",
+      target: entityDisplayName("outboundOrder", item),
+      impact: "会更新收款、报销售、发票或合同等关键跟进字段。"
+    };
+  }
+  if (kind === "purchaseFreight") {
+    return {
+      title: "确认修改采购运费",
+      target: entityDisplayName("purchaseOrder", item),
+      impact: "运费会影响采购成本统计，请确认金额无误。"
+    };
+  }
+  if (kind === "userUsername") {
+    return {
+      title: "确认修改用户名",
+      target: entityDisplayName("user", item),
+      impact: "用户名修改后，用户需要使用新用户名登录。"
+    };
+  }
+  if (kind === "userPassword") {
+    return {
+      title: "确认修改用户密码",
+      target: entityDisplayName("user", item),
+      impact: "密码修改后，旧密码将无法继续登录。"
+    };
+  }
+  if (kind === "invoiceUpload") {
+    return {
+      title: "确认上传发票",
+      target: entityDisplayName("outboundOrder", item),
+      impact: item.invoiceFileAvailable ? "本次上传会替换已有发票文件。" : "发票文件会绑定到当前出库订单。"
+    };
+  }
+  if (kind === "contractUpload") {
+    return {
+      title: "确认上传合同",
+      target: entityDisplayName("outboundOrder", item),
+      impact: item.contractFileAvailable ? "本次上传会替换已有合同文件。" : "合同文件会绑定到当前出库订单。"
+    };
+  }
+  return null;
+}
+
+function confirmDanger({ title, target, impact, confirmText = "确认继续", cancelText = "取消" } = {}) {
+  if (typeof document === "undefined" || !document.body) {
+    return Promise.resolve(window.confirm([
+      title || "确认操作",
+      target ? `对象：${target}` : "",
+      impact ? `影响：${impact}` : "",
+      "",
+      `${confirmText}？`
+    ].filter(line => line !== "").join("\n")));
+  }
+
+  return new Promise(resolve => {
+    let settled = false;
+    let pointerDownStartedOnOverlay = false;
+    const overlay = document.createElement("div");
+    overlay.className = "confirm-overlay";
+    overlay.innerHTML = `
+      <section class="confirm-dialog" role="dialog" aria-modal="true" aria-labelledby="dangerConfirmTitle">
+        <div class="confirm-icon">${icon("trash")}</div>
+        <div class="confirm-content">
+          <h2 id="dangerConfirmTitle">${escapeHtml(title || "确认操作")}</h2>
+          ${target ? `<p class="confirm-target">对象：${escapeHtml(target)}</p>` : ""}
+          ${impact ? `<p class="confirm-impact">${escapeHtml(impact)}</p>` : ""}
+        </div>
+        <div class="confirm-actions">
+          <button class="btn btn-ghost" type="button" data-confirm-cancel>${escapeHtml(cancelText)}</button>
+          <button class="btn btn-danger" type="button" data-confirm-ok>${icon("trash")}${escapeHtml(confirmText)}</button>
+        </div>
+      </section>
+    `;
+    document.body.appendChild(overlay);
+
+    const okButton = overlay.querySelector("[data-confirm-ok]");
+    const cancelButton = overlay.querySelector("[data-confirm-cancel]");
+    const finish = confirmed => {
+      if (settled) return;
+      settled = true;
+      overlay.classList.remove("is-open");
+      window.setTimeout(() => overlay.remove(), 180);
+      document.removeEventListener("keydown", onKeydown, true);
+      resolve(confirmed);
+    };
+    const onKeydown = event => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        finish(false);
+      }
+    };
+
+    okButton?.addEventListener("click", () => finish(true), { once: true });
+    cancelButton?.addEventListener("click", () => finish(false), { once: true });
+    overlay.addEventListener("pointerdown", event => {
+      pointerDownStartedOnOverlay = event.target === overlay;
+    });
+    overlay.addEventListener("click", event => {
+      if (event.target === overlay && pointerDownStartedOnOverlay) finish(false);
+      pointerDownStartedOnOverlay = false;
+    });
+    document.addEventListener("keydown", onKeydown, true);
+    requestAnimationFrame(() => {
+      overlay.classList.add("is-open");
+      cancelButton?.focus();
+    });
+  });
+}
+
 function handleActionError(error) {
   if (isAuthExpiredError(error)) {
     logout("登录已过期，请重新登录");
     return;
   }
+  if (isConflictError(error)) {
+    showToast(error.message || "数据已被其他用户更新，请刷新后重试", "error");
+    void refreshAfterConflict();
+    return;
+  }
   showToast(error.message || "操作失败", "error");
+}
+
+async function refreshAfterConflict() {
+  if (state.modal) {
+    closeModal();
+  }
+  try {
+    await loadAllData();
+    renderCurrentTab();
+    showToast("已刷新最新数据，请重新打开编辑界面后再保存", "info");
+  } catch (error) {
+    if (isAuthExpiredError(error)) {
+      logout("登录已过期，请重新登录");
+    }
+  }
+}
+
+function isTypingTarget(target) {
+  return Boolean(target?.closest?.("input, select, textarea, [contenteditable='true']"));
 }
 
 function isAuthExpiredError(error) {
   return Boolean(error?.authExpired);
 }
 
-function escapeHtml(value) {
-  return String(value ?? "")
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("'", "&#039;");
-}
-
-function escapeAttr(value) {
-  return escapeHtml(value);
+function isConflictError(error) {
+  return Number(error?.status) === 409 || Number(error?.code) === 409;
 }

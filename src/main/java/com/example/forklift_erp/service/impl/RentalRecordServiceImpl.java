@@ -2,6 +2,8 @@ package com.example.forklift_erp.service.impl;
 
 import com.example.forklift_erp.common.PageResult;
 import com.example.forklift_erp.common.ResultCode;
+import com.example.forklift_erp.constant.MachineStockStatuses;
+import com.example.forklift_erp.constant.RentalStatus;
 import com.example.forklift_erp.dto.RentalRecordCreateDTO;
 import com.example.forklift_erp.dto.RentalRecordUpdateDTO;
 import com.example.forklift_erp.dto.RentalRecordVO;
@@ -97,7 +99,7 @@ public class RentalRecordServiceImpl implements RentalRecordService {
             throw new BusinessException(ResultCode.VEHICLE_NOT_FOUND, "租赁车辆不存在或已锁定");
         }
         int inventoryCount = machine.getInventoryCount() == null ? 0 : machine.getInventoryCount();
-        if (inventoryCount < 1 || "OUTBOUND".equals(machine.getStockStatus())) {
+        if (inventoryCount < 1 || MachineStockStatuses.OUTBOUND.equals(machine.getStockStatus())) {
             throw new BusinessException(ResultCode.INSUFFICIENT_STOCK, "车辆不在库，不能登记租赁");
         }
         if (rentalRecordRepository.existsByMachineIdAndStatus(machine.getId(), RentalRecord.STATUS_ACTIVE)) {
@@ -202,11 +204,10 @@ public class RentalRecordServiceImpl implements RentalRecordService {
     private String normalizeStatus(String status) {
         String value = blankToNull(status);
         if (value == null) {
-            return RentalRecord.STATUS_ACTIVE;
+            return RentalStatus.ACTIVE.code();
         }
-        String upper = value.toUpperCase(Locale.ROOT);
-        if (RentalRecord.STATUS_ACTIVE.equals(upper) || RentalRecord.STATUS_RETURNED.equals(upper)) {
-            return upper;
+        if (RentalStatus.isValid(value)) {
+            return RentalStatus.normalizeOrDefault(value, RentalStatus.ACTIVE);
         }
         throw new BusinessException(ResultCode.PARAM_ERROR, "租赁状态仅支持 ACTIVE 或 RETURNED");
     }

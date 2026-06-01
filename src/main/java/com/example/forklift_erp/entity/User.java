@@ -1,5 +1,6 @@
 package com.example.forklift_erp.entity;
 
+import com.example.forklift_erp.constant.JobTag;
 import jakarta.persistence.*;
 import lombok.Getter;
 import lombok.Setter;
@@ -34,7 +35,7 @@ public class User implements CollaborativeResource {
     private boolean enabled = true;
 
     @Column(name = "job_tag", nullable = false, length = 20)
-    private String jobTag = "CLERK";
+    private String jobTag = JobTag.CLERK.code();
 
     @ManyToMany(fetch = FetchType.EAGER)   // 用户加载时立即加载角色
     @JoinTable(

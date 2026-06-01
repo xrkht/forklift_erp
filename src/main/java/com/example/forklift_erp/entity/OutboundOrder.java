@@ -74,6 +74,18 @@ public class OutboundOrder implements CollaborativeResource {
     @Column(name = "sale_price", precision = 12, scale = 2)
     private BigDecimal salePrice;
 
+    @Column(name = "receivable_amount", precision = 12, scale = 2)
+    private BigDecimal receivableAmount;
+
+    @Column(name = "received_amount", precision = 12, scale = 2)
+    private BigDecimal receivedAmount = BigDecimal.ZERO;
+
+    @Column(name = "payment_due_date")
+    private LocalDate paymentDueDate;
+
+    @Column(name = "last_payment_date")
+    private LocalDate lastPaymentDate;
+
     @Column(name = "payment_settled")
     private Boolean paymentSettled = false;
 

@@ -2,6 +2,7 @@ package com.example.forklift_erp.controller;
 
 import com.example.forklift_erp.common.Result;
 import com.example.forklift_erp.common.ResultCode;
+import com.example.forklift_erp.constant.RoleNames;
 import com.example.forklift_erp.exception.BusinessException;
 import com.example.forklift_erp.service.BusinessDataResetService;
 import lombok.Data;
@@ -33,7 +34,7 @@ public class AdminMaintenanceController {
     }
 
     @PostMapping("/business-data/reset")
-    @PreAuthorize("hasRole('SUPER_ADMIN')")
+    @PreAuthorize("hasRole('" + RoleNames.SUPER_ADMIN + "')")
     public Result<Map<String, Long>> resetBusinessData(@RequestBody(required = false) BusinessDataResetRequest request) {
         if (!businessDataResetEnabled) {
             throw new BusinessException(ResultCode.FORBIDDEN, "Business data reset is disabled");
