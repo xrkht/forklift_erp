@@ -9,6 +9,7 @@ import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
+import java.math.BigDecimal;
 import java.util.List;
 import java.util.Optional;
 
@@ -37,6 +38,8 @@ public interface PartInventoryRepository extends JpaRepository<PartInventory, Lo
     List<PartInventory> findBySource(String source);
     List<PartInventory> findBySourceMachineId(Long machineId);
 
+    long countByWarehouseId(Long warehouseId);
+
     // ========== 普通用户专用（过滤锁定） ==========
     List<PartInventory> findAllByIsLockedFalse();
     Optional<PartInventory> findByIdAndIsLockedFalse(Long id);
@@ -60,4 +63,28 @@ public interface PartInventoryRepository extends JpaRepository<PartInventory, Lo
             @Param("includeLocked") boolean includeLocked,
             Pageable pageable
     );
+
+    @Query("""
+            select
+              count(p) as itemCount,
+              sum(coalesce(p.quantity, 0)) as stockQuantity,
+              sum(coalesce(coalesce(p.purchasePrice, p.settlementPrice), 0) * coalesce(p.quantity, 0)) as costValue,
+              sum(coalesce(coalesce(p.salePrice, p.settlementPrice), 0) * coalesce(p.quantity, 0)) as retailValue
+            from PartInventory p
+            """)
+    StockValueProjection stockValue();
+
+    @Query("""
+            select p from PartInventory p
+            where coalesce(p.quantity, 0) <= :threshold
+            order by coalesce(p.quantity, 0) asc, p.id asc
+            """)
+    List<PartInventory> findLowStock(@Param("threshold") int threshold, Pageable pageable);
+
+    interface StockValueProjection {
+        Long getItemCount();
+        Long getStockQuantity();
+        BigDecimal getCostValue();
+        BigDecimal getRetailValue();
+    }
 }

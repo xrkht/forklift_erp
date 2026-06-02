@@ -8,6 +8,7 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
+import java.util.List;
 import java.util.Optional;
 
 @Repository
@@ -18,6 +19,10 @@ public interface StockBalanceRepository extends JpaRepository<StockBalance, Long
             Long resourceId,
             Long warehouseId
     );
+
+    List<StockBalance> findByWarehouseId(Long warehouseId);
+
+    boolean existsByWarehouseId(Long warehouseId);
 
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("""

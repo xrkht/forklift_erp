@@ -1,6 +1,8 @@
 export const endpoints = {
   vehicle: {
     list: "/api/inventory",
+    models: "/api/inventory/models",
+    modelVehicles: "/api/inventory/model-vehicles",
     create: "/api/inventory",
     update: id => `/api/inventory/${id}`,
     delete: id => `/api/inventory/${id}`
@@ -81,6 +83,20 @@ export const endpoints = {
     update: id => `/api/stocktaking-records/${id}`,
     complete: id => `/api/stocktaking-records/${id}/complete`,
     delete: id => `/api/stocktaking-records/${id}`
+  },
+  warehouse: {
+    list: "/api/warehouses",
+    create: "/api/warehouses",
+    update: id => `/api/warehouses/${id}`,
+    delete: id => `/api/warehouses/${id}`,
+    transfer: "/api/warehouses/transfer"
+  },
+  stockMovement: {
+    list: "/api/stock-movements"
+  },
+  admin: {
+    backup: "/api/admin/data-backup",
+    restore: "/api/admin/data-restore"
   },
   user: {
     list: "/api/auth/users",

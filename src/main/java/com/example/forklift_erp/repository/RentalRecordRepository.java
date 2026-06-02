@@ -10,6 +10,9 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
+import java.math.BigDecimal;
+import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 
@@ -33,6 +36,41 @@ public interface RentalRecordRepository extends JpaRepository<RentalRecord, Long
             """)
     Page<RentalRecord> searchPage(@Param("keyword") String keyword, Pageable pageable);
 
+    @Query("""
+            select r from RentalRecord r
+            where ((r.startDate is not null and r.startDate >= :startDate and r.startDate <= :endDate)
+                   or (r.startDate is null and r.createdAt >= :startAt and r.createdAt < :endAt))
+            order by r.createdAt desc
+            """)
+    List<RentalRecord> findInDateRange(
+            @Param("startDate") LocalDate startDate,
+            @Param("endDate") LocalDate endDate,
+            @Param("startAt") LocalDateTime startAt,
+            @Param("endAt") LocalDateTime endAt
+    );
+
+    @Query("""
+            select
+              count(r) as totalCount,
+              sum(case when r.status = 'ACTIVE' then 1 else 0 end) as activeRows,
+              sum(case when r.status = 'RETURNED' then 1 else 0 end) as returnedRows,
+              count(distinct r.machineId) as vehicleCount,
+              sum(coalesce(r.monthlyRentalPrice, r.rentalPrice, 0)) as rentalIncome
+            from RentalRecord r
+            where (:keyword is null or :keyword = ''
+               or lower(coalesce(r.rentalNo, '')) like lower(concat('%', :keyword, '%'))
+               or lower(coalesce(r.vehicleNumber, '')) like lower(concat('%', :keyword, '%'))
+               or lower(coalesce(r.machineName, '')) like lower(concat('%', :keyword, '%'))
+               or lower(coalesce(r.specificationModel, '')) like lower(concat('%', :keyword, '%'))
+               or lower(coalesce(r.customerName, '')) like lower(concat('%', :keyword, '%'))
+               or lower(coalesce(r.customerAddress, '')) like lower(concat('%', :keyword, '%'))
+               or lower(coalesce(r.destination, '')) like lower(concat('%', :keyword, '%'))
+               or lower(coalesce(r.status, '')) like lower(concat('%', :keyword, '%'))
+               or lower(coalesce(r.operator, '')) like lower(concat('%', :keyword, '%'))
+               or lower(coalesce(r.remark, '')) like lower(concat('%', :keyword, '%')))
+            """)
+    RentalSummaryProjection summarize(@Param("keyword") String keyword);
+
     List<RentalRecord> findByMachineIdOrderByCreatedAtDesc(Long machineId);
 
     boolean existsByMachineIdAndStatus(Long machineId, String status);
@@ -40,4 +78,12 @@ public interface RentalRecordRepository extends JpaRepository<RentalRecord, Long
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("select r from RentalRecord r where r.id = :id")
     Optional<RentalRecord> findByIdForUpdate(@Param("id") Long id);
+
+    interface RentalSummaryProjection {
+        Long getTotalCount();
+        Long getActiveRows();
+        Long getReturnedRows();
+        Long getVehicleCount();
+        BigDecimal getRentalIncome();
+    }
 }

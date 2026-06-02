@@ -37,4 +37,29 @@ public interface SupplierRepository extends JpaRepository<Supplier, Long> {
                    or lower(coalesce(s.remarks, '')) like lower(concat('%', :keyword, '%')))
             """)
     Page<Supplier> searchPage(@Param("keyword") String keyword, Pageable pageable);
+
+    @Query("""
+            select
+              count(s) as totalCount,
+              sum(case when s.supplierType is null or s.supplierType = '' then 0 else 1 end) as typed,
+              sum(case when (s.contactName is null or s.contactName = '')
+                            and (s.contactPhone is null or s.contactPhone = '')
+                       then 0 else 1 end) as contacts
+            from Supplier s
+            where (:keyword is null or :keyword = ''
+                   or lower(coalesce(s.supplierName, '')) like lower(concat('%', :keyword, '%'))
+                   or lower(coalesce(s.supplierType, '')) like lower(concat('%', :keyword, '%'))
+                   or lower(coalesce(s.contactName, '')) like lower(concat('%', :keyword, '%'))
+                   or lower(coalesce(s.contactPhone, '')) like lower(concat('%', :keyword, '%'))
+                   or lower(coalesce(s.address, '')) like lower(concat('%', :keyword, '%'))
+                   or lower(coalesce(s.taxNumber, '')) like lower(concat('%', :keyword, '%'))
+                   or lower(coalesce(s.remarks, '')) like lower(concat('%', :keyword, '%')))
+            """)
+    SupplierSummaryProjection summarize(@Param("keyword") String keyword);
+
+    interface SupplierSummaryProjection {
+        Long getTotalCount();
+        Long getTyped();
+        Long getContacts();
+    }
 }

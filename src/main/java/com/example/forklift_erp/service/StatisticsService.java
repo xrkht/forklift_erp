@@ -29,7 +29,7 @@ import com.example.forklift_erp.repository.StockOperationLogRepository;
 import com.example.forklift_erp.repository.SupplierRepository;
 import com.example.forklift_erp.util.SecurityUtils;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
@@ -37,11 +37,12 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.YearMonth;
 import java.util.Comparator;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
-import java.util.function.Function;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 @Service
@@ -84,17 +85,32 @@ public class StatisticsService {
 
     public StatisticsDashboardVO financeDashboard(Integer year) {
         int selectedYear = year == null ? LocalDate.now().getYear() : year;
-        Map<Long, MachineInventory> machines = machineInventoryRepository.findAll().stream()
-                .filter(machine -> !Boolean.TRUE.equals(machine.getModelOnly()))
-                .collect(Collectors.toMap(MachineInventory::getId, Function.identity(), (a, b) -> a));
-        Map<Long, PartInventory> parts = partInventoryRepository.findAll().stream()
-                .collect(Collectors.toMap(PartInventory::getId, Function.identity(), (a, b) -> a));
-        List<StockOperationLog> stockLogs = stockOperationLogRepository.findAllByOrderByCreatedAtDesc();
-        List<RepairRecord> repairs = repairRecordRepository.findAll();
-        List<RentalRecord> rentals = rentalRecordRepository.findAllByOrderByCreatedAtDesc();
-        List<ModificationWorkOrder> modificationOrders = modificationWorkOrderRepository.findAll();
-        Map<Long, List<ModificationWorkOrderLine>> modificationLinesByOrderId = modificationWorkOrderLineRepository.findAll().stream()
+        LocalDateTime startAt = LocalDate.of(selectedYear - 4, 1, 1).atStartOfDay();
+        LocalDateTime endAt = LocalDate.of(selectedYear + 1, 1, 1).atStartOfDay();
+        List<StockOperationLog> stockLogs = stockOperationLogRepository
+                .findByCreatedAtGreaterThanEqualAndCreatedAtLessThanOrderByCreatedAtDesc(startAt, endAt);
+        List<RepairRecord> repairs = repairRecordRepository.findByRepairDateBetween(startAt, endAt.minusNanos(1));
+        List<RentalRecord> rentals = rentalRecordRepository.findInDateRange(
+                startAt.toLocalDate(),
+                endAt.toLocalDate().minusDays(1),
+                startAt,
+                endAt
+        );
+        List<ModificationWorkOrder> modificationOrders = modificationWorkOrderRepository.findCompletedInRange(
+                ModificationWorkOrderStatuses.COMPLETED,
+                startAt,
+                endAt
+        );
+        List<Long> modificationOrderIds = modificationOrders.stream()
+                .map(ModificationWorkOrder::getId)
+                .filter(Objects::nonNull)
+                .toList();
+        Map<Long, List<ModificationWorkOrderLine>> modificationLinesByOrderId = modificationOrderIds.isEmpty()
+                ? Map.of()
+                : modificationWorkOrderLineRepository.findByWorkOrderIdIn(modificationOrderIds).stream()
                 .collect(Collectors.groupingBy(ModificationWorkOrderLine::getWorkOrderId));
+        Map<Long, MachineInventory> machines = loadStockMachines(stockLogs);
+        Map<Long, PartInventory> parts = loadStockParts(stockLogs);
 
         StatisticsDashboardVO dashboard = new StatisticsDashboardVO();
         dashboard.setSelectedYear(selectedYear);
@@ -105,8 +121,8 @@ public class StatisticsService {
         dashboard.setResourceFlows(buildResourceFlows(selectedYear, stockLogs, machines, parts));
         dashboard.setTopOutbounds(buildTopOutbounds(selectedYear, stockLogs, machines, parts));
         dashboard.setTopRentals(buildTopRentals(selectedYear, rentals));
-        dashboard.setStockValues(buildStockValues(machines.values().stream().toList(), parts.values().stream().toList()));
-        dashboard.setLowStocks(buildLowStocks(machines.values().stream().toList(), parts.values().stream().toList()));
+        dashboard.setStockValues(buildStockValues());
+        dashboard.setLowStocks(buildLowStocks());
         return dashboard;
     }
 
@@ -128,22 +144,21 @@ public class StatisticsService {
     }
 
     private ListSummaryVO outboundOrderSummary(String keyword) {
-        List<OutboundOrder> rows = outboundOrderRepository.searchPage(
+        OutboundOrderRepository.OutboundOrderSummaryProjection data = outboundOrderRepository.summarize(
                 normalizeKeyword(keyword),
-                SecurityUtils.isAdminOrSuperAdmin(),
-                Pageable.unpaged()
-        ).getContent();
-        long unsettledOrders = rows.stream().filter(row -> !Boolean.TRUE.equals(row.getPaymentSettled())).count();
-        long pendingReports = rows.stream().filter(row -> !Boolean.TRUE.equals(row.getSalesReported())).count();
-        long pendingInvoices = rows.stream().filter(row -> !Boolean.TRUE.equals(row.getInvoiceApplied())).count();
-        long settledOrders = rows.stream().filter(row -> Boolean.TRUE.equals(row.getPaymentSettled())).count();
-        long uploadedInvoices = rows.stream().filter(row -> !isBlank(row.getInvoiceStoredFileName())).count();
-        long uploadedContracts = rows.stream().filter(row -> !isBlank(row.getContractStoredFileName())).count();
-        long overdueOrders = rows.stream().filter(row -> overdueDays(receivableOutstanding(row), row.getPaymentDueDate()) > 0).count();
-        long machineOrders = rows.stream().filter(row -> OutboundOrder.RESOURCE_MACHINE.equals(row.getResourceType())).count();
-        BigDecimal outstandingAmount = rows.stream()
-                .map(this::receivableOutstanding)
-                .reduce(BigDecimal.ZERO, BigDecimal::add);
+                SecurityUtils.isAdminOrSuperAdmin()
+        );
+        long totalCount = number(data.getTotalCount());
+        SummaryCount rows = new SummaryCount(totalCount);
+        long unsettledOrders = number(data.getUnsettledOrders());
+        long pendingReports = number(data.getPendingReports());
+        long pendingInvoices = number(data.getPendingInvoices());
+        long settledOrders = number(data.getSettledOrders());
+        long uploadedInvoices = number(data.getUploadedInvoices());
+        long uploadedContracts = number(data.getUploadedContracts());
+        long overdueOrders = number(data.getOverdueOrders());
+        long machineOrders = number(data.getMachineOrders());
+        BigDecimal outstandingAmount = amount(data.getOutstandingAmount());
         return summary("outboundOrders", keyword)
                 .addCard("出库订单", rows.size(), unsettledOrders + " 单待收款")
                 .addMoneyCard("应收欠款", outstandingAmount, overdueOrders + " 单逾期")
@@ -153,13 +168,13 @@ public class StatisticsService {
     }
 
     private ListSummaryVO rentalSummary(String keyword) {
-        List<RentalRecord> rows = rentalRecordRepository.searchPage(normalizeKeyword(keyword), Pageable.unpaged()).getContent();
-        long activeRows = rows.stream().filter(row -> RentalStatuses.ACTIVE.equals(row.getStatus())).count();
-        long returnedRows = rows.stream().filter(row -> RentalStatuses.RETURNED.equals(row.getStatus())).count();
-        long vehicleCount = rows.stream().map(RentalRecord::getMachineId).filter(Objects::nonNull).distinct().count();
-        BigDecimal rentalIncome = rows.stream()
-                .map(this::rentalAmount)
-                .reduce(BigDecimal.ZERO, BigDecimal::add);
+        RentalRecordRepository.RentalSummaryProjection data = rentalRecordRepository.summarize(normalizeKeyword(keyword));
+        long totalCount = number(data.getTotalCount());
+        SummaryCount rows = new SummaryCount(totalCount);
+        long activeRows = number(data.getActiveRows());
+        long returnedRows = number(data.getReturnedRows());
+        long vehicleCount = number(data.getVehicleCount());
+        BigDecimal rentalIncome = amount(data.getRentalIncome());
         return summary("rentals", keyword)
                 .addCard("租赁记录", rows.size(), activeRows + " 台租赁中")
                 .addMoneyCard("月租收入", rentalIncome, returnedRows + " 单已归还")
@@ -168,14 +183,12 @@ public class StatisticsService {
     }
 
     private ListSummaryVO supplierSummary(String keyword) {
-        List<Supplier> rows = supplierRepository.searchPage(normalizeKeyword(keyword), Pageable.unpaged()).getContent();
-        long typed = rows.stream().filter(row -> !isBlank(row.getSupplierType())).count();
-        long contacts = rows.stream().filter(row -> !isBlank(row.getContactName()) || !isBlank(row.getContactPhone())).count();
-        long purchaseSupplierCount = purchaseOrderRepository.findAll().stream()
-                .map(PurchaseOrder::getSupplierName)
-                .filter(value -> !isBlank(value))
-                .distinct()
-                .count();
+        SupplierRepository.SupplierSummaryProjection data = supplierRepository.summarize(normalizeKeyword(keyword));
+        long totalCount = number(data.getTotalCount());
+        SummaryCount rows = new SummaryCount(totalCount);
+        long typed = number(data.getTyped());
+        long contacts = number(data.getContacts());
+        long purchaseSupplierCount = purchaseOrderRepository.countDistinctSupplierNames();
         return summary("suppliers", keyword)
                 .addCard("供应商总数", rows.size(), typed + " 家已标记类型")
                 .addCard("采购订单供应商", purchaseSupplierCount, "已被采购订单引用")
@@ -183,15 +196,13 @@ public class StatisticsService {
     }
 
     private ListSummaryVO purchaseSummary(String keyword) {
-        List<PurchaseOrder> rows = purchaseOrderRepository.searchPage(normalizeKeyword(keyword), Pageable.unpaged()).getContent();
-        BigDecimal totalAmount = rows.stream()
-                .map(order -> amount(order.getTotalAmount()))
-                .reduce(BigDecimal.ZERO, BigDecimal::add);
-        BigDecimal freightTotal = rows.stream()
-                .map(order -> amount(order.getFreightAmount()))
-                .reduce(BigDecimal.ZERO, BigDecimal::add);
-        long received = rows.stream().filter(row -> "RECEIVED".equals(row.getStatus())).count();
-        long pending = rows.stream().filter(row -> !"RECEIVED".equals(row.getStatus()) && !"CANCELED".equals(row.getStatus())).count();
+        PurchaseOrderRepository.PurchaseSummaryProjection data = purchaseOrderRepository.summarize(normalizeKeyword(keyword));
+        long totalCount = number(data.getTotalCount());
+        SummaryCount rows = new SummaryCount(totalCount);
+        BigDecimal totalAmount = amount(data.getTotalAmount());
+        BigDecimal freightTotal = amount(data.getFreightTotal());
+        long received = number(data.getReceived());
+        long pending = number(data.getPending());
         return summary("purchases", keyword)
                 .addCard("采购订单", rows.size(), pending + " 单待跟进")
                 .addMoneyCard("采购金额", totalAmount, "当前筛选合计")
@@ -199,10 +210,12 @@ public class StatisticsService {
     }
 
     private ListSummaryVO stocktakingSummary(String keyword) {
-        List<StocktakingRecord> rows = stocktakingRecordRepository.searchPage(normalizeKeyword(keyword), Pageable.unpaged()).getContent();
-        long drafts = rows.stream().filter(row -> !"COMPLETED".equals(row.getStatus())).count();
-        long completed = rows.stream().filter(row -> "COMPLETED".equals(row.getStatus())).count();
-        long differences = rows.stream().filter(row -> quantity(row.getDifferenceQuantity()) != 0).count();
+        StocktakingRecordRepository.StocktakingSummaryProjection data = stocktakingRecordRepository.summarize(normalizeKeyword(keyword));
+        long totalCount = number(data.getTotalCount());
+        SummaryCount rows = new SummaryCount(totalCount);
+        long drafts = number(data.getDrafts());
+        long completed = number(data.getCompleted());
+        long differences = number(data.getDifferences());
         return summary("stocktakes", keyword)
                 .addCard("盘点记录", rows.size(), drafts + " 条待入账")
                 .addCard("已入账", completed, "库存已同步")
@@ -214,6 +227,46 @@ public class StatisticsService {
         summary.setType(type);
         summary.setKeyword(keyword);
         return summary;
+    }
+
+    private Map<Long, MachineInventory> loadStockMachines(List<StockOperationLog> stockLogs) {
+        Set<Long> ids = stockLogs.stream()
+                .filter(log -> "MACHINE".equals(log.getResourceType()))
+                .map(StockOperationLog::getResourceId)
+                .filter(Objects::nonNull)
+                .collect(Collectors.toCollection(HashSet::new));
+        if (ids.isEmpty()) {
+            return Map.of();
+        }
+        return machineInventoryRepository.findAllById(ids).stream()
+                .filter(machine -> !Boolean.TRUE.equals(machine.getModelOnly()))
+                .collect(Collectors.toMap(MachineInventory::getId, machine -> machine, (left, right) -> left));
+    }
+
+    private Map<Long, PartInventory> loadStockParts(List<StockOperationLog> stockLogs) {
+        Set<Long> ids = stockLogs.stream()
+                .filter(log -> "PART".equals(log.getResourceType()))
+                .map(StockOperationLog::getResourceId)
+                .filter(Objects::nonNull)
+                .collect(Collectors.toCollection(HashSet::new));
+        if (ids.isEmpty()) {
+            return Map.of();
+        }
+        return partInventoryRepository.findAllById(ids).stream()
+                .collect(Collectors.toMap(PartInventory::getId, part -> part, (left, right) -> left));
+    }
+
+    private void applyStockValue(
+            StatisticsDashboardVO.StockValueRow row,
+            Long itemCount,
+            Long stockQuantity,
+            BigDecimal costValue,
+            BigDecimal retailValue
+    ) {
+        row.setItemCount(toInt(itemCount));
+        row.setStockQuantity(toInt(stockQuantity));
+        row.setCostValue(amount(costValue));
+        row.setRetailValue(amount(retailValue));
     }
 
     private List<StatisticsDashboardVO.FinancialRow> buildMonthlyRows(
@@ -419,6 +472,51 @@ public class StatisticsService {
                     row.setRentalPrice(rentalAmount(rental));
                     return row;
                 })
+                .toList();
+    }
+
+    private List<StatisticsDashboardVO.StockValueRow> buildStockValues() {
+        StatisticsDashboardVO.StockValueRow machineRow = new StatisticsDashboardVO.StockValueRow();
+        machineRow.setResourceType("MACHINE");
+        machineRow.setLabel("Vehicle inventory");
+        MachineInventoryRepository.StockValueProjection machineValue = machineInventoryRepository.stockValue();
+        applyStockValue(machineRow, machineValue.getItemCount(), machineValue.getStockQuantity(),
+                machineValue.getCostValue(), machineValue.getRetailValue());
+
+        StatisticsDashboardVO.StockValueRow partRow = new StatisticsDashboardVO.StockValueRow();
+        partRow.setResourceType("PART");
+        partRow.setLabel("Part inventory");
+        PartInventoryRepository.StockValueProjection partValue = partInventoryRepository.stockValue();
+        applyStockValue(partRow, partValue.getItemCount(), partValue.getStockQuantity(),
+                partValue.getCostValue(), partValue.getRetailValue());
+        return List.of(machineRow, partRow);
+    }
+
+    private List<StatisticsDashboardVO.LowStockRow> buildLowStocks() {
+        List<StatisticsDashboardVO.LowStockRow> rows = new java.util.ArrayList<>();
+        for (MachineInventory machine : machineInventoryRepository.findLowStock(LOW_MACHINE_THRESHOLD, PageRequest.of(0, 10))) {
+            StatisticsDashboardVO.LowStockRow row = new StatisticsDashboardVO.LowStockRow();
+            row.setResourceType("MACHINE");
+            row.setResourceCode(machine.getVehicleProductNumber());
+            row.setResourceName(machine.getName());
+            row.setQuantity(quantity(machine.getInventoryCount()));
+            row.setUnit("\u53f0");
+            row.setThreshold(LOW_MACHINE_THRESHOLD);
+            rows.add(row);
+        }
+        for (PartInventory part : partInventoryRepository.findLowStock(LOW_PART_THRESHOLD, PageRequest.of(0, 10))) {
+            StatisticsDashboardVO.LowStockRow row = new StatisticsDashboardVO.LowStockRow();
+            row.setResourceType("PART");
+            row.setResourceCode(part.getPartCode());
+            row.setResourceName(part.getPartName());
+            row.setQuantity(quantity(part.getQuantity()));
+            row.setUnit(part.getUnit());
+            row.setThreshold(LOW_PART_THRESHOLD);
+            rows.add(row);
+        }
+        return rows.stream()
+                .sorted(Comparator.comparing(StatisticsDashboardVO.LowStockRow::getQuantity))
+                .limit(10)
                 .toList();
     }
 
@@ -656,6 +754,17 @@ public class StatisticsService {
         return value == null ? BigDecimal.ZERO : value;
     }
 
+    private long number(Long value) {
+        return value == null ? 0L : value;
+    }
+
+    private int toInt(Long value) {
+        if (value == null) {
+            return 0;
+        }
+        return value > Integer.MAX_VALUE ? Integer.MAX_VALUE : value.intValue();
+    }
+
     private BigDecimal firstAmount(BigDecimal... values) {
         for (BigDecimal value : values) {
             if (value != null) {
@@ -686,5 +795,15 @@ public class StatisticsService {
     }
 
     private record Price(BigDecimal cost, BigDecimal revenue) {
+    }
+
+    private record SummaryCount(long totalCount) {
+        int size() {
+            return toSafeInt(totalCount);
+        }
+
+        private static int toSafeInt(long value) {
+            return value > Integer.MAX_VALUE ? Integer.MAX_VALUE : Math.toIntExact(value);
+        }
     }
 }

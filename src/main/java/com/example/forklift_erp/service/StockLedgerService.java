@@ -86,6 +86,81 @@ public class StockLedgerService {
     }
 
     @Transactional
+    public StockMovement transferBalance(
+            String resourceType,
+            Long resourceId,
+            String resourceCode,
+            String resourceName,
+            Long fromWarehouseId,
+            Long toWarehouseId,
+            Integer quantity,
+            String operator,
+            String remark,
+            String sourceType,
+            Long sourceId
+    ) {
+        Long resolvedFromWarehouseId = resolveWarehouseId(fromWarehouseId);
+        Long resolvedToWarehouseId = resolveWarehouseId(toWarehouseId);
+        if (resolvedFromWarehouseId.equals(resolvedToWarehouseId)) {
+            throw new BusinessException(ResultCode.PARAM_ERROR, "Source and target warehouse cannot be the same");
+        }
+        int transferQuantity = quantity == null ? 0 : quantity;
+        if (transferQuantity <= 0) {
+            throw new BusinessException(ResultCode.PARAM_ERROR, "Transfer quantity must be greater than 0");
+        }
+
+        StockBalance sourceBalance = findOrCreateBalanceForUpdate(resourceType, resourceId, resolvedFromWarehouseId);
+        int sourceBefore = sourceBalance.getAvailableQuantity() == null ? 0 : sourceBalance.getAvailableQuantity();
+        if (sourceBefore < transferQuantity) {
+            throw new BusinessException(ResultCode.INSUFFICIENT_STOCK, "Insufficient source warehouse stock: " + sourceBefore);
+        }
+
+        StockBalance targetBalance = findOrCreateBalanceForUpdate(resourceType, resourceId, resolvedToWarehouseId);
+        int targetBefore = targetBalance.getAvailableQuantity() == null ? 0 : targetBalance.getAvailableQuantity();
+
+        sourceBalance.setAvailableQuantity(sourceBefore - transferQuantity);
+        targetBalance.setAvailableQuantity(targetBefore + transferQuantity);
+        stockBalanceRepository.saveAndFlush(sourceBalance);
+        stockBalanceRepository.saveAndFlush(targetBalance);
+
+        StockMovement movement = new StockMovement();
+        movement.setMovementNo(nextMovementNo());
+        movement.setMovementType("TRANSFER");
+        movement.setResourceType(resourceType);
+        movement.setSourceType(sourceType);
+        movement.setSourceId(sourceId);
+        movement.setOperator(operator);
+        movement.setRemark(remark);
+        StockMovement savedMovement = stockMovementRepository.saveAndFlush(movement);
+
+        StockMovementLine sourceLine = new StockMovementLine();
+        sourceLine.setMovementId(savedMovement.getId());
+        sourceLine.setResourceType(resourceType);
+        sourceLine.setResourceId(resourceId);
+        sourceLine.setResourceCode(resourceCode);
+        sourceLine.setResourceName(resourceName);
+        sourceLine.setWarehouseId(resolvedFromWarehouseId);
+        sourceLine.setQuantityDelta(-transferQuantity);
+        sourceLine.setBeforeQuantity(sourceBefore);
+        sourceLine.setAfterQuantity(sourceBefore - transferQuantity);
+        stockMovementLineRepository.saveAndFlush(sourceLine);
+
+        StockMovementLine targetLine = new StockMovementLine();
+        targetLine.setMovementId(savedMovement.getId());
+        targetLine.setResourceType(resourceType);
+        targetLine.setResourceId(resourceId);
+        targetLine.setResourceCode(resourceCode);
+        targetLine.setResourceName(resourceName);
+        targetLine.setWarehouseId(resolvedToWarehouseId);
+        targetLine.setQuantityDelta(transferQuantity);
+        targetLine.setBeforeQuantity(targetBefore);
+        targetLine.setAfterQuantity(targetBefore + transferQuantity);
+        stockMovementLineRepository.saveAndFlush(targetLine);
+
+        return savedMovement;
+    }
+
+    @Transactional
     public StockMovement recordMovement(
             String movementType,
             String resourceType,
@@ -130,6 +205,20 @@ public class StockLedgerService {
         stockMovementLineRepository.saveAndFlush(line);
 
         return savedMovement;
+    }
+
+    private StockBalance findOrCreateBalanceForUpdate(String resourceType, Long resourceId, Long warehouseId) {
+        return stockBalanceRepository.findForUpdate(resourceType, resourceId, warehouseId)
+                .orElseGet(() -> {
+                    StockBalance created = new StockBalance();
+                    created.setResourceType(resourceType);
+                    created.setResourceId(resourceId);
+                    created.setWarehouseId(warehouseId);
+                    created.setAvailableQuantity(0);
+                    created.setReservedQuantity(0);
+                    created.setLockedQuantity(0);
+                    return created;
+                });
     }
 
     private String nextMovementNo() {

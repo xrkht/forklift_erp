@@ -36,7 +36,10 @@ export function createFields(deps) {
     purchaseStatusOptions,
     stocktakingResourceTypeOptions,
     stocktakingResourceOptions,
-    stocktakingStatusOptions
+    stocktakingStatusOptions,
+    warehouseOptions,
+    transferResourceTypeOptions,
+    stockTransferResourceOptions
   } = deps;
 
   return {
@@ -266,6 +269,26 @@ export function createFields(deps) {
     { name: "status", label: "状态", type: "select", options: stocktakingStatusOptions, defaultValue: "DRAFT", section: "盘点结果" },
     { name: "operator", label: "盘点人", section: "备注" },
     { name: "remark", label: "备注", type: "textarea", span: 2, section: "备注" }
+  ],
+  warehouse: [
+    { name: "warehouseCode", label: "仓库编码", required: true },
+    { name: "warehouseName", label: "仓库名称", required: true },
+    { name: "warehouseType", label: "仓库类型", type: "select", options: [{ value: "MAIN", label: "主仓" }, { value: "BRANCH", label: "分仓" }, { value: "DEALER", label: "经销商仓" }, { value: "SERVICE", label: "维修仓" }], allowCustom: true, defaultValue: "MAIN" },
+    { name: "defaultWarehouse", label: "默认仓库", type: "checkbox", coerce: "boolean" },
+    { name: "address", label: "地址/备注", type: "textarea", span: 2 }
+  ],
+  stockTransfer: [
+    { name: "resourceType", label: "调拨类型", type: "select", required: true, options: transferResourceTypeOptions, defaultValue: "PART", section: "调拨对象" },
+    { name: "resourceId", label: "调拨对象", type: "select", coerce: "int", required: true, options: stockTransferResourceOptions, section: "调拨对象" },
+    { name: "fromWarehouseId", label: "调出仓库", type: "select", coerce: "int", required: true, options: warehouseOptions, section: "仓库" },
+    { name: "toWarehouseId", label: "调入仓库", type: "select", coerce: "int", required: true, options: warehouseOptions, section: "仓库" },
+    { name: "quantity", label: "调拨数量", type: "number", coerce: "int", step: "1", required: true, defaultValue: 1, section: "调拨信息" },
+    { name: "operator", label: "经办人", section: "调拨信息" },
+    { name: "remark", label: "备注", type: "textarea", span: 2, section: "调拨信息" }
+  ],
+  dataRestore: [
+    { name: "backupFile", label: "备份文件", type: "file", required: true, span: 2, accept: ".json,application/json" },
+    { name: "confirmation", label: "确认码", required: true, span: 2 }
   ],
   outboundOrder: [
     { name: "salesDate", label: "销售日期", type: "date", coerce: "date" },

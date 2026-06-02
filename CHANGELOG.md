@@ -2,7 +2,7 @@
 
 本项目遵循 [语义化版本](https://semver.org/lang/zh-CN/) 和 [Keep a Changelog](https://keepachangelog.com/zh-CN/) 规范。
 
-## [0.1.45] - 2026-06-01 - Codex
+## [0.1.45] - 2026-06-01 - Codex。。。1
 
 ### 新增
 - **应收款与待办中心**
@@ -1129,5 +1129,5 @@
 ---
 
 **作者**: xrkht
-**项目**: 叉车进销存ERP系统 (Forklift ERP)  
+**项目**: 叉车进销存ERP系统 (Forklift ERP)
 **仓库**: D:\erp\forklift-erp

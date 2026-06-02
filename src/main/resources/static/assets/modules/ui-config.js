@@ -9,11 +9,14 @@ export const tabs = {
   suppliers: { title: "采购供应商", subtitle: "维护供应商资料、联系人、税号与采购合作信息" },
   purchases: { title: "采购订单", subtitle: "统计配件采购入库、预计到货、金额与状态" },
   stocktakes: { title: "库存盘点", subtitle: "创建盘点草稿，确认后同步整车或配件库存数量" },
+  warehouses: { title: "仓库管理", subtitle: "维护仓库档案，执行整车/配件调拨并查看库存分布" },
   repairs: { title: "维修记录", subtitle: "维修工单、费用与状态追踪" },
+  stockMovements: { title: "库存流水", subtitle: "按仓库、资源和操作类型追踪库存变动明细" },
   logs: { title: "日志查看", subtitle: "配件替换、维修和出入库流水" },
   stats: { title: "统计财报", subtitle: "按月度和年度汇总库存收支、维修收入与库存价值" },
   configs: { title: "配置字典", subtitle: "车辆配置项与可选值维护" },
-  users: { title: "用户管理", subtitle: "账号、角色与客户端登录切换" }
+  users: { title: "用户管理", subtitle: "账号、角色与客户端登录切换" },
+  maintenance: { title: "数据维护", subtitle: "导出数据库备份，并在确认后恢复业务数据" }
 };
 
 export const icons = {

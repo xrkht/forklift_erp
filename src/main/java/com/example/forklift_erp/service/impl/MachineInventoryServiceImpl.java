@@ -8,6 +8,7 @@ import com.example.forklift_erp.dto.MachineConfigVO;
 import com.example.forklift_erp.dto.MachineInventoryCreateDTO;
 import com.example.forklift_erp.dto.MachineInventoryVO;
 import com.example.forklift_erp.dto.StockAdjustRequestDTO;
+import com.example.forklift_erp.dto.VehicleModelSummaryVO;
 import com.example.forklift_erp.entity.ConfigItem;
 import com.example.forklift_erp.entity.ConfigValue;
 import com.example.forklift_erp.entity.MachineConfig;
@@ -90,6 +91,37 @@ public class MachineInventoryServiceImpl implements MachineInventoryService {
                 normalizedSize,
                 result.getTotalElements()
         );
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public PageResult<VehicleModelSummaryVO> findModelPage(String keyword, Integer page, Integer size) {
+        int normalizedPage = com.example.forklift_erp.util.ListPageSupport.page(page);
+        int normalizedSize = com.example.forklift_erp.util.ListPageSupport.size(size);
+        Page<MachineInventoryRepository.VehicleModelSummaryProjection> result = repository.searchModelSummaries(
+                normalizeKeyword(keyword),
+                SecurityUtils.isAdminOrSuperAdmin(),
+                PageRequest.of(normalizedPage, normalizedSize)
+        );
+        return PageResult.of(
+                result.getContent().stream().map(VehicleModelSummaryVO::fromProjection).toList(),
+                normalizedPage,
+                normalizedSize,
+                result.getTotalElements()
+        );
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<MachineInventoryVO> findVehiclesByModel(String name, String specificationModel, String machineType) {
+        return repository.findVehiclesByModel(
+                        normalizeModelField(name),
+                        normalizeModelField(specificationModel),
+                        normalizeModelField(machineType),
+                        SecurityUtils.isAdminOrSuperAdmin()
+                ).stream()
+                .map(MachineInventoryVO::fromEntity)
+                .toList();
     }
 
     @Override
@@ -427,5 +459,9 @@ public class MachineInventoryServiceImpl implements MachineInventoryService {
 
     private String normalizeKeyword(String keyword) {
         return keyword == null ? null : keyword.trim();
+    }
+
+    private String normalizeModelField(String value) {
+        return value == null ? "" : value.trim();
     }
 }

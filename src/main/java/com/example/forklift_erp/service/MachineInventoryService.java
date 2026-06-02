@@ -6,6 +6,7 @@ import com.example.forklift_erp.dto.MachineConfigVO;
 import com.example.forklift_erp.dto.MachineInventoryCreateDTO;
 import com.example.forklift_erp.dto.MachineInventoryVO;
 import com.example.forklift_erp.dto.StockAdjustRequestDTO;
+import com.example.forklift_erp.dto.VehicleModelSummaryVO;
 import com.example.forklift_erp.entity.MachineInventory;
 
 import java.util.List;
@@ -15,6 +16,10 @@ public interface MachineInventoryService {
     List<MachineInventory> findAll();
 
     PageResult<MachineInventoryVO> findPage(String keyword, Integer page, Integer size);
+
+    PageResult<VehicleModelSummaryVO> findModelPage(String keyword, Integer page, Integer size);
+
+    List<MachineInventoryVO> findVehiclesByModel(String name, String specificationModel, String machineType);
 
     Optional<MachineInventory> findById(Long id);
 

@@ -10,6 +10,7 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
+import java.math.BigDecimal;
 import java.util.Optional;
 
 @Repository
@@ -34,4 +35,36 @@ public interface PurchaseOrderRepository extends JpaRepository<PurchaseOrder, Lo
                    or lower(coalesce(p.remark, '')) like lower(concat('%', :keyword, '%')))
             """)
     Page<PurchaseOrder> searchPage(@Param("keyword") String keyword, Pageable pageable);
+
+    @Query("""
+            select
+              count(p) as totalCount,
+              sum(coalesce(p.totalAmount, 0)) as totalAmount,
+              sum(coalesce(p.freightAmount, 0)) as freightTotal,
+              sum(case when p.status = 'RECEIVED' then 1 else 0 end) as received,
+              sum(case when p.status <> 'RECEIVED' and p.status <> 'CANCELED' then 1 else 0 end) as pending
+            from PurchaseOrder p
+            where (:keyword is null or :keyword = ''
+                   or lower(coalesce(p.purchaseNo, '')) like lower(concat('%', :keyword, '%'))
+                   or lower(coalesce(p.supplierName, '')) like lower(concat('%', :keyword, '%'))
+                   or lower(coalesce(p.resourceType, '')) like lower(concat('%', :keyword, '%'))
+                   or lower(coalesce(p.resourceCode, '')) like lower(concat('%', :keyword, '%'))
+                   or lower(coalesce(p.resourceName, '')) like lower(concat('%', :keyword, '%'))
+                   or lower(coalesce(p.specificationModel, '')) like lower(concat('%', :keyword, '%'))
+                   or lower(coalesce(p.status, '')) like lower(concat('%', :keyword, '%'))
+                   or lower(coalesce(p.operator, '')) like lower(concat('%', :keyword, '%'))
+                   or lower(coalesce(p.remark, '')) like lower(concat('%', :keyword, '%')))
+            """)
+    PurchaseSummaryProjection summarize(@Param("keyword") String keyword);
+
+    @Query("select count(distinct p.supplierName) from PurchaseOrder p where p.supplierName is not null and p.supplierName <> ''")
+    long countDistinctSupplierNames();
+
+    interface PurchaseSummaryProjection {
+        Long getTotalCount();
+        BigDecimal getTotalAmount();
+        BigDecimal getFreightTotal();
+        Long getReceived();
+        Long getPending();
+    }
 }

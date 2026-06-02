@@ -39,6 +39,7 @@ import java.util.Set;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.hamcrest.Matchers.containsString;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
@@ -515,6 +516,72 @@ class ModificationWorkOrderIntegrationTests extends TestcontainersDatabaseSuppor
         });
     }
 
+    @Test
+    void vehicleModelSummaryEndpointAggregatesPagedRowsAndListsModelVehicles() throws Exception {
+        String suffix = unique("model");
+        String modelName = "Codex model " + suffix;
+        String specificationModel = "CPCD-" + suffix;
+        String machineType = "diesel-test";
+        String firstVehicleNumber = "VM-" + unique("first");
+        String secondVehicleNumber = "VM-" + unique("second");
+
+        Map<String, Object> templatePayload = new LinkedHashMap<>();
+        templatePayload.put("name", modelName);
+        templatePayload.put("specificationModel", specificationModel);
+        templatePayload.put("machineType", machineType);
+        templatePayload.put("supplier", "Codex Supplier");
+        templatePayload.put("purchasePrice", new BigDecimal("1000.00"));
+        templatePayload.put("modelOnly", true);
+        JsonNode template = createInventory(templatePayload);
+        machinesToCleanup.add(template.path("id").asLong());
+
+        Map<String, Object> firstPayload = new LinkedHashMap<>();
+        firstPayload.put("vehicleProductNumber", firstVehicleNumber);
+        firstPayload.put("name", modelName);
+        firstPayload.put("specificationModel", specificationModel);
+        firstPayload.put("machineType", machineType);
+        firstPayload.put("supplier", "Codex Supplier");
+        firstPayload.put("inventoryCount", 1);
+        JsonNode first = createInventory(firstPayload);
+        machinesToCleanup.add(first.path("id").asLong());
+
+        Map<String, Object> secondPayload = new LinkedHashMap<>(firstPayload);
+        secondPayload.put("vehicleProductNumber", secondVehicleNumber);
+        secondPayload.put("inventoryCount", 2);
+        JsonNode second = createInventory(secondPayload);
+        machinesToCleanup.add(second.path("id").asLong());
+
+        mockMvc.perform(get("/api/inventory/models")
+                        .header("Authorization", bearer(superToken))
+                        .param("paged", "true")
+                        .param("page", "0")
+                        .param("size", "5")
+                        .param("keyword", suffix))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(200))
+                .andExpect(jsonPath("$.data.totalElements").value(1))
+                .andExpect(jsonPath("$.data.content[0].name").value(modelName))
+                .andExpect(jsonPath("$.data.content[0].specificationModel").value(specificationModel))
+                .andExpect(jsonPath("$.data.content[0].machineType").value(machineType))
+                .andExpect(jsonPath("$.data.content[0].modelTemplateId").value(template.path("id").asLong()))
+                .andExpect(jsonPath("$.data.content[0].unitCount").value(2))
+                .andExpect(jsonPath("$.data.content[0].inventoryCount").value(3))
+                .andExpect(jsonPath("$.data.content[0].vehicleNumbers").value(containsString(firstVehicleNumber)))
+                .andExpect(jsonPath("$.data.content[0].vehicleNumbers").value(containsString(secondVehicleNumber)));
+
+        mockMvc.perform(get("/api/inventory/model-vehicles")
+                        .header("Authorization", bearer(superToken))
+                        .param("name", modelName)
+                        .param("specificationModel", specificationModel)
+                        .param("machineType", machineType))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(200))
+                .andExpect(jsonPath("$.data.length()").value(2))
+                .andExpect(jsonPath("$.data[0].vehicleProductNumber").value(firstVehicleNumber))
+                .andExpect(jsonPath("$.data[0].modelOnly").value(false))
+                .andExpect(jsonPath("$.data[1].vehicleProductNumber").value(secondVehicleNumber));
+    }
+
     private JsonNode createMachine() throws Exception {
         Map<String, Object> payload = new LinkedHashMap<>();
         payload.put("vehicleProductNumber", "MO-" + unique("machine"));
@@ -524,6 +591,10 @@ class ModificationWorkOrderIntegrationTests extends TestcontainersDatabaseSuppor
         payload.put("supplier", "Codex Supplier");
         payload.put("inventoryCount", 1);
 
+        return createInventory(payload);
+    }
+
+    private JsonNode createInventory(Map<String, Object> payload) throws Exception {
         String response = mockMvc.perform(post("/api/inventory")
                         .header("Authorization", bearer(superToken))
                         .contentType(MediaType.APPLICATION_JSON)

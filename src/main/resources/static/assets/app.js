@@ -1,14 +1,18 @@
 import { clearSession, createApiClient, readStoredToken, readStoredUser, saveSession } from "./modules/session.js";
 import { endpoints } from "./modules/routes.js";
-import { assignPageState, pageContent, pageUrl, resetPage } from "./modules/paging.js";
+import { resetPage } from "./modules/paging.js";
 import { createInitialState, LOG_PAGE_SIZE, LIST_PAGE_SIZE } from "./modules/app-state.js";
+import { activeTabPageKeys, pagedTabs, summaryTabs } from "./modules/list-config.js";
 import { icons, tabs } from "./modules/ui-config.js";
 import { createFields } from "./modules/field-config.js";
 import { dateTime, dateValue, display, emptyState, escapeAttr, escapeHtml, fileSize, filterRows, money, normalizeText, nowInputDateTime, sortById, sortLogs, todayInputDate, toInputValue } from "./modules/display-utils.js";
 import { badge, jobTagBadge, jobTagLabel, jobTagType, logCategoryBadge, modificationStatusBadge, nextJobTag, normalizeJobTag, operationActionBadge, quantityChange, rentalStatusBadge, repairStatusText, resourceTypeLabel, roleBadges, statusBadge, stockBadge, stockStatusBadge, stockStatusLabel, stockText, yesNoBadge } from "./modules/status-ui.js";
+import { createDataLoaders, referencePageUrl, rowsFromPayload } from "./modules/data-loader.js";
 
 const LIST_STATE_STORAGE_KEY = "forklift-erp:list-state:v1";
 const DETAIL_DRAWER_TRANSITION_MS = 240;
+const REMOTE_COMBO_DEBOUNCE_MS = 250;
+const REMOTE_COMBO_PAGE_SIZE = 30;
 
 const state = createInitialState({
   token: readStoredToken(),
@@ -17,6 +21,31 @@ const state = createInitialState({
 restorePersistedListState();
 
 const api = createApiClient(() => state.token);
+
+const {
+  ensureConfigData,
+  loadAllData,
+  loadConfigValues,
+  loadCurrentTab,
+  loadPagedTab,
+  loadStatistics,
+  loadVehicleModelData
+} = createDataLoaders({
+  state,
+  api,
+  endpoints,
+  pagedTabs,
+  summaryTabs,
+  activePagedTab,
+  hasPermission,
+  sortById,
+  sortLogs,
+  prepareVehicleModelSummary,
+  loadVehicleDetail,
+  loadVehicleModelDetail,
+  renderCurrentTab,
+  restoreConfigItemScroll
+});
 
 const fields = createFields({
   nowInputDateTime,
@@ -55,32 +84,16 @@ const fields = createFields({
   purchaseStatusOptions,
   stocktakingResourceTypeOptions,
   stocktakingResourceOptions,
-  stocktakingStatusOptions
+  stocktakingStatusOptions,
+  warehouseOptions,
+  transferResourceTypeOptions,
+  stockTransferResourceOptions
 });
-
-const pagedTabs = {
-  vehicles: { endpoint: endpoints.vehicle.list, dataKey: "vehicles", searchKey: "vehicles", permission: null, sortDesc: true },
-  parts: { endpoint: endpoints.part.list, dataKey: "parts", searchKey: "parts", permission: null, sortDesc: true },
-  modificationOrders: { endpoint: endpoints.modificationOrder.list, dataKey: "modificationOrders", searchKey: "modificationOrders", permission: "replace:write", sortDesc: true },
-  outboundOrders: { endpoint: endpoints.outboundOrder.list, dataKey: "outboundOrders", searchKey: "outboundOrders", permission: "stock:adjust", sortDesc: true },
-  rentals: { endpoint: endpoints.rental.list, dataKey: "rentals", searchKey: "rentals", permission: "stock:adjust", sortDesc: true },
-  customers: { endpoint: endpoints.customer.list, dataKey: "customers", searchKey: "customers", permission: null, sortDesc: false },
-  suppliers: { endpoint: endpoints.supplier.list, dataKey: "suppliers", searchKey: "suppliers", permission: "stock:adjust", sortDesc: false },
-  purchases: { endpoint: endpoints.purchaseOrder.list, dataKey: "purchaseOrders", searchKey: "purchases", permission: "stock:adjust", sortDesc: true },
-  stocktakes: { endpoint: endpoints.stocktaking.list, dataKey: "stocktakingRecords", searchKey: "stocktakes", permission: "stock:adjust", sortDesc: true },
-  repairs: { endpoint: endpoints.repair.list, dataKey: "repairs", searchKey: "repairs", permission: null, sortDesc: true },
-  logs: { endpoint: endpoints.logs, dataKey: "operationLogs", searchKey: "logs", permission: "log:read", sortDesc: false },
-  users: { endpoint: endpoints.user.list, dataKey: "users", searchKey: "users", permission: "user:read", sortDesc: true }
-};
-
-const activeTabPageKeys = {
-  modifications: "modificationOrders"
-};
-
-const summaryTabs = new Set(["outboundOrders", "rentals", "suppliers", "purchases", "stocktakes"]);
 
 let els;
 let searchReloadTimer = null;
+let remoteComboSearchTimer = null;
+let remoteComboRequestSequence = 0;
 let detailDrawerCloseTimer = null;
 let modalPointerDownStartedOnOverlay = false;
 let detailPointerDownStartedOnOverlay = false;
@@ -188,6 +201,15 @@ function restorePersistedListState() {
   if (persisted.sorts && typeof persisted.sorts === "object") {
     state.sorts = persisted.sorts;
   }
+  if (persisted.tableDensity === "compact" || persisted.tableDensity === "comfortable") {
+    state.tableDensity = persisted.tableDensity;
+  }
+  if (persisted.tableColumns && typeof persisted.tableColumns === "object") {
+    state.tableColumns = persisted.tableColumns;
+  }
+  if (persisted.filterViews && typeof persisted.filterViews === "object") {
+    state.filterViews = persisted.filterViews;
+  }
   if (Number.isFinite(Number(persisted.selectedStatsYear))) {
     state.selectedStatsYear = Number(persisted.selectedStatsYear);
   }
@@ -208,6 +230,9 @@ function persistListState() {
       filters: state.filters,
       pages,
       sorts: state.sorts || {},
+      tableDensity: state.tableDensity,
+      tableColumns: state.tableColumns || {},
+      filterViews: state.filterViews || {},
       selectedStatsYear: state.selectedStatsYear,
       visibleLogRows: state.visibleLogRows
     }));
@@ -292,179 +317,6 @@ function logout(message) {
   if (message) showToast(message, "info");
 }
 
-async function loadAllData(options = {}) {
-  const activeModelKey = state.vehicleDetail?.modelKey;
-  await ensureConfigData();
-  await loadCurrentTab({ force: options.force !== false });
-  if (state.selectedVehicleId) {
-    if (activeModelKey) {
-      await loadVehicleModelDetail(activeModelKey, state.selectedVehicleId, false);
-    } else {
-      await loadVehicleDetail(state.selectedVehicleId, false);
-    }
-  }
-}
-
-async function loadCurrentTab(options = {}) {
-  const tab = state.activeTab;
-  if (tab === "overview") {
-    await loadOverviewData(options);
-    return;
-  }
-  if (tab === "stats") {
-    if (hasPermission("log:read")) {
-      await loadStatistics(state.selectedStatsYear);
-    } else {
-      state.data.statistics = null;
-    }
-    return;
-  }
-  if (tab === "configs") {
-    await ensureConfigData(true);
-    return;
-  }
-  if (tab === "vehicles") {
-    await loadVehicleModelData(options);
-    return;
-  }
-  const pagedTab = activePagedTab();
-  if (pagedTab) {
-    await loadPagedTab(pagedTab, options);
-  }
-}
-
-async function ensureConfigData(force = false) {
-  if (!force && state.data.configItems.length) return;
-  state.data.configItems = sortById(await api(endpoints.configItem.list), false);
-  await loadConfigValueCache(state.data.configItems);
-  if (!state.selectedConfigItemId && state.data.configItems.length) {
-    state.selectedConfigItemId = state.data.configItems[0].id;
-  }
-  if (state.selectedConfigItemId) {
-    state.data.configValues = sortById(state.data.configValueMap[state.selectedConfigItemId] || await fetchConfigValues(state.selectedConfigItemId), false);
-  }
-}
-
-async function loadOverviewData() {
-  await Promise.all([
-    hasPermission("stock:adjust") ? loadTodoCenter() : Promise.resolve(),
-    loadPagedTab("vehicles", { force: true, silent: true, withVehicleReferences: false }),
-    loadPagedTab("parts", { force: true, silent: true }),
-    loadPagedTab("repairs", { force: true, silent: true }),
-    loadPagedTab("outboundOrders", { force: true, silent: true }),
-    loadPagedTab("rentals", { force: true, silent: true })
-  ]);
-  await loadVehicleFlowReferences({ force: true });
-}
-
-async function loadTodoCenter() {
-  state.data.todoCenter = await api(endpoints.todos);
-}
-
-async function loadVehicleModelData(options = {}) {
-  if (options.force === false && state.reference.vehiclesLoaded) return;
-  state.data.vehicles = sortById(await api(endpoints.vehicle.list));
-  state.reference.vehiclesLoaded = true;
-}
-
-async function loadPagedTab(tab, options = {}) {
-  const config = pagedTabs[tab];
-  if (!config) return;
-  if (config.permission && !hasPermission(config.permission)) {
-    state.data[config.dataKey] = [];
-    assignPageState(state.pages[tab], { content: [], page: 0, size: state.pages[tab].size, totalElements: 0, totalPages: 0, first: true, last: true });
-    return;
-  }
-
-  const pageState = state.pages[tab];
-  pageState.loading = true;
-  const keyword = state.search[config.searchKey] || "";
-  const [payload, summary] = await Promise.all([
-    api(pageUrl(config.endpoint, pageState, keyword)),
-    loadListSummary(tab, keyword)
-  ]);
-  const rows = pageContent(payload);
-  state.data[config.dataKey] = config.dataKey === "operationLogs"
-    ? sortLogs(rows)
-    : sortById(rows, config.sortDesc !== false);
-  if (summary) {
-    state.data.summaries[tab] = summary;
-  } else if (summaryTabs.has(tab)) {
-    delete state.data.summaries[tab];
-  }
-  assignPageState(pageState, payload);
-
-  if (tab === "vehicles" && options.withVehicleReferences !== false) {
-    await loadVehicleFlowReferences({ force: true });
-  }
-  if (tab === "repairs" && hasPermission("stock:adjust") && !state.reference.rentalsLoaded) {
-    state.data.rentals = sortById(await api(endpoints.rental.list));
-    state.reference.rentalsLoaded = true;
-  }
-}
-
-async function loadListSummary(tab, keyword = "") {
-  if (!summaryTabs.has(tab) || !endpoints.listSummary) return null;
-  const params = new URLSearchParams({ type: tab });
-  if (keyword && keyword.trim()) {
-    params.set("keyword", keyword.trim());
-  }
-  try {
-    return await api(`${endpoints.listSummary}?${params.toString()}`);
-  } catch (error) {
-    console.warn("List summary failed", error);
-    return null;
-  }
-}
-
-async function loadVehicleFlowReferences(options = {}) {
-  if (!hasPermission("stock:adjust")) {
-    state.data.outboundOrders = [];
-    state.data.rentals = [];
-    state.reference.outboundOrdersLoaded = true;
-    state.reference.rentalsLoaded = true;
-    return;
-  }
-  if (options.force === false && state.reference.outboundOrdersLoaded && state.reference.rentalsLoaded) {
-    return;
-  }
-  const [orders, rentals] = await Promise.all([
-    api(endpoints.outboundOrder.list),
-    api(endpoints.rental.list)
-  ]);
-  state.data.outboundOrders = sortById(orders);
-  state.data.rentals = sortById(rentals);
-  state.reference.outboundOrdersLoaded = true;
-  state.reference.rentalsLoaded = true;
-}
-
-async function loadStatistics(year) {
-  state.selectedStatsYear = Number(year || new Date().getFullYear());
-  state.data.statistics = await api(`${endpoints.statistics}?year=${state.selectedStatsYear}`);
-}
-
-async function fetchConfigValues(itemId) {
-  if (!itemId) return [];
-  return api(`/api/config/items/${itemId}/values`);
-}
-
-async function loadConfigValueCache(items = state.data.configItems) {
-  const entries = await Promise.all((items || []).map(async item => {
-    const values = sortById(await fetchConfigValues(item.id), false);
-    return [item.id, values];
-  }));
-  state.data.configValueMap = Object.fromEntries(entries);
-}
-
-async function loadConfigValues(itemId, options = {}) {
-  state.selectedConfigItemId = Number(itemId);
-  const values = sortById(await fetchConfigValues(itemId), false);
-  state.data.configValueMap[state.selectedConfigItemId] = values;
-  state.data.configValues = values;
-  renderCurrentTab();
-  if (options.restoreConfigScroll) restoreConfigItemScroll();
-}
-
 function restoreConfigItemScroll() {
   requestAnimationFrame(() => {
     const list = els.content.querySelector(".config-items-pane .config-list");
@@ -474,6 +326,7 @@ function restoreConfigItemScroll() {
 
 async function loadVehicleDetail(id, shouldRender = true) {
   state.selectedVehicleId = Number(id);
+  ensureVehicleDetailTab();
   const [detail, logs, workOrders, parts] = await Promise.all([
     api(`/api/inventory/${id}/detail`),
     api(`/api/replace/machine/${id}`),
@@ -485,8 +338,9 @@ async function loadVehicleDetail(id, shouldRender = true) {
 }
 
 async function loadVehicleModelDetail(modelKey, selectedMachineId = null, shouldRender = true) {
-  const vehicles = vehiclesForModelKey(modelKey);
-  const model = vehicleModelGroups().find(group => group.modelKey === modelKey) || { ...decodeVehicleModelKey(modelKey), modelKey, vehicles };
+  ensureVehicleDetailTab();
+  const vehicles = await fetchVehicleModelVehicles(modelKey);
+  const model = modelSummaryForKey(modelKey) || { ...decodeVehicleModelKey(modelKey), modelKey, vehicles };
   const selectedId = Number(selectedMachineId || state.selectedVehicleId || vehicles[0]?.id || 0);
   const selected = vehicles.find(vehicle => Number(vehicle.id) === selectedId) || vehicles[0];
   if (!selected) {
@@ -519,6 +373,11 @@ async function loadVehicleModelDetail(modelKey, selectedMachineId = null, should
 }
 
 async function handleNav(event) {
+  const actionButton = event.target.closest("[data-action], [data-select-action]");
+  if (actionButton) {
+    await handleContentClick(event);
+    return;
+  }
   const button = event.target.closest("[data-tab]");
   if (!button) return;
   if (button.dataset.tab === state.activeTab) {
@@ -561,8 +420,10 @@ async function handleContentClick(event) {
       if (key === "logs") state.visibleLogRows = LOG_PAGE_SIZE;
       if (tab && tab === activePagedTab()) {
         resetPage(state.pages[tab]);
-        if (tab !== "vehicles") {
-          els.content.innerHTML = renderLoading();
+        els.content.innerHTML = renderLoading();
+        if (tab === "vehicles") {
+          await loadVehicleModelData({ force: true });
+        } else {
           await loadPagedTab(tab, { force: true });
         }
       }
@@ -593,6 +454,37 @@ async function handleContentClick(event) {
     }
     if (action === "sort-table") {
       applyTableSort(control.dataset.tableKey, control.dataset.sortKey);
+      persistListState();
+      renderCurrentTab();
+      return;
+    }
+    if (action === "toggle-table-density") {
+      state.tableDensity = state.tableDensity === "compact" ? "comfortable" : "compact";
+      persistListState();
+      renderCurrentTab();
+      return;
+    }
+    if (action === "toggle-table-column") {
+      setTableColumnVisibility(control.dataset.tableKey, control.dataset.columnKey, control.checked);
+      persistListState();
+      renderCurrentTab();
+      return;
+    }
+    if (action === "save-filter-view") {
+      saveFilterView(control.dataset.tableKey);
+      persistListState();
+      showToast("筛选方案已保存", "success");
+      renderCurrentTab();
+      return;
+    }
+    if (action === "apply-filter-view") {
+      await applyFilterView(control.dataset.tableKey);
+      return;
+    }
+    if (action === "delete-filter-view") {
+      deleteFilterView(control.dataset.tableKey);
+      persistListState();
+      showToast("筛选方案已清除", "info");
       renderCurrentTab();
       return;
     }
@@ -635,11 +527,29 @@ async function handleContentClick(event) {
       await downloadExcel(control.dataset.exportType);
       return;
     }
+    if (action === "download-backup") {
+      await downloadDataBackup();
+      return;
+    }
+    if (action === "restore-backup") {
+      await openEntityModal("dataRestore", { confirmation: "RESTORE-DATA-BACKUP" });
+      return;
+    }
+    if (action === "stock-transfer") {
+      await openEntityModal("stockTransfer", {});
+      return;
+    }
+    if (action === "quick-vehicle-inbound") {
+      await openEntityModal("vehicleInbound", vehicleInboundDefaultsForModel({}));
+      return;
+    }
     if (action === "page-list") {
       const tab = control.dataset.pageTab;
       if (!pagedTabs[tab]) return;
       state.pages[tab].page = Math.max(0, Number(control.dataset.page || 0));
       if (tab === "vehicles") {
+        els.content.innerHTML = renderLoading();
+        await loadVehicleModelData({ force: true });
         renderCurrentTab();
         return;
       }
@@ -662,12 +572,12 @@ async function handleContentClick(event) {
       return;
     }
     if (action === "model-inbound") {
-      const group = vehicleModelGroups().find(item => item.modelKey === control.dataset.modelKey);
+      const group = modelSummaryForKey(control.dataset.modelKey);
       await openEntityModal("vehicleInbound", vehicleInboundDefaultsForModel(group));
       return;
     }
     if (action === "model-outbound") {
-      const group = vehicleModelGroups().find(item => item.modelKey === control.dataset.modelKey);
+      const group = modelSummaryForKey(control.dataset.modelKey);
       await openEntityModal("vehicleOutbound", vehicleOutboundDefaultsForModel(group));
       return;
     }
@@ -803,6 +713,13 @@ async function handleContentClick(event) {
       scrollToVehicleDetail();
       return;
     }
+    if (action === "set-vehicle-detail-tab") {
+      state.vehicleDetailTab = control.dataset.tab || "archive";
+      ensureVehicleDetailTab();
+      renderCurrentTab();
+      scrollToVehicleDetail();
+      return;
+    }
     if (action === "select-config-item") {
       const configList = control.closest(".config-list");
       state.configItemScrollTop = configList ? configList.scrollTop : 0;
@@ -919,15 +836,6 @@ function handleContentInput(event) {
   const tab = tabForSearchKey(input.dataset.searchFor);
   if (tab && tab === activePagedTab()) {
     resetPage(state.pages[tab]);
-    if (tab === "vehicles") {
-      renderCurrentTab();
-      const nextInput = els.content.querySelector(`[data-search-for="${input.dataset.searchFor}"]`);
-      if (nextInput) {
-        nextInput.focus();
-        nextInput.setSelectionRange(input.value.length, input.value.length);
-      }
-      return;
-    }
     schedulePagedReload(tab);
     return;
   }
@@ -952,7 +860,11 @@ function schedulePagedReload(tab) {
   window.clearTimeout(searchReloadTimer);
   searchReloadTimer = window.setTimeout(async () => {
     try {
-      await loadPagedTab(tab, { force: true });
+      if (tab === "vehicles") {
+        await loadVehicleModelData({ force: true });
+      } else {
+        await loadPagedTab(tab, { force: true });
+      }
       renderCurrentTab();
       const input = els.content.querySelector(`[data-search-for="${pagedTabs[tab].searchKey}"]`);
       if (input) {
@@ -1061,7 +973,9 @@ async function handleModalClick(event) {
   }
   const comboInput = event.target.closest("[data-combo-input]");
   if (comboInput) {
-    openCombo(comboInput.closest("[data-combo]"), comboInput.value.trim());
+    const combo = comboInput.closest("[data-combo]");
+    openCombo(combo, comboInput.value.trim());
+    scheduleRemoteComboSearch(combo, comboInput.value.trim(), { immediate: combo.dataset.remoteLoaded !== "true" });
     return;
   }
   const toggleOption = event.target.closest("[data-toggle-option]");
@@ -1111,12 +1025,15 @@ function handleModalInput(event) {
     hidden.dataset.selectedMeta = "";
   }
   openCombo(combo, query);
+  scheduleRemoteComboSearch(combo, query);
 }
 
 function handleModalFocusIn(event) {
   const input = event.target.closest("[data-combo-input]");
   if (!input) return;
-  openCombo(input.closest("[data-combo]"), input.value.trim());
+  const combo = input.closest("[data-combo]");
+  openCombo(combo, input.value.trim());
+  scheduleRemoteComboSearch(combo, input.value.trim(), { immediate: combo.dataset.remoteLoaded !== "true" });
 }
 
 function updateConfigSelectionRows(button) {
@@ -1195,6 +1112,18 @@ async function handleModalChange(event) {
 
   if (kind === "stocktaking" && event.target.name === "resourceId") {
     syncStocktakingQuantity(form, Number(event.target.value || 0));
+  }
+
+  if (kind === "stockTransfer" && event.target.name === "resourceType") {
+    state.modal.item.resourceId = null;
+    state.modal.item.fromWarehouseId = null;
+    state.modal.item.version = null;
+    renderModal();
+    return;
+  }
+
+  if (kind === "stockTransfer" && event.target.name === "resourceId") {
+    syncStockTransferResource(form, Number(event.target.value || 0));
   }
 
   if (kind === "purchaseOrder" && ["quantity", "unitPrice", "totalAmount"].includes(event.target.name)) {
@@ -1316,6 +1245,25 @@ async function handleModalSubmit(event) {
       markReferenceDataStale(referenceKindsForMutation(kind));
       await loadAllData();
       renderCurrentTab();
+    } catch (error) {
+      handleActionError(error);
+    }
+    return;
+  }
+
+  if (kind === "dataRestore") {
+    if (!(await confirmDanger({
+      title: "恢复数据备份",
+      target: "数据库业务数据",
+      impact: "恢复会清空当前应用表并用备份文件回填，请先确认已经下载了最新备份。"
+    }))) return;
+    try {
+      await restoreDataBackup(form);
+      closeModal();
+      markReferenceDataStale();
+      await loadAllData({ force: true });
+      renderCurrentTab();
+      showToast("数据恢复完成", "success");
     } catch (error) {
       handleActionError(error);
     }
@@ -1493,6 +1441,9 @@ async function handleModalSubmit(event) {
       const baseUrl = `${endpoints.purchaseOrder.freight(item.id)}?freightAmount=${encodeURIComponent(payload.freightAmount ?? 0)}`;
       await api(withVersion(baseUrl, item), { method: "PUT" });
       showContextSuccess("采购运费已更新", entityDisplayName("purchaseOrder", item), money(payload.freightAmount ?? 0));
+    } else if (kind === "stockTransfer") {
+      await api(endpoints.warehouse.transfer, { method: "POST", body: payload });
+      showContextSuccess("库存调拨完成", stockTransferResourceName(payload), `数量：${payload.quantity || 0}`);
     } else if (item.id && endpoints[kind].update) {
       await api(endpoints[kind].update(item.id), { method: "PUT", body: payload });
       showContextSuccess(`${entityLabel(kind)}已保存`, entityDisplayName(kind, { ...item, ...payload }), "当前筛选和页码已保留");
@@ -1927,6 +1878,25 @@ async function downloadProtectedFile(url, fallbackName) {
   setTimeout(() => URL.revokeObjectURL(objectUrl), 1000);
 }
 
+async function downloadDataBackup() {
+  await downloadProtectedFile(endpoints.admin.backup, `forklift-erp-backup-${todayInputDate()}.json`);
+}
+
+async function restoreDataBackup(form) {
+  const file = form.elements.backupFile?.files?.[0];
+  const confirmation = String(form.elements.confirmation?.value || "").trim();
+  if (!file) {
+    throw new Error("请选择备份文件");
+  }
+  const formData = new FormData();
+  formData.append("file", file);
+  formData.append("confirmation", confirmation);
+  await api(endpoints.admin.restore, {
+    method: "POST",
+    body: formData
+  });
+}
+
 function exportFileLabel(type) {
   return {
     vehicles: "车辆库存",
@@ -2239,47 +2209,54 @@ async function openEntityModal(kind, item = {}) {
 }
 
 async function ensureModalDependencies(kind) {
-  const needsVehicles = ["vehicleStock", "vehicleOutbound", "partReplace", "vehiclePartInstall", "modificationOrder", "vehicleInbound", "rental", "repair", "stocktaking"].includes(kind);
-  const needsParts = ["part", "partStock", "partReplace", "vehiclePartInstall", "modificationOrder", "repair", "stocktaking"].includes(kind);
+  const needsVehicles = ["vehicleStock", "vehicleOutbound", "partReplace", "vehiclePartInstall", "modificationOrder", "vehicleInbound", "rental", "repair", "stocktaking", "stockTransfer"].includes(kind);
+  const needsParts = ["part", "partStock", "partReplace", "vehiclePartInstall", "modificationOrder", "repair", "stocktaking", "stockTransfer"].includes(kind);
   const needsCustomers = ["vehicleOutbound", "partStock", "partOutbound", "customer", "rental", "repair"].includes(kind);
   const needsSuppliers = kind === "purchaseOrder";
   const needsRentals = ["vehicleOutbound", "rental", "repair"].includes(kind);
   const needsRepairUsers = kind === "repair";
+  const needsWarehouses = ["warehouse", "stockTransfer"].includes(kind);
   const requests = [];
   if (needsVehicles && !state.reference.vehiclesLoaded) {
-    requests.push(api(endpoints.vehicle.list).then(rows => {
-      state.data.vehicles = sortById(rows);
+    requests.push(api(referencePageUrl(endpoints.vehicle.list)).then(payload => {
+      state.data.vehicles = sortById(rowsFromPayload(payload));
       state.reference.vehiclesLoaded = true;
     }));
   }
   if (needsParts && !state.reference.partsLoaded) {
-    requests.push(api(endpoints.part.list).then(rows => {
-      state.data.parts = sortById(rows);
+    requests.push(api(referencePageUrl(endpoints.part.list)).then(payload => {
+      state.data.parts = sortById(rowsFromPayload(payload));
       state.reference.partsLoaded = true;
     }));
   }
   if (needsCustomers && !state.reference.customersLoaded && hasAnyPermission("stock:adjust", "vehicle:write", "repair:write")) {
-    requests.push(api(endpoints.customer.list).then(rows => {
-      state.data.customers = sortById(rows, false);
+    requests.push(api(referencePageUrl(endpoints.customer.list)).then(payload => {
+      state.data.customers = sortById(rowsFromPayload(payload), false);
       state.reference.customersLoaded = true;
     }));
   }
   if (needsSuppliers && !state.reference.suppliersLoaded && hasPermission("stock:adjust")) {
-    requests.push(api(endpoints.supplier.list).then(rows => {
-      state.data.suppliers = sortById(rows, false);
+    requests.push(api(referencePageUrl(endpoints.supplier.list)).then(payload => {
+      state.data.suppliers = sortById(rowsFromPayload(payload), false);
       state.reference.suppliersLoaded = true;
     }));
   }
   if (needsRentals && !state.reference.rentalsLoaded && hasPermission("stock:adjust")) {
-    requests.push(api(endpoints.rental.list).then(rows => {
-      state.data.rentals = sortById(rows);
+    requests.push(api(referencePageUrl(endpoints.rental.list)).then(payload => {
+      state.data.rentals = sortById(rowsFromPayload(payload));
       state.reference.rentalsLoaded = true;
     }));
   }
   if (needsRepairUsers && hasPermission("repair:write")) {
-    requests.push(api(endpoints.user.repairers).then(rows => {
-      state.data.repairUsers = sortById(rows);
+    requests.push(api(endpoints.user.repairers).then(payload => {
+      state.data.repairUsers = sortById(rowsFromPayload(payload));
       state.reference.repairUsersLoaded = true;
+    }));
+  }
+  if (needsWarehouses && !state.reference.warehousesLoaded && hasPermission("stock:adjust")) {
+    requests.push(api(referencePageUrl(endpoints.warehouse.list)).then(payload => {
+      state.data.warehouses = sortById(rowsFromPayload(payload), false);
+      state.reference.warehousesLoaded = true;
     }));
   }
   await Promise.all(requests);
@@ -2290,6 +2267,7 @@ function markReferenceDataStale(kinds = []) {
   if (!kinds.length || kinds.includes("part")) state.reference.partsLoaded = false;
   if (!kinds.length || kinds.includes("customer")) state.reference.customersLoaded = false;
   if (!kinds.length || kinds.includes("supplier")) state.reference.suppliersLoaded = false;
+  if (!kinds.length || kinds.includes("warehouse")) state.reference.warehousesLoaded = false;
   if (!kinds.length || kinds.includes("outboundOrder")) state.reference.outboundOrdersLoaded = false;
   if (!kinds.length || kinds.includes("rental")) state.reference.rentalsLoaded = false;
   if (!kinds.length || kinds.includes("repairUser")) state.reference.repairUsersLoaded = false;
@@ -2312,6 +2290,8 @@ function referenceKindsForMutation(kind) {
     repair: ["vehicle", "part", "customer", "rental"],
     customer: ["customer"],
     supplier: ["supplier"],
+    warehouse: ["warehouse"],
+    stockTransfer: ["vehicle", "part", "warehouse"],
     purchaseOrder: ["supplier"],
     purchaseFreight: [],
     stocktaking: ["vehicle", "part"],
@@ -2335,6 +2315,8 @@ function resetPageAfterMutation(kind) {
     repair: "repairs",
     outboundOrder: "outboundOrders",
     supplier: "suppliers",
+    warehouse: "warehouses",
+    stockTransfer: "warehouses",
     purchaseOrder: "purchases",
     purchaseFreight: "purchases",
     stocktaking: "stocktakes"
@@ -2485,11 +2467,17 @@ function renderCurrentTab() {
     case "stocktakes":
       els.content.innerHTML = renderStocktakes();
       break;
+    case "warehouses":
+      els.content.innerHTML = renderWarehouses();
+      break;
     case "repairs":
       els.content.innerHTML = renderRepairs();
       break;
     case "stats":
       els.content.innerHTML = renderStatistics();
+      break;
+    case "stockMovements":
+      els.content.innerHTML = renderStockMovements();
       break;
     case "logs":
       els.content.innerHTML = renderOperationLogs();
@@ -2499,6 +2487,9 @@ function renderCurrentTab() {
       break;
     case "users":
       els.content.innerHTML = renderUsers();
+      break;
+    case "maintenance":
+      els.content.innerHTML = renderMaintenance();
       break;
     default:
       els.content.innerHTML = renderOverview();
@@ -3009,10 +3000,7 @@ function renderOverviewShortcuts() {
 }
 
 function renderVehicles() {
-  const modelBaseRows = filterVehicleRows(filterRows(vehicleModelGroups(), state.search.vehicles, [
-    "name", "specificationModel", "configuration", "machineType", "supplier", "warehouseName", "vehicleNumbers"
-  ]));
-  const modelRows = paginateClientRows("vehicles", modelBaseRows);
+  const modelRows = filterVehicleRows(state.data.vehicleModels || []);
 
   return `
     <div class="page">
@@ -3626,6 +3614,134 @@ function renderStocktakes() {
   `;
 }
 
+function renderWarehouses() {
+  const rows = filterRows(state.data.warehouses, state.search.warehouses, [
+    "warehouseCode", "warehouseName", "warehouseType", "address"
+  ]);
+  const vehicleTotal = rows.reduce((sum, row) => sum + Number(row.vehicleCount || 0), 0);
+  const partQuantity = rows.reduce((sum, row) => sum + Number(row.partQuantity || 0), 0);
+  const defaultWarehouse = rows.find(row => row.defaultWarehouse);
+
+  return `
+    <div class="page">
+      <section class="summary-grid">
+        ${summaryCard("仓库数量", pageTotal("warehouses", rows.length), defaultWarehouse ? `默认：${defaultWarehouse.warehouseName}` : "未设置默认仓")}
+        ${summaryCard("整车库存", vehicleTotal, "按仓库余额汇总")}
+        ${summaryCard("配件库存", partQuantity, `${rows.reduce((sum, row) => sum + Number(row.partSkuCount || 0), 0)} 个 SKU`)}
+      </section>
+      <div class="toolbar">
+        <div class="search-box">
+          ${icon("search")}
+          <input type="search" placeholder="搜索仓库编码、名称、类型或地址" value="${escapeAttr(state.search.warehouses || "")}" data-search-for="warehouses">
+          ${state.search.warehouses ? `<button class="icon-btn" type="button" data-action="clear-search" data-search-for="warehouses" title="清空搜索">${icon("minus")}</button>` : ""}
+        </div>
+        <div class="toolbar-actions">
+          <button class="btn" type="button" data-action="stock-transfer">${icon("swap")}库存调拨</button>
+          <button class="btn btn-primary" type="button" data-action="create" data-kind="warehouse">${icon("plus")}新增仓库</button>
+        </div>
+      </div>
+      ${renderSurface("仓库列表", renderTable([
+        { label: "仓库", html: true, render: row => warehouseSummary(row) },
+        { label: "类型", key: "warehouseType" },
+        { label: "默认", html: true, render: row => row.defaultWarehouse ? badge("默认", "teal") : "" },
+        { label: "整车", key: "vehicleCount", formatter: stockText },
+        { label: "配件 SKU", key: "partSkuCount", formatter: stockText },
+        { label: "配件数量", key: "partQuantity", formatter: stockText },
+        { label: "操作", html: true, render: row => rowActions("warehouse", row, ["edit", "delete"]) }
+      ], rows, listTableOptions("warehouse", null)))}
+      ${renderPagination("warehouses")}
+    </div>
+  `;
+}
+
+function renderStockMovements() {
+  const rows = filterRows(state.data.stockMovements, state.search.stockMovements, [
+    "movementNo", "movementType", "resourceType", "resourceCode", "resourceName", "warehouseName", "operator", "remark"
+  ]);
+  return `
+    <div class="page">
+      ${renderToolbar("stockMovements", "搜索流水号、资源编码、名称、仓库或经办人", null, "", "log:read", { exportType: false })}
+      ${renderSurface("库存流水", renderTable([
+        { label: "时间", key: "createdAt", formatter: dateTime },
+        { label: "流水", html: true, render: row => stockMovementSummary(row) },
+        { label: "资源", html: true, render: row => stockMovementResource(row) },
+        { label: "仓库", key: "warehouseName" },
+        { label: "变动", html: true, render: row => stockMovementDelta(row) },
+        { label: "经办人", key: "operator" },
+        { label: "备注", key: "remark" }
+      ], rows, listTableOptions("stockMovement", null)))}
+      ${renderPagination("stockMovements")}
+    </div>
+  `;
+}
+
+function renderMaintenance() {
+  if (!hasRole("SUPER_ADMIN")) {
+    return `<div class="page">${renderSurface("数据维护", emptyState("当前账号无权访问数据维护"))}</div>`;
+  }
+  return `
+    <div class="page">
+      <section class="summary-grid">
+        ${summaryCard("数据库备份", "JSON", "导出当前应用表数据")}
+        ${summaryCard("恢复确认码", "RESTORE-DATA-BACKUP", "恢复前请先下载备份")}
+        ${summaryCard("附件文件", "未包含", "发票/合同实体文件需单独保管")}
+      </section>
+      ${renderSurface("备份与恢复", `
+        <div class="action-grid">
+          <button class="btn btn-primary" type="button" data-action="download-backup">${icon("download")}下载数据库备份</button>
+          <button class="btn" type="button" data-action="restore-backup">${icon("upload")}恢复数据库备份</button>
+        </div>
+      `)}
+    </div>
+  `;
+}
+
+function warehouseSummary(row = {}) {
+  return `
+    <div class="cell-stack">
+      <strong>${escapeHtml(row.warehouseName || "-")}</strong>
+      <span>${escapeHtml(row.warehouseCode || "-")}${row.address ? ` · ${escapeHtml(row.address)}` : ""}</span>
+    </div>
+  `;
+}
+
+function stockMovementSummary(row = {}) {
+  return `
+    <div class="cell-stack">
+      <strong>${escapeHtml(row.movementNo || "-")}</strong>
+      <span>${escapeHtml(movementTypeText(row.movementType))}</span>
+    </div>
+  `;
+}
+
+function stockMovementResource(row = {}) {
+  return `
+    <div class="cell-stack">
+      <strong>${escapeHtml(row.resourceCode || "-")}</strong>
+      <span>${escapeHtml(resourceTypeLabel(row.resourceType))} · ${escapeHtml(row.resourceName || "-")}</span>
+    </div>
+  `;
+}
+
+function stockMovementDelta(row = {}) {
+  const delta = Number(row.quantityDelta || 0);
+  const tone = delta > 0 ? "teal" : delta < 0 ? "danger" : "muted";
+  return `<span>${badge(`${delta > 0 ? "+" : ""}${delta}`, tone)}</span><span class="helper-inline">${escapeHtml(row.beforeQuantity ?? 0)} -> ${escapeHtml(row.afterQuantity ?? 0)}</span>`;
+}
+
+function movementTypeText(type) {
+  return {
+    INITIAL: "期初",
+    INITIAL_BALANCE: "期初",
+    INBOUND: "入库",
+    OUTBOUND: "出库",
+    ADJUST: "调整",
+    TRANSFER: "调拨",
+    PART_INSTALL: "装车",
+    REPLACE: "替换"
+  }[type] || display(type);
+}
+
 function renderRepairs() {
   const rows = filterRows(state.data.repairs, state.search.repairs, [
     "vehicleNumber", "customerName", "repairPerson", "status", "faultDescription"
@@ -3979,6 +4095,147 @@ function renderVehiclePartsSurface(machine = {}, parts = []) {
   `, actions);
 }
 
+function vehicleDetailTabs() {
+  return [
+    { key: "archive", label: "档案" },
+    { key: "config", label: "配置" },
+    { key: "outbound", label: "出库" },
+    { key: "rental", label: "租赁" },
+    { key: "repair", label: "维修" },
+    { key: "modification", label: "改装" },
+    { key: "attachments", label: "附件" }
+  ];
+}
+
+function ensureVehicleDetailTab() {
+  const keys = vehicleDetailTabs().map(item => item.key);
+  if (!keys.includes(state.vehicleDetailTab)) state.vehicleDetailTab = "archive";
+  return state.vehicleDetailTab;
+}
+
+function renderVehicleDetailTabs(activeKey) {
+  return `
+    <div class="detail-tabs" role="tablist" aria-label="车辆详情">
+      ${vehicleDetailTabs().map(tab => `
+        <button class="detail-tab${tab.key === activeKey ? " is-active" : ""}" type="button" role="tab" aria-selected="${tab.key === activeKey ? "true" : "false"}" data-action="set-vehicle-detail-tab" data-tab="${escapeAttr(tab.key)}">
+          ${escapeHtml(tab.label)}
+        </button>
+      `).join("")}
+    </div>
+  `;
+}
+
+function renderVehicleDetailTabContent(activeKey, machine, detail) {
+  const configs = detail.configs || [];
+  const logs = detail.logs || [];
+  const workOrders = detail.workOrders || [];
+  const vehicleParts = detail.vehicleParts || [];
+  const order = detail.order || null;
+  if (!machine?.id && activeKey !== "archive") return emptyState("请先选择具体车号");
+  if (activeKey === "config") return `<div class="grid-two">${renderVehicleConfigSurface(machine, configs)}${renderVehiclePartsSurface(machine, vehicleParts)}</div>`;
+  if (activeKey === "outbound") return renderVehicleSalesSurface(machine, order);
+  if (activeKey === "rental") return renderVehicleRentalSurface(machine);
+  if (activeKey === "repair") return renderVehicleRepairSurface(machine);
+  if (activeKey === "modification") return `<div class="grid-two">${renderVehicleModificationOrdersSurface(workOrders)}${renderVehicleReplaceLogsSurface(logs)}</div>`;
+  if (activeKey === "attachments") return renderVehicleAttachmentsSurface(machine, order);
+  return `<div class="grid-two">${renderVehicleArchiveSurface(machine)}${renderVehicleDestinationSurface(machine)}</div>`;
+}
+
+function renderVehicleConfigSurface(machine = {}, configs = []) {
+  return renderSurface("当前配置", renderTable([
+    { label: "配置项", key: "itemName" },
+    { label: "当前值", key: "selectedValue" },
+    { label: "来源", key: "configSource" },
+    { label: "操作", html: true, render: row => `
+      <div class="action-row">
+        ${hasPermission("replace:write") ? `<button class="btn btn-sm" type="button" data-action="create-modification-order" data-machine-id="${escapeAttr(machine.id)}" data-machine-config-id="${escapeAttr(row.id)}">${icon("swap")}生成工单</button>` : ""}
+      </div>
+    ` }
+  ], configs));
+}
+
+function renderVehicleModificationOrdersSurface(workOrders = []) {
+  return renderSurface("改装工单", renderTable([
+    { label: "工单号", key: "workOrderNo" },
+    { label: "客户", key: "customerName" },
+    { label: "状态", html: true, render: row => modificationStatusBadge(row.status) },
+    { label: "替换明细", html: true, render: row => modificationLineSummary(row.lines) },
+    { label: "操作", html: true, render: row => modificationOrderActions(row) }
+  ], workOrders));
+}
+
+function renderVehicleReplaceLogsSurface(logs = []) {
+  return renderSurface("替换记录", renderTable([
+    { label: "配置项", key: "itemName" },
+    { label: "旧值", key: "oldValue" },
+    { label: "新值", key: "newValue" },
+    { label: "类型", key: "replaceType" },
+    { label: "时间", key: "createdAt", formatter: dateTime }
+  ], logs));
+}
+
+function renderVehicleRentalSurface(machine = {}) {
+  const rental = activeRentalForMachine(machine.id);
+  const actions = machine?.id && hasPermission("stock:adjust")
+    ? `<button class="btn btn-sm" type="button" data-action="vehicle-rental-direct" data-machine-id="${escapeAttr(machine.id)}">${icon("plus")}租赁登记</button>`
+    : "";
+  const body = rental ? renderDetailGrid([
+    { label: "租赁单", value: rental.rentalNo },
+    { label: "客户", value: rental.customerName },
+    { label: "去向", value: rental.destination },
+    { label: "月租价", value: money(rentalMonthlyPrice(rental)) },
+    { label: "开始日期", value: dateValue(rental.startDate) },
+    { label: "预计结束", value: dateValue(rental.endDate) },
+    { label: "状态", value: rentalStatusBadge(rental.status), html: true }
+  ]) : emptyState("当前车辆暂无进行中的租赁");
+  return renderSurface("租赁记录", body, actions);
+}
+
+function renderVehicleRepairSurface(machine = {}) {
+  const repairs = vehicleRepairsForMachine(machine);
+  const actions = hasPermission("repair:write")
+    ? `<button class="btn btn-sm" type="button" data-action="create" data-kind="repair">${icon("plus")}维修登记</button>`
+    : "";
+  const body = repairs.length ? renderTable([
+    { label: "维修时间", key: "repairDate", formatter: dateTime },
+    { label: "客户", html: true, render: row => repairCustomerSummary(row) },
+    { label: "维修人", html: true, render: row => repairPersonSummary(row) },
+    { label: "状态", html: true, render: row => repairStatusToggle(row) },
+    { label: "总费用", key: "totalFee", formatter: money },
+    { label: "操作", html: true, render: row => rowActions("repair", row, ["edit", "delete"]) }
+  ], repairs) : emptyState("当前车辆暂无维修记录");
+  return renderSurface("维修记录", body, actions);
+}
+
+function vehicleRepairsForMachine(machine = {}) {
+  const id = Number(machine.id || 0);
+  const vehicleNumber = String(machine.vehicleProductNumber || "").trim();
+  return (state.data.repairs || []).filter(item => {
+    if (id && Number(item.machineId || 0) === id) return true;
+    return vehicleNumber && String(item.vehicleNumber || "").trim() === vehicleNumber;
+  });
+}
+
+function renderVehicleAttachmentsSurface(machine = {}, order = null) {
+  const hasOrder = Boolean(order?.id);
+  const body = hasOrder ? renderDetailGrid([
+    { label: "订单号", value: order.orderNo },
+    { label: "发票", value: order.invoiceFileAvailable ? `${order.invoiceOriginalName || "已上传"} ${fileSize(order.invoiceFileSize)}` : "未上传" },
+    { label: "发票上传时间", value: dateTime(order.invoiceUploadedAt) },
+    { label: "合同", value: order.contractFileAvailable ? `${order.contractOriginalName || "已上传"} ${fileSize(order.contractFileSize)}` : "未上传" },
+    { label: "合同上传时间", value: dateTime(order.contractUploadedAt) }
+  ]) : emptyState("暂无销售出库订单附件");
+  const actions = hasOrder ? `
+    <div class="toolbar-actions">
+      ${isInvoiceUploadReady(order) ? `<button class="btn btn-sm" type="button" data-action="upload-invoice" data-id="${escapeAttr(order.id)}">${icon("upload")}上传发票</button>` : ""}
+      ${order.invoiceFileAvailable ? `<button class="btn btn-sm" type="button" data-action="download-invoice" data-id="${escapeAttr(order.id)}">${icon("download")}下载发票</button>` : ""}
+      ${isContractUploadReady(order) ? `<button class="btn btn-sm" type="button" data-action="upload-contract" data-id="${escapeAttr(order.id)}">${icon("upload")}上传合同</button>` : ""}
+      ${order.contractFileAvailable ? `<button class="btn btn-sm" type="button" data-action="download-contract" data-id="${escapeAttr(order.id)}">${icon("download")}下载合同</button>` : ""}
+    </div>
+  ` : "";
+  return renderSurface(`附件资料 · ${escapeHtml(machine.vehicleProductNumber || "-")}`, body, actions);
+}
+
 function renderVehicleDetail() {
   if (!state.vehicleDetail) return "";
   if (state.vehicleDetail.modelKey) {
@@ -3990,6 +4247,7 @@ function renderVehicleDetail() {
   const workOrders = state.vehicleDetail.workOrders || [];
   const vehicleParts = state.vehicleDetail.parts || [];
   const order = latestVehicleOutboundOrder(machine.id);
+  const activeTab = ensureVehicleDetailTab();
   return `
     <section class="surface detail-surface-pop" id="vehicleDetailSurface">
       <div class="surface-head">
@@ -4001,38 +4259,10 @@ function renderVehicleDetail() {
           ${hasPermission("replace:write") ? `<button class="btn btn-primary" type="button" data-action="create-modification-order" data-machine-id="${escapeAttr(machine.id || "")}">${icon("swap")}新建改装工单</button>` : ""}
         </div>
       </div>
-      <div class="surface-body split">
-        <div class="grid-two">
-          ${renderVehicleArchiveSurface(machine)}
-          ${renderVehicleSalesSurface(machine, order)}
-          ${renderVehicleDestinationSurface(machine)}
-          ${renderSurface("当前配置", renderTable([
-            { label: "配置项", key: "itemName" },
-            { label: "当前值", key: "selectedValue" },
-            { label: "来源", key: "configSource" },
-            { label: "操作", html: true, render: row => `
-              <div class="action-row">
-                ${hasPermission("replace:write") ? `<button class="btn btn-sm" type="button" data-action="create-modification-order" data-machine-id="${escapeAttr(machine.id)}" data-machine-config-id="${escapeAttr(row.id)}">${icon("swap")}生成工单</button>` : ""}
-              </div>
-            ` }
-          ], configs))}
-        </div>
-        <div class="grid-two">
-          ${renderVehiclePartsSurface(machine, vehicleParts)}
-          ${renderSurface("改装工单", renderTable([
-            { label: "工单号", key: "workOrderNo" },
-            { label: "客户", key: "customerName" },
-            { label: "状态", html: true, render: row => modificationStatusBadge(row.status) },
-            { label: "替换明细", html: true, render: row => modificationLineSummary(row.lines) },
-            { label: "操作", html: true, render: row => modificationOrderActions(row) }
-          ], workOrders))}
-          ${renderSurface("替换记录", renderTable([
-            { label: "配置项", key: "itemName" },
-            { label: "旧值", key: "oldValue" },
-            { label: "新值", key: "newValue" },
-            { label: "类型", key: "replaceType" },
-            { label: "时间", key: "createdAt", formatter: dateTime }
-          ], logs))}
+      <div class="surface-body detail-tab-body">
+        ${renderVehicleDetailTabs(activeTab)}
+        <div class="detail-tab-panel">
+          ${renderVehicleDetailTabContent(activeTab, machine, { configs, logs, workOrders, vehicleParts, order })}
         </div>
       </div>
     </section>
@@ -4049,6 +4279,7 @@ function renderVehicleModelDetail() {
   const vehicleParts = detail.selectedDetail?.parts || [];
   const manualSelected = isManualForklift(selected.machineType || model.machineType);
   const order = latestVehicleOutboundOrder(selected.id);
+  const activeTab = ensureVehicleDetailTab();
   return `
     <section class="surface detail-surface-pop" id="vehicleDetailSurface">
       <div class="surface-head">
@@ -4058,7 +4289,7 @@ function renderVehicleModelDetail() {
           ${hasPermission("stock:adjust") ? `<button class="btn" type="button" data-action="model-outbound" data-model-key="${escapeAttr(detail.modelKey)}">${icon("minus")}整车出库</button>` : ""}
         </div>
       </div>
-      <div class="surface-body split">
+      <div class="surface-body detail-tab-body">
         <div class="detail-grid">
           ${detailItem("车型名称", model.name)}
           ${detailItem("规格型号", model.specificationModel)}
@@ -4075,9 +4306,7 @@ function renderVehicleModelDetail() {
               ${detail.vehicles.length ? detail.vehicles.map(vehicle => renderVehicleUnitCard(vehicle, detail.modelKey, vehicle.id === selected.id)).join("") : emptyState("此车型还没有库存车")}
             </div>
           `)}
-          ${renderVehicleArchiveSurface(selected)}
-          ${renderVehicleSalesSurface(selected, order)}
-          ${renderSurface(`当前配置 · ${escapeHtml(selected.vehicleProductNumber || "请选择车号")}`, `
+          ${renderSurface(`当前车号 · ${escapeHtml(selected.vehicleProductNumber || "请选择车号")}`, `
             <div class="detail-grid detail-grid-compact">
               ${detailItem("车号", selected.vehicleProductNumber)}
               ${detailItem("库存状态", stockStatusLabel(selected.stockStatus))}
@@ -4091,32 +4320,11 @@ function renderVehicleModelDetail() {
               ${selected.id && hasPermission("replace:write") ? `<button class="btn" type="button" data-action="create-vehicle-part" data-machine-id="${escapeAttr(selected.id || "")}">${icon("plus")}新增配件</button>` : ""}
               ${selected.id && hasPermission("replace:write") ? `<button class="btn btn-primary" type="button" data-action="create-modification-order" data-machine-id="${escapeAttr(selected.id || "")}">${icon("swap")}新建改装工单</button>` : ""}
             </div>
-            ${renderTable([
-              { label: "配置项", key: "itemName" },
-              { label: "当前值", key: "selectedValue" },
-              { label: "来源", key: "configSource" },
-              { label: "操作", html: true, render: row => `
-                <div class="action-row">
-                  ${hasPermission("replace:write") ? `<button class="btn btn-sm" type="button" data-action="create-modification-order" data-machine-id="${escapeAttr(selected.id)}" data-machine-config-id="${escapeAttr(row.id)}">${icon("swap")}生成工单</button>` : ""}
-                </div>
-              ` }
-            ], configs)}
           `)}
-          ${renderVehiclePartsSurface(selected, vehicleParts)}
-          ${renderSurface("改装工单", renderTable([
-            { label: "工单号", key: "workOrderNo" },
-            { label: "客户", key: "customerName" },
-            { label: "状态", html: true, render: row => modificationStatusBadge(row.status) },
-            { label: "替换明细", html: true, render: row => modificationLineSummary(row.lines) },
-            { label: "操作", html: true, render: row => modificationOrderActions(row) }
-          ], workOrders))}
-          ${renderSurface("替换记录", renderTable([
-            { label: "配置项", key: "itemName" },
-            { label: "旧值", key: "oldValue" },
-            { label: "新值", key: "newValue" },
-            { label: "类型", key: "replaceType" },
-            { label: "时间", key: "createdAt", formatter: dateTime }
-          ], logs))}
+        </div>
+        ${renderVehicleDetailTabs(activeTab)}
+        <div class="detail-tab-panel">
+          ${renderVehicleDetailTabContent(activeTab, selected, { configs, logs, workOrders, vehicleParts, order })}
         </div>
       </div>
     </section>
@@ -4574,6 +4782,7 @@ function renderTable(columns, rows, options = {}) {
   const visibleIds = visibleRows.map(row => String(row.id)).filter(Boolean);
   const selectedIds = batch ? selectedIdSet(batch.kind) : new Set();
   const allVisibleSelected = batch && visibleIds.length > 0 && visibleIds.every(id => selectedIds.has(id));
+  const dataColumns = tableKey ? visibleTableColumns(tableKey, preparedColumns) : preparedColumns;
   const tableColumns = batch ? [
     {
       label: `<input class="row-check" type="checkbox" data-action="toggle-visible-select" data-batch-kind="${escapeAttr(batch.kind)}" data-visible-ids="${escapeAttr(visibleIds.join(","))}" aria-label="选择当前页" ${allVisibleSelected ? "checked" : ""}>`,
@@ -4581,11 +4790,13 @@ function renderTable(columns, rows, options = {}) {
       html: true,
       render: row => `<input class="row-check" type="checkbox" data-action="toggle-row-select" data-batch-kind="${escapeAttr(batch.kind)}" data-id="${escapeAttr(row.id)}" aria-label="选择此行" ${selectedIds.has(String(row.id)) ? "checked" : ""}>`
     },
-    ...preparedColumns
-  ] : preparedColumns;
+    ...dataColumns
+  ] : dataColumns;
+  const densityClass = state.tableDensity === "compact" ? " is-compact" : "";
   return `
+    ${tableKey ? renderTableControls(tableKey, preparedColumns) : ""}
     ${batch ? renderBatchToolbar(batch, visibleRows) : ""}
-    <div class="table-wrap" tabindex="0" aria-label="数据表格，可横向滚动">
+    <div class="table-wrap${densityClass}" tabindex="0" aria-label="数据表格，可横向滚动">
       <table>
         <thead>
           <tr>${tableColumns.map(column => renderTableHeader(column, tableKey)).join("")}</tr>
@@ -4616,6 +4827,137 @@ function prepareTableColumns(columns) {
     sortId: column.sortKey || column.key || `column-${index}`,
     sortable: column.sortable !== false && !column.htmlLabel && !column.html && Boolean(column.sortValue || column.key || column.render)
   }));
+}
+
+function renderTableControls(tableKey, columns) {
+  const hideableColumns = columns.filter(column => isHideableTableColumn(column));
+  const savedView = state.filterViews?.[tableKey] || null;
+  const densityLabel = state.tableDensity === "compact" ? "紧凑" : "舒适";
+  return `
+    <div class="table-control-bar">
+      <div class="table-control-group">
+        <button class="btn btn-sm" type="button" data-action="toggle-table-density" aria-label="切换表格密度">${icon("swap")}${densityLabel}</button>
+        <details class="column-menu">
+          <summary class="btn btn-sm">${icon("eye")}列显示</summary>
+          <div class="column-menu-panel">
+            ${hideableColumns.map(column => `
+              <label class="column-option">
+                <input type="checkbox" data-action="toggle-table-column" data-table-key="${escapeAttr(tableKey)}" data-column-key="${escapeAttr(column.sortId)}" ${isColumnVisible(tableKey, column) ? "checked" : ""}>
+                <span>${escapeHtml(tableColumnControlLabel(column))}</span>
+              </label>
+            `).join("")}
+          </div>
+        </details>
+      </div>
+      <div class="table-control-group">
+        <button class="btn btn-sm" type="button" data-action="save-filter-view" data-table-key="${escapeAttr(tableKey)}">${icon("download")}保存筛选</button>
+        <button class="btn btn-sm" type="button" data-action="apply-filter-view" data-table-key="${escapeAttr(tableKey)}" ${savedView ? "" : "disabled"}>${icon("refresh")}应用方案</button>
+        <button class="btn btn-sm btn-ghost" type="button" data-action="delete-filter-view" data-table-key="${escapeAttr(tableKey)}" ${savedView ? "" : "disabled"}>清除方案</button>
+      </div>
+    </div>
+  `;
+}
+
+function visibleTableColumns(tableKey, columns) {
+  return columns.filter(column => isColumnVisible(tableKey, column));
+}
+
+function isColumnVisible(tableKey, column) {
+  if (!isHideableTableColumn(column)) return true;
+  const tableColumns = state.tableColumns?.[tableKey] || {};
+  return tableColumns[column.sortId] !== false;
+}
+
+function setTableColumnVisibility(tableKey, columnKey, visible) {
+  if (!tableKey || !columnKey) return;
+  state.tableColumns = {
+    ...(state.tableColumns || {}),
+    [tableKey]: {
+      ...(state.tableColumns?.[tableKey] || {}),
+      [columnKey]: Boolean(visible)
+    }
+  };
+}
+
+function isHideableTableColumn(column) {
+  if (!column || column.htmlLabel) return false;
+  const label = String(column.label || "");
+  return label !== "操作" && label !== "鎿嶄綔";
+}
+
+function tableColumnControlLabel(column) {
+  return String(column.label || column.key || column.sortId || "列");
+}
+
+function saveFilterView(tableKey) {
+  if (!tableKey) return;
+  const searchKey = searchKeyForTable(tableKey);
+  state.filterViews = {
+    ...(state.filterViews || {}),
+    [tableKey]: {
+      searchKey,
+      searchValue: state.search?.[searchKey] || "",
+      filters: { ...(state.filters?.[searchKey] || {}) },
+      sort: state.sorts?.[tableKey] || null,
+      savedAt: Date.now()
+    }
+  };
+}
+
+async function applyFilterView(tableKey) {
+  const view = state.filterViews?.[tableKey];
+  if (!view) {
+    showToast("当前模块还没有保存筛选方案", "info");
+    return;
+  }
+  const searchKey = view.searchKey || searchKeyForTable(tableKey);
+  if (Object.prototype.hasOwnProperty.call(state.search, searchKey)) {
+    state.search[searchKey] = view.searchValue || "";
+  }
+  state.filters = {
+    ...(state.filters || {}),
+    [searchKey]: { ...(view.filters || {}) }
+  };
+  state.sorts = { ...(state.sorts || {}) };
+  if (view.sort) {
+    state.sorts[tableKey] = view.sort;
+  } else {
+    delete state.sorts[tableKey];
+  }
+  if (state.pages?.[searchKey]) resetPage(state.pages[searchKey]);
+  persistListState();
+  if (searchKey === activePagedTab()) {
+    els.content.innerHTML = renderLoading();
+    if (searchKey === "vehicles") {
+      await loadVehicleModelData({ force: true });
+    } else {
+      await loadPagedTab(searchKey, { force: true });
+    }
+  }
+  renderCurrentTab();
+  showToast("筛选方案已应用", "success");
+}
+
+function deleteFilterView(tableKey) {
+  if (!tableKey || !state.filterViews?.[tableKey]) return;
+  const next = { ...(state.filterViews || {}) };
+  delete next[tableKey];
+  state.filterViews = next;
+}
+
+function searchKeyForTable(tableKey) {
+  if (Object.prototype.hasOwnProperty.call(state.search, tableKey)) return tableKey;
+  const aliases = {
+    modificationOrder: "modificationOrders",
+    outboundOrder: "outboundOrders",
+    purchaseOrder: "purchases",
+    stocktaking: "stocktakes",
+    warehouse: "warehouses",
+    stockMovement: "stockMovements",
+    repair: "repairs"
+  };
+  if (aliases[tableKey]) return aliases[tableKey];
+  return Object.prototype.hasOwnProperty.call(state.search, state.activeTab) ? state.activeTab : tableKey;
 }
 
 function renderTableHeader(column, tableKey) {
@@ -5023,6 +5365,21 @@ function exportColumnsForKind(kind) {
       { label: "差异", key: "differenceQuantity" },
       { label: "状态", key: "status" }
     ],
+    warehouse: [
+      { label: "仓库编码", key: "warehouseCode" },
+      { label: "仓库名称", key: "warehouseName" },
+      { label: "联系人", key: "contactPerson" },
+      { label: "联系电话", key: "contactPhone" },
+      { label: "状态", value: row => row.active ? "启用" : "停用" }
+    ],
+    stockMovement: [
+      { label: "流水号", key: "movementNo" },
+      { label: "类型", key: "movementType", formatter: movementTypeText },
+      { label: "资源", value: stockMovementResource },
+      { label: "仓库", value: row => `${row.fromWarehouseName || ""}${row.toWarehouseName ? ` -> ${row.toWarehouseName}` : ""}`.trim() },
+      { label: "数量", value: stockMovementDelta },
+      { label: "时间", key: "createdAt", formatter: dateTime }
+    ],
     repair: [
       { label: "维修时间", key: "repairDate", formatter: dateTime },
       { label: "车号", key: "vehicleNumber" },
@@ -5203,10 +5560,12 @@ function renderField(field, data) {
     const hiddenValue = selected ? selected.value : (field.allowCustom ? value : "");
     const placeholder = fieldPlaceholder(field, options, data);
     const prefillAttrs = renderPrefillAttrs(field, prefillValue, options);
+    const remoteSource = remoteComboSourceForField(state.modal?.kind, field.name);
+    const remoteAttrs = remoteSource ? ` data-remote-source="${escapeAttr(remoteSource)}"` : "";
     return `
       <label class="field"${span}>
         <span>${escapeHtml(field.label)}</span>
-        <div class="combo${options.length ? "" : " is-empty"}" data-combo data-name="${escapeAttr(field.name)}" data-allow-custom="${field.allowCustom ? "true" : "false"}" data-required="${field.required ? "true" : "false"}">
+        <div class="combo${options.length ? "" : " is-empty"}" data-combo data-name="${escapeAttr(field.name)}" data-allow-custom="${field.allowCustom ? "true" : "false"}" data-required="${field.required ? "true" : "false"}"${remoteAttrs}>
           <input class="combo-input" data-combo-input type="text" value="${escapeAttr(displayValue)}" placeholder="${escapeAttr(placeholder)}" autocomplete="off"${required}>
           <button class="combo-toggle" type="button" data-combo-toggle aria-label="展开选项"></button>
           <input name="${escapeAttr(field.name)}" type="hidden" data-coerce="${escapeAttr(coerce)}" value="${escapeAttr(hiddenValue)}" data-selected-label="${escapeAttr(displayValue)}" data-selected-meta="${selected?.meta ? escapeAttr(JSON.stringify(selected.meta)) : ""}"${prefillAttrs}>
@@ -5409,6 +5768,7 @@ function toggleCombo(combo) {
   }
   const input = combo.querySelector("[data-combo-input]");
   openCombo(combo, input?.value.trim() || "");
+  scheduleRemoteComboSearch(combo, input?.value.trim() || "", { immediate: combo.dataset.remoteLoaded !== "true" });
   input?.focus();
 }
 
@@ -5431,6 +5791,139 @@ function syncComboOptionsForField(form, name, options, selectedValue) {
   hidden.dataset.selectedMeta = selected?.meta ? JSON.stringify(selected.meta) : "";
   input.value = selected?.label ?? "";
   filterComboOptions(combo, "");
+}
+
+function remoteComboSourceForField(kind, fieldName) {
+  if (!kind || !fieldName) return "";
+  if (fieldName === "customerId" && ["vehicleOutbound", "partStock", "partOutbound", "rental", "repair"].includes(kind)) return "customers";
+  if (fieldName === "supplierId" && kind === "purchaseOrder") return "suppliers";
+  if (["fromWarehouseId", "toWarehouseId"].includes(fieldName) && kind === "stockTransfer") return "warehouses";
+  if (fieldName === "partCode" && ["partStock", "partOutbound"].includes(kind)) return "partCodes";
+  if (fieldName === "usedPartIds" && kind === "repair") return "repairParts";
+  if (fieldName === "machineId") {
+    if (kind === "vehicleOutbound") return "vehicleOutbound";
+    if (kind === "rental") return "vehicleRental";
+    if (["vehicleStock", "partReplace", "vehiclePartInstall", "repair"].includes(kind)) return "vehicles";
+  }
+  if (fieldName === "resourceId" && kind === "stocktaking") {
+    return resourceTypeForModal() === "MACHINE" ? "stocktakingVehicles" : "stocktakingParts";
+  }
+  if (fieldName === "resourceId" && kind === "stockTransfer") {
+    return resourceTypeForModal() === "MACHINE" ? "stockTransferVehicles" : "stockTransferParts";
+  }
+  if (fieldName === "newPartId" && kind === "vehiclePartInstall") return "installParts";
+  return "";
+}
+
+function resourceTypeForModal() {
+  return String(effectiveFieldValue(state.modal?.item || {}, "resourceType") || "PART").toUpperCase();
+}
+
+function scheduleRemoteComboSearch(combo, query = "", options = {}) {
+  if (!combo?.dataset.remoteSource) return;
+  window.clearTimeout(remoteComboSearchTimer);
+  const run = () => searchRemoteComboOptions(combo, query);
+  if (options.immediate) {
+    run();
+    return;
+  }
+  remoteComboSearchTimer = window.setTimeout(run, REMOTE_COMBO_DEBOUNCE_MS);
+}
+
+async function searchRemoteComboOptions(combo, query = "") {
+  const source = combo?.dataset.remoteSource;
+  if (!source || !combo.isConnected) return;
+  const requestId = String(++remoteComboRequestSequence);
+  combo.dataset.remoteRequestId = requestId;
+  setComboRemoteStatus(combo, "loading");
+  try {
+    const options = await fetchRemoteComboOptions(source, query);
+    if (!combo.isConnected || combo.dataset.remoteRequestId !== requestId) return;
+    updateComboMenuOptions(combo, options, query);
+    combo.dataset.remoteLoaded = "true";
+    combo.dataset.remoteQuery = query;
+  } catch (error) {
+    if (!combo.isConnected || combo.dataset.remoteRequestId !== requestId) return;
+    console.warn("Remote combo search failed", error);
+    setComboRemoteStatus(combo, "error");
+  }
+}
+
+function setComboRemoteStatus(combo, status) {
+  const menu = combo.querySelector("[data-combo-menu]");
+  if (!menu) return;
+  const text = status === "error" ? "搜索失败，请重试" : "正在搜索...";
+  menu.innerHTML = `<div class="combo-empty">${escapeHtml(text)}</div>`;
+  combo.classList.add("is-open", "is-empty");
+}
+
+function updateComboMenuOptions(combo, options, query = "") {
+  const menu = combo.querySelector("[data-combo-menu]");
+  const hidden = combo.querySelector("input[type='hidden']");
+  const input = combo.querySelector("[data-combo-input]");
+  if (!menu || !hidden) return;
+  menu.innerHTML = renderComboOptions(options, hidden.value);
+  filterComboOptions(combo, query);
+  combo.classList.add("is-open");
+  const typed = String(input?.value || "").trim();
+  if (typed && !hidden.value) {
+    const exact = findComboOption(combo, typed);
+    if (exact) {
+      setComboValue(combo, exact.dataset.value, exact.dataset.label, exact.dataset.meta, false);
+    }
+  }
+}
+
+async function fetchRemoteComboOptions(source, query = "") {
+  const meta = remoteComboMeta(source);
+  if (!meta) return [];
+  const payload = await api(referencePageUrl(meta.endpoint, query, REMOTE_COMBO_PAGE_SIZE));
+  const rows = rowsFromPayload(payload);
+  mergeReferenceRows(meta.dataKey, rows);
+  return optionsForRemoteComboSource(source);
+}
+
+function remoteComboMeta(source) {
+  if (["vehicles", "vehicleOutbound", "vehicleRental", "stocktakingVehicles", "stockTransferVehicles"].includes(source)) {
+    return { endpoint: endpoints.vehicle.list, dataKey: "vehicles" };
+  }
+  if (["partCodes", "repairParts", "stocktakingParts", "stockTransferParts", "installParts"].includes(source)) {
+    return { endpoint: endpoints.part.list, dataKey: "parts" };
+  }
+  if (source === "customers") return { endpoint: endpoints.customer.list, dataKey: "customers" };
+  if (source === "suppliers") return { endpoint: endpoints.supplier.list, dataKey: "suppliers" };
+  if (source === "warehouses") return { endpoint: endpoints.warehouse.list, dataKey: "warehouses" };
+  return null;
+}
+
+function mergeReferenceRows(dataKey, rows = []) {
+  if (!dataKey || !Array.isArray(rows) || !rows.length) return;
+  const current = Array.isArray(state.data[dataKey]) ? state.data[dataKey] : [];
+  const byId = new Map(current.map(row => [String(row.id ?? ""), row]));
+  for (const row of rows) {
+    if (row?.id === undefined || row?.id === null) continue;
+    byId.set(String(row.id), { ...(byId.get(String(row.id)) || {}), ...row });
+  }
+  const asc = ["customers", "suppliers", "warehouses"].includes(dataKey);
+  state.data[dataKey] = sortById([...byId.values()], !asc);
+}
+
+function optionsForRemoteComboSource(source) {
+  return {
+    vehicles: vehicleOptions,
+    vehicleOutbound: vehicleOutboundOptions,
+    vehicleRental: vehicleRentalOptions,
+    stocktakingVehicles: stocktakingResourceOptions,
+    stocktakingParts: stocktakingResourceOptions,
+    stockTransferVehicles: stockTransferResourceOptions,
+    stockTransferParts: stockTransferResourceOptions,
+    partCodes: partCodeOptions,
+    repairParts: repairPartOptions,
+    installParts: installPartOptions,
+    customers: customerOptions,
+    suppliers: supplierOptions,
+    warehouses: warehouseOptions
+  }[source]?.() || [];
 }
 
 function validateCombos(form) {
@@ -5544,6 +6037,15 @@ function defaultEntity(kind) {
   }
   if (kind === "stocktaking") {
     return { resourceType: "PART", actualQuantity: 0, status: "DRAFT", stocktakingDate: todayInputDate() };
+  }
+  if (kind === "warehouse") {
+    return { warehouseType: "MAIN" };
+  }
+  if (kind === "stockTransfer") {
+    return { resourceType: "PART", quantity: 1 };
+  }
+  if (kind === "dataRestore") {
+    return { confirmation: "RESTORE-DATA-BACKUP" };
   }
   const entity = {};
   if (kind === "configValue" && state.selectedConfigItemId) {
@@ -5867,6 +6369,20 @@ function syncStocktakingQuantity(form, resourceId) {
   setFormFieldValue(form, "actualQuantity", quantity ?? 0, false);
 }
 
+function syncStockTransferResource(form, resourceId) {
+  const type = String(form.elements.resourceType?.value || "PART").toUpperCase();
+  const rows = type === "MACHINE" ? state.data.vehicles : state.data.parts;
+  const resource = rows.find(item => Number(item.id) === Number(resourceId));
+  if (!resource) return;
+  if (resource.warehouseId) {
+    setFormFieldValue(form, "fromWarehouseId", resource.warehouseId, false);
+  }
+  state.modal.item.version = resource.version;
+  if (type === "MACHINE") {
+    setFormFieldValue(form, "quantity", 1, false);
+  }
+}
+
 function syncPurchaseResourceDefaults(form) {
   const meta = selectedComboMeta(form, "configValueId");
   if (!meta) return;
@@ -6080,6 +6596,8 @@ function entityRows(kind) {
     supplier: "suppliers",
     purchaseOrder: "purchaseOrders",
     stocktaking: "stocktakingRecords",
+    warehouse: "warehouses",
+    stockMovement: "stockMovements",
     repair: "repairs",
     configItem: "configItems",
     configValue: "configValues",
@@ -6099,6 +6617,9 @@ function entityLabel(kind) {
     supplier: "供应商",
     purchaseOrder: "采购订单",
     stocktaking: "盘点记录",
+    warehouse: "仓库",
+    stockTransfer: "库存调拨",
+    stockMovement: "库存流水",
     repair: "维修记录",
     configItem: "配置项",
     configValue: "配置值",
@@ -6117,6 +6638,8 @@ function entityDisplayName(kind, item = {}) {
     supplier: item.supplierName || item.contactName || item.id,
     purchaseOrder: item.purchaseNo || item.resourceName || item.id,
     stocktaking: item.stocktakingNo || item.resourceName || item.id,
+    warehouse: item.warehouseName || item.warehouseCode || item.id,
+    stockMovement: item.movementNo || item.resourceCode || item.id,
     repair: item.vehicleNumber || item.customerName || item.id,
     configItem: item.itemName || item.itemCode || item.id,
     configValue: item.valueLabel || item.valueCode || item.id,
@@ -6149,6 +6672,9 @@ function modalTitle(kind, item) {
     purchaseOrder: "采购订单",
     purchaseFreight: "修改运费",
     stocktaking: "库存盘点",
+    warehouse: "仓库",
+    stockTransfer: "库存调拨",
+    dataRestore: "恢复数据备份",
     invoiceUpload: "上传发票",
     contractUpload: "上传合同",
     repair: "维修记录",
@@ -6164,7 +6690,7 @@ function modalTitle(kind, item) {
     userPassword: "修改密码",
     switchUser: "切换用户"
   };
-  if (kind === "switchUser" || kind === "vehicleStock" || kind === "vehicleInbound" || kind === "vehicleOutbound" || kind === "rental" || kind === "partStock" || kind === "partReplace" || kind === "vehiclePartInstall" || kind === "modificationOrder" || kind === "userUsername" || kind === "userPassword" || kind === "invoiceUpload" || kind === "contractUpload") {
+  if (kind === "switchUser" || kind === "vehicleStock" || kind === "vehicleInbound" || kind === "vehicleOutbound" || kind === "rental" || kind === "partStock" || kind === "partReplace" || kind === "vehiclePartInstall" || kind === "modificationOrder" || kind === "stockTransfer" || kind === "dataRestore" || kind === "userUsername" || kind === "userPassword" || kind === "invoiceUpload" || kind === "contractUpload") {
     return (kind === "invoiceUpload" || kind === "contractUpload") && item?.orderNo ? `${names[kind]}：${item.orderNo}` : names[kind];
   }
   if (kind === "configValue" || kind === "user" || kind === "vehicleModel") return `新增${names[kind]}`;
@@ -6185,6 +6711,9 @@ function modalSubtitle(kind) {
     purchaseOrder: "从配置字典选择配置项和配置值，自动带入配件名称、编码与规格信息。",
     purchaseFreight: "运费默认为 0；只在实际产生运费时修改。",
     stocktaking: "先创建盘点草稿；确认入账后才会同步库存数量。",
+    warehouse: "维护仓库编码、名称、类型和默认仓设置。",
+    stockTransfer: "选择整车或配件，从一个仓库调拨到另一个仓库并生成库存流水。",
+    dataRestore: "上传 JSON 备份文件并输入确认码后恢复数据库业务数据。",
     invoiceUpload: "已申请发票或已开票的订单可上传；再次上传会替换原发票文件。",
     contractUpload: "标记为有合同的订单可上传；再次上传会替换原合同文件。",
     repair: "记录维修过程、费用与处理状态。",
@@ -6451,6 +6980,40 @@ function vehiclesForModelKey(modelKey) {
     .sort((a, b) => String(a.vehicleProductNumber || "").localeCompare(String(b.vehicleProductNumber || ""), "zh-CN"));
 }
 
+function prepareVehicleModelSummary(row = {}) {
+  const model = {
+    ...row,
+    modelQueryMachineType: String(row.machineType || "").trim(),
+    machineType: normalizePowerType(row.machineType),
+    unitCount: Number(row.unitCount || 0),
+    inventoryCount: Number(row.inventoryCount || 0),
+    vehicleNumbers: row.vehicleNumbers || "",
+    vehicles: []
+  };
+  model.modelKey = vehicleModelKey(model);
+  model.id = model.modelKey;
+  return model;
+}
+
+function modelSummaryForKey(modelKey) {
+  if (!modelKey) return null;
+  return (state.data.vehicleModels || []).find(item => item.modelKey === modelKey)
+    || vehicleModelGroups().find(item => item.modelKey === modelKey)
+    || null;
+}
+
+async function fetchVehicleModelVehicles(modelKey) {
+  if (!modelKey) return [];
+  const model = modelSummaryForKey(modelKey) || decodeVehicleModelKey(modelKey);
+  const params = new URLSearchParams();
+  params.set("name", model.name || "");
+  params.set("specificationModel", model.specificationModel || "");
+  params.set("machineType", model.modelQueryMachineType ?? model.machineType ?? "");
+  const rows = await api(`${endpoints.vehicle.modelVehicles}?${params.toString()}`);
+  return sortById(rows, false)
+    .sort((a, b) => String(a.vehicleProductNumber || "").localeCompare(String(b.vehicleProductNumber || ""), "zh-CN"));
+}
+
 function vehicleModelOptions() {
   return vehicleModelGroups().map(group => ({
     value: group.modelKey,
@@ -6585,6 +7148,59 @@ function stocktakingStatusOptions() {
   return [
     { value: "DRAFT", label: "草稿" }
   ];
+}
+
+function warehouseOptions() {
+  return state.data.warehouses.map(item => ({
+    value: item.id,
+    label: `${item.warehouseName || "-"}（${item.warehouseCode || "-"}）`
+  }));
+}
+
+function warehouseNameById(id) {
+  return state.data.warehouses.find(item => Number(item.id) === Number(id))?.warehouseName || "未分配仓库";
+}
+
+function transferResourceTypeOptions() {
+  return [
+    { value: "PART", label: "配件" },
+    { value: "MACHINE", label: "整车" }
+  ];
+}
+
+function stockTransferResourceOptions() {
+  const type = String(effectiveFieldValue(state.modal?.item || {}, "resourceType") || "PART").toUpperCase();
+  if (type === "MACHINE") {
+    return state.data.vehicles
+      .filter(item => !item.modelOnly)
+      .filter(item => Number(item.inventoryCount || 0) > 0)
+      .map(item => ({
+        value: item.id,
+        label: `${vehicleNumberLabel(item)} / ${warehouseNameById(item.warehouseId)} / 库存 ${item.inventoryCount ?? 0}`,
+        meta: {
+          warehouseId: item.warehouseId,
+          version: item.version
+        }
+      }));
+  }
+  return state.data.parts
+    .filter(item => Number(item.quantity || 0) > 0)
+    .map(item => ({
+      value: item.id,
+      label: `${item.partCode || "-"} · ${item.partName || "-"} / ${warehouseNameById(item.warehouseId)} / 库存 ${item.quantity ?? 0}${item.unit || ""}`,
+      meta: {
+        warehouseId: item.warehouseId,
+        version: item.version
+      }
+    }));
+}
+
+function stockTransferResourceName(payload = {}) {
+  const type = String(payload.resourceType || "PART").toUpperCase();
+  const rows = type === "MACHINE" ? state.data.vehicles : state.data.parts;
+  const resource = rows.find(item => Number(item.id) === Number(payload.resourceId));
+  if (!resource) return "调拨对象";
+  return type === "MACHINE" ? vehicleNumberLabel(resource) : `${resource.partCode || "-"} · ${resource.partName || "-"}`;
 }
 
 function partCodeOptions() {
@@ -6808,10 +7424,14 @@ function canAccessTab(tab) {
     suppliers: "stock:adjust",
     purchases: "stock:adjust",
     stocktakes: "stock:adjust",
+    warehouses: "stock:adjust",
     stats: "log:read",
+    stockMovements: "log:read",
     logs: "log:read",
-    users: "user:read"
+    users: "user:read",
+    maintenance: "user:admin"
   };
+  if (tab === "maintenance" && !hasRole("SUPER_ADMIN")) return false;
   return !permissionsByTab[tab] || hasPermission(permissionsByTab[tab]);
 }
 
@@ -6822,6 +7442,7 @@ function canWriteEntity(kind) {
     repair: "repair:write",
     rental: "stock:adjust",
     supplier: "stock:adjust",
+    warehouse: "stock:adjust",
     purchaseOrder: "stock:adjust",
     stocktaking: "stock:adjust",
     configItem: "config:write",

@@ -10,6 +10,7 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 
@@ -33,6 +34,19 @@ public interface ModificationWorkOrderRepository extends JpaRepository<Modificat
                 or lower(coalesce(w.remark, '')) like lower(concat('%', :keyword, '%')))
             """)
     Page<ModificationWorkOrder> searchPage(@Param("keyword") String keyword, Pageable pageable);
+
+    @Query("""
+            select w from ModificationWorkOrder w
+            where w.status = :status
+              and w.completedAt >= :start
+              and w.completedAt < :end
+            order by w.completedAt desc
+            """)
+    List<ModificationWorkOrder> findCompletedInRange(
+            @Param("status") String status,
+            @Param("start") LocalDateTime start,
+            @Param("end") LocalDateTime end
+    );
 
     List<ModificationWorkOrder> findByMachineIdOrderByCreatedAtDesc(Long machineId);
 

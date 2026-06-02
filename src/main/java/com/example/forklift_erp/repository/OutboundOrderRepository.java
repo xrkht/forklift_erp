@@ -10,6 +10,7 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
+import java.math.BigDecimal;
 import java.util.List;
 import java.util.Optional;
 
@@ -47,6 +48,49 @@ public interface OutboundOrderRepository extends JpaRepository<OutboundOrder, Lo
             Pageable pageable
     );
 
+    @Query("""
+            select
+              count(o) as totalCount,
+              sum(case when o.paymentSettled = true then 0 else 1 end) as unsettledOrders,
+              sum(case when o.salesReported = true then 0 else 1 end) as pendingReports,
+              sum(case when o.invoiceApplied = true then 0 else 1 end) as pendingInvoices,
+              sum(case when o.paymentSettled = true then 1 else 0 end) as settledOrders,
+              sum(case when o.invoiceStoredFileName is null or o.invoiceStoredFileName = '' then 0 else 1 end) as uploadedInvoices,
+              sum(case when o.contractStoredFileName is null or o.contractStoredFileName = '' then 0 else 1 end) as uploadedContracts,
+              sum(case when o.resourceType = 'MACHINE' then 1 else 0 end) as machineOrders,
+              sum(case when coalesce(o.receivableAmount, o.settlementPrice, 0) - coalesce(o.receivedAmount, 0) > 0
+                       then coalesce(o.receivableAmount, o.settlementPrice, 0) - coalesce(o.receivedAmount, 0)
+                       else 0 end) as outstandingAmount,
+              sum(case when o.paymentDueDate is not null
+                            and o.paymentDueDate < current_date
+                            and coalesce(o.receivableAmount, o.settlementPrice, 0) - coalesce(o.receivedAmount, 0) > 0
+                       then 1 else 0 end) as overdueOrders
+            from OutboundOrder o
+            where (:includeLocked = true or o.isLocked = false)
+              and (:keyword is null
+                or lower(coalesce(o.orderNo, '')) like lower(concat('%', :keyword, '%'))
+                or lower(coalesce(o.resourceType, '')) like lower(concat('%', :keyword, '%'))
+                or lower(coalesce(o.resourceCode, '')) like lower(concat('%', :keyword, '%'))
+                or lower(coalesce(o.resourceName, '')) like lower(concat('%', :keyword, '%'))
+                or lower(coalesce(o.specificationModel, '')) like lower(concat('%', :keyword, '%'))
+                or lower(coalesce(o.customerName, '')) like lower(concat('%', :keyword, '%'))
+                or lower(coalesce(o.customerAddress, '')) like lower(concat('%', :keyword, '%'))
+                or lower(coalesce(o.contactName, '')) like lower(concat('%', :keyword, '%'))
+                or lower(coalesce(o.contactPhone, '')) like lower(concat('%', :keyword, '%'))
+                or lower(coalesce(o.operator, '')) like lower(concat('%', :keyword, '%'))
+                or lower(coalesce(o.paymentRemark, '')) like lower(concat('%', :keyword, '%'))
+                or lower(coalesce(o.invoiceStatus, '')) like lower(concat('%', :keyword, '%'))
+                or lower(coalesce(o.invoiceOriginalName, '')) like lower(concat('%', :keyword, '%'))
+                or lower(coalesce(o.registrationStatus, '')) like lower(concat('%', :keyword, '%'))
+                or lower(coalesce(o.contractType, '')) like lower(concat('%', :keyword, '%'))
+                or lower(coalesce(o.contractOriginalName, '')) like lower(concat('%', :keyword, '%'))
+                or lower(coalesce(o.orderRemark, '')) like lower(concat('%', :keyword, '%')))
+            """)
+    OutboundOrderSummaryProjection summarize(
+            @Param("keyword") String keyword,
+            @Param("includeLocked") boolean includeLocked
+    );
+
     Optional<OutboundOrder> findByIdAndIsLockedFalse(Long id);
 
     List<OutboundOrder> findByResourceTypeAndResourceIdOrderByCreatedAtDesc(String resourceType, Long resourceId);
@@ -62,4 +106,17 @@ public interface OutboundOrderRepository extends JpaRepository<OutboundOrder, Lo
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("select o from OutboundOrder o where o.id = :id")
     Optional<OutboundOrder> findByIdForUpdate(@Param("id") Long id);
+
+    interface OutboundOrderSummaryProjection {
+        Long getTotalCount();
+        Long getUnsettledOrders();
+        Long getPendingReports();
+        Long getPendingInvoices();
+        Long getSettledOrders();
+        Long getUploadedInvoices();
+        Long getUploadedContracts();
+        Long getMachineOrders();
+        BigDecimal getOutstandingAmount();
+        Long getOverdueOrders();
+    }
 }

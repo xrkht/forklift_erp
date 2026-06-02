@@ -19,6 +19,8 @@ forklift:
   admin:
     business-data-reset:
       enabled: false
+    data-restore:
+      enabled: ${FORKLIFT_ERP_DATA_RESTORE_ENABLED:false}
   seed-demo-data:
     enabled: false
 

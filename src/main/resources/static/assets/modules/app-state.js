@@ -18,6 +18,8 @@ export function createInitialState({ token = "", user = null } = {}) {
       suppliers: "",
       purchases: "",
       stocktakes: "",
+      warehouses: "",
+      stockMovements: "",
       repairs: "",
       stats: "",
       logs: "",
@@ -34,6 +36,7 @@ export function createInitialState({ token = "", user = null } = {}) {
     },
     sorts: {},
     data: {
+      vehicleModels: [],
       vehicles: [],
       parts: [],
       modificationOrders: [],
@@ -44,6 +47,8 @@ export function createInitialState({ token = "", user = null } = {}) {
       suppliers: [],
       purchaseOrders: [],
       stocktakingRecords: [],
+      warehouses: [],
+      stockMovements: [],
       repairs: [],
       statistics: null,
       operationLogs: [],
@@ -64,6 +69,8 @@ export function createInitialState({ token = "", user = null } = {}) {
       suppliers: createPageState(LIST_PAGE_SIZE),
       purchases: createPageState(LIST_PAGE_SIZE),
       stocktakes: createPageState(LIST_PAGE_SIZE),
+      warehouses: createPageState(LIST_PAGE_SIZE),
+      stockMovements: createPageState(LIST_PAGE_SIZE),
       repairs: createPageState(LIST_PAGE_SIZE),
       logs: createPageState(LOG_PAGE_SIZE),
       users: createPageState(LIST_PAGE_SIZE)
@@ -73,6 +80,7 @@ export function createInitialState({ token = "", user = null } = {}) {
       partsLoaded: false,
       customersLoaded: false,
       suppliersLoaded: false,
+      warehousesLoaded: false,
       outboundOrdersLoaded: false,
       rentalsLoaded: false,
       repairUsersLoaded: false
@@ -85,6 +93,10 @@ export function createInitialState({ token = "", user = null } = {}) {
     visibleLogRows: LOG_PAGE_SIZE,
     detailDrawer: null,
     batchSelections: {},
+    tableDensity: "comfortable",
+    tableColumns: {},
+    filterViews: {},
+    vehicleDetailTab: "archive",
     modal: null
   };
 }

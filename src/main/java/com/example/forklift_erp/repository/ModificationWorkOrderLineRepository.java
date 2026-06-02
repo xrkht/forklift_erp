@@ -10,4 +10,6 @@ import java.util.List;
 public interface ModificationWorkOrderLineRepository extends JpaRepository<ModificationWorkOrderLine, Long> {
 
     List<ModificationWorkOrderLine> findByWorkOrderIdOrderByIdAsc(Long workOrderId);
+
+    List<ModificationWorkOrderLine> findByWorkOrderIdIn(List<Long> workOrderIds);
 }

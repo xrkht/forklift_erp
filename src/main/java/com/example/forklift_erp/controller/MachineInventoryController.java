@@ -1,5 +1,6 @@
 package com.example.forklift_erp.controller;
 
+import com.example.forklift_erp.common.PageResult;
 import com.example.forklift_erp.common.Result;
 import com.example.forklift_erp.common.ResultCode;
 import com.example.forklift_erp.dto.InboundRequestDTO;
@@ -8,6 +9,7 @@ import com.example.forklift_erp.dto.MachineDetailVO;
 import com.example.forklift_erp.dto.MachineInventoryCreateDTO;
 import com.example.forklift_erp.dto.MachineInventoryVO;
 import com.example.forklift_erp.dto.StockAdjustRequestDTO;
+import com.example.forklift_erp.dto.VehicleModelSummaryVO;
 import com.example.forklift_erp.entity.MachineConfig;
 import com.example.forklift_erp.exception.BusinessException;
 import com.example.forklift_erp.service.MachineConfigService;
@@ -50,6 +52,20 @@ public class MachineInventoryController {
             return Result.success(service.findPage(keyword, page, size));
         }
         return Result.success(service.findAll().stream().map(MachineInventoryVO::fromEntity).toList());
+    }
+
+    @GetMapping("/models")
+    public Result<PageResult<VehicleModelSummaryVO>> getModelPage(@RequestParam(required = false) String keyword,
+                                                                  @RequestParam(required = false) Integer page,
+                                                                  @RequestParam(required = false) Integer size) {
+        return Result.success(service.findModelPage(keyword, page, size));
+    }
+
+    @GetMapping("/model-vehicles")
+    public Result<List<MachineInventoryVO>> getModelVehicles(@RequestParam String name,
+                                                             @RequestParam String specificationModel,
+                                                             @RequestParam(required = false) String machineType) {
+        return Result.success(service.findVehiclesByModel(name, specificationModel, machineType));
     }
 
     @GetMapping("/{id}")

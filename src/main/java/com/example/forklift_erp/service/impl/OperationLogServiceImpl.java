@@ -8,8 +8,10 @@ import com.example.forklift_erp.repository.OperationAuditLogRepository;
 import com.example.forklift_erp.repository.RepairRecordRepository;
 import com.example.forklift_erp.repository.StockOperationLogRepository;
 import com.example.forklift_erp.service.OperationLogService;
-import com.example.forklift_erp.util.ListPageSupport;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -63,18 +65,25 @@ public class OperationLogServiceImpl implements OperationLogService {
     @Override
     @Transactional(readOnly = true)
     public PageResult<OperationLogVO> findPage(String keyword, Integer page, Integer size) {
-        List<OperationLogVO> filtered = ListPageSupport.filter(findAll(), keyword, row -> ListPageSupport.text(
-                row.getCategory(),
-                row.getAction(),
-                row.getTarget(),
-                row.getSummary(),
-                row.getOperator(),
-                row.getRemark()
-        ));
-        return ListPageSupport.page(filtered, page, size);
+        int normalizedPage = com.example.forklift_erp.util.ListPageSupport.page(page);
+        int normalizedSize = com.example.forklift_erp.util.ListPageSupport.size(size);
+        Page<OperationAuditLog> result = operationAuditLogRepository.searchPage(
+                normalizeKeyword(keyword),
+                PageRequest.of(normalizedPage, normalizedSize, Sort.by(Sort.Direction.DESC, "createdAt"))
+        );
+        return PageResult.of(
+                result.getContent().stream().map(OperationLogVO::fromAuditLog).toList(),
+                normalizedPage,
+                normalizedSize,
+                result.getTotalElements()
+        );
     }
 
     private String sourceKey(String sourceType, Long sourceId) {
         return sourceType + ":" + sourceId;
+    }
+
+    private String normalizeKeyword(String keyword) {
+        return keyword == null || keyword.isBlank() ? null : keyword.trim();
     }
 }

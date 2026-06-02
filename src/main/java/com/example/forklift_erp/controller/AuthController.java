@@ -20,6 +20,8 @@ import jakarta.validation.constraints.NotBlank;
 import lombok.Data;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Sort;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -204,21 +206,30 @@ public class AuthController {
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
         boolean canManagePrivilegedUsers = permissionService.hasPermission(authentication, PermissionCodes.USER_ADMIN);
 
+        if (paged) {
+            int normalizedPage = ListPageSupport.page(page);
+            int normalizedSize = ListPageSupport.size(size);
+            var result = userRepository.searchPage(
+                    normalizeKeyword(keyword),
+                    canManagePrivilegedUsers,
+                    PageRequest.of(normalizedPage, normalizedSize, Sort.by(Sort.Direction.DESC, "id"))
+            );
+            return Result.success(com.example.forklift_erp.common.PageResult.of(
+                    result.getContent().stream()
+                            .map(user -> UserSummaryResponse.fromEntity(user, permissionService.findPermissionCodes(user)))
+                            .toList(),
+                    normalizedPage,
+                    normalizedSize,
+                    result.getTotalElements()
+            ));
+        }
+
         List<UserSummaryResponse> users = userRepository.findAll().stream()
                 .filter(user -> canManagePrivilegedUsers
                         || user.getRoles().stream().allMatch(role -> RoleNames.isStandardUser(role.getName())))
                 .sorted(Comparator.comparing(User::getId).reversed())
                 .map(user -> UserSummaryResponse.fromEntity(user, permissionService.findPermissionCodes(user)))
                 .toList();
-        if (paged) {
-            List<UserSummaryResponse> filtered = ListPageSupport.filter(users, keyword, row -> ListPageSupport.text(
-                    row.getUsername(),
-                    row.getJobTag(),
-                    String.join(" ", row.getRoles()),
-                    String.join(" ", row.getPermissions())
-            ));
-            return Result.success(ListPageSupport.page(filtered, page, size));
-        }
         return Result.success(users);
     }
 
@@ -452,6 +463,14 @@ public class AuthController {
         return roles.stream().anyMatch(role -> RoleNames.isPrivileged(role.getName()))
                 ? JobTags.MANAGEMENT
                 : JobTags.CLERK;
+    }
+
+    private String normalizeKeyword(String keyword) {
+        if (keyword == null) {
+            return null;
+        }
+        String normalized = keyword.trim();
+        return normalized.isEmpty() ? null : normalized;
     }
 
     private String roleNames(User user) {
