@@ -27,6 +27,7 @@ import com.example.forklift_erp.repository.RentalRecordRepository;
 import com.example.forklift_erp.repository.StocktakingRecordRepository;
 import com.example.forklift_erp.repository.StockOperationLogRepository;
 import com.example.forklift_erp.repository.SupplierRepository;
+import com.example.forklift_erp.util.SearchKeywordSupport;
 import com.example.forklift_erp.util.SecurityUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.PageRequest;
@@ -145,7 +146,8 @@ public class StatisticsService {
 
     private ListSummaryVO outboundOrderSummary(String keyword) {
         OutboundOrderRepository.OutboundOrderSummaryProjection data = outboundOrderRepository.summarize(
-                normalizeKeyword(keyword),
+                SearchKeywordSupport.likePrefix(keyword),
+                SearchKeywordSupport.fullTextBoolean(keyword),
                 SecurityUtils.isAdminOrSuperAdmin()
         );
         long totalCount = number(data.getTotalCount());

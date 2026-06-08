@@ -5,6 +5,35 @@ export const pagedTabs = {
   parts: { endpoint: endpoints.part.list, dataKey: "parts", searchKey: "parts", permission: null, sortDesc: true },
   modificationOrders: { endpoint: endpoints.modificationOrder.list, dataKey: "modificationOrders", searchKey: "modificationOrders", permission: "replace:write", sortDesc: true },
   outboundOrders: { endpoint: endpoints.outboundOrder.list, dataKey: "outboundOrders", searchKey: "outboundOrders", permission: "stock:adjust", sortDesc: true },
+  attachments: {
+    endpoint: endpoints.attachments.list,
+    dataKey: "attachments",
+    searchKey: "attachments",
+    permission: null,
+    sortDesc: true,
+    buildParams: state => {
+      const filters = state.filters.attachments || {};
+      return {
+        resourceType: filters.resourceType || "",
+        resourceId: filters.resourceId || "",
+        category: filters.category || "",
+        includeDeleted: filters.includeDeleted || ""
+      };
+    }
+  },
+  imports: {
+    endpoint: endpoints.imports.list,
+    dataKey: "importJobs",
+    searchKey: "imports",
+    permission: "stock:adjust",
+    sortDesc: true,
+    buildParams: state => {
+      const filters = state.filters.imports || {};
+      return {
+        importType: filters.importType || ""
+      };
+    }
+  },
   rentals: { endpoint: endpoints.rental.list, dataKey: "rentals", searchKey: "rentals", permission: "stock:adjust", sortDesc: true },
   customers: { endpoint: endpoints.customer.list, dataKey: "customers", searchKey: "customers", permission: null, sortDesc: false },
   suppliers: { endpoint: endpoints.supplier.list, dataKey: "suppliers", searchKey: "suppliers", permission: "stock:adjust", sortDesc: false },

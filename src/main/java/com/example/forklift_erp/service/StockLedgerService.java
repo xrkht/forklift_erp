@@ -62,7 +62,7 @@ public class StockLedgerService {
                     warehouse.setWarehouseName("Default Warehouse");
                     warehouse.setWarehouseType("MAIN");
                     warehouse.setDefaultWarehouse(true);
-                    return warehouseRepository.saveAndFlush(warehouse);
+                    return warehouseRepository.save(warehouse);
                 });
     }
 
@@ -82,7 +82,7 @@ public class StockLedgerService {
                     return created;
                 });
         balance.setAvailableQuantity(quantity);
-        return stockBalanceRepository.saveAndFlush(balance);
+        return stockBalanceRepository.save(balance);
     }
 
     @Transactional
@@ -120,8 +120,8 @@ public class StockLedgerService {
 
         sourceBalance.setAvailableQuantity(sourceBefore - transferQuantity);
         targetBalance.setAvailableQuantity(targetBefore + transferQuantity);
-        stockBalanceRepository.saveAndFlush(sourceBalance);
-        stockBalanceRepository.saveAndFlush(targetBalance);
+        stockBalanceRepository.save(sourceBalance);
+        stockBalanceRepository.save(targetBalance);
 
         StockMovement movement = new StockMovement();
         movement.setMovementNo(nextMovementNo());
@@ -131,7 +131,7 @@ public class StockLedgerService {
         movement.setSourceId(sourceId);
         movement.setOperator(operator);
         movement.setRemark(remark);
-        StockMovement savedMovement = stockMovementRepository.saveAndFlush(movement);
+        StockMovement savedMovement = stockMovementRepository.save(movement);
 
         StockMovementLine sourceLine = new StockMovementLine();
         sourceLine.setMovementId(savedMovement.getId());
@@ -143,7 +143,7 @@ public class StockLedgerService {
         sourceLine.setQuantityDelta(-transferQuantity);
         sourceLine.setBeforeQuantity(sourceBefore);
         sourceLine.setAfterQuantity(sourceBefore - transferQuantity);
-        stockMovementLineRepository.saveAndFlush(sourceLine);
+        stockMovementLineRepository.save(sourceLine);
 
         StockMovementLine targetLine = new StockMovementLine();
         targetLine.setMovementId(savedMovement.getId());
@@ -155,7 +155,7 @@ public class StockLedgerService {
         targetLine.setQuantityDelta(transferQuantity);
         targetLine.setBeforeQuantity(targetBefore);
         targetLine.setAfterQuantity(targetBefore + transferQuantity);
-        stockMovementLineRepository.saveAndFlush(targetLine);
+        stockMovementLineRepository.save(targetLine);
 
         return savedMovement;
     }
@@ -190,7 +190,7 @@ public class StockLedgerService {
         movement.setSourceId(sourceId);
         movement.setOperator(operator);
         movement.setRemark(remark);
-        StockMovement savedMovement = stockMovementRepository.saveAndFlush(movement);
+        StockMovement savedMovement = stockMovementRepository.save(movement);
 
         StockMovementLine line = new StockMovementLine();
         line.setMovementId(savedMovement.getId());
@@ -202,7 +202,7 @@ public class StockLedgerService {
         line.setQuantityDelta(delta);
         line.setBeforeQuantity(before);
         line.setAfterQuantity(after);
-        stockMovementLineRepository.saveAndFlush(line);
+        stockMovementLineRepository.save(line);
 
         return savedMovement;
     }

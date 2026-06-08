@@ -26,7 +26,7 @@ public class SupplierController {
     private SupplierService service;
 
     @GetMapping
-    public Result<?> getAll(@RequestParam(defaultValue = "false") boolean paged,
+    public Result<?> getAll(@RequestParam(defaultValue = "true") boolean paged,
                             @RequestParam(required = false) String keyword,
                             @RequestParam(required = false) Integer page,
                             @RequestParam(required = false) Integer size) {

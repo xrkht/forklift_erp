@@ -37,29 +37,61 @@ public interface MachineInventoryRepository extends JpaRepository<MachineInvento
 
     long countByWarehouseId(Long warehouseId);
 
-    @Query("""
-            select m from MachineInventory m
-            where (:includeLocked = true or m.isLocked = false)
-              and (:keyword is null or :keyword = ''
-                   or lower(coalesce(m.vehicleProductNumber, '')) like lower(concat('%', :keyword, '%'))
-                   or lower(coalesce(m.name, '')) like lower(concat('%', :keyword, '%'))
-                   or lower(coalesce(m.specificationModel, '')) like lower(concat('%', :keyword, '%'))
-                   or lower(coalesce(m.configuration, '')) like lower(concat('%', :keyword, '%'))
-                   or lower(coalesce(m.machineType, '')) like lower(concat('%', :keyword, '%'))
-                   or lower(coalesce(m.supplier, '')) like lower(concat('%', :keyword, '%'))
-                   or lower(coalesce(m.warehouseName, '')) like lower(concat('%', :keyword, '%'))
-                   or lower(coalesce(m.applicationNumber, '')) like lower(concat('%', :keyword, '%'))
-                   or lower(coalesce(m.materialNumber, '')) like lower(concat('%', :keyword, '%'))
-                   or lower(coalesce(m.stockStatus, '')) like lower(concat('%', :keyword, '%'))
-                   or lower(coalesce(m.destination1, '')) like lower(concat('%', :keyword, '%'))
-                   or lower(coalesce(m.destination2, '')) like lower(concat('%', :keyword, '%'))
-                   or lower(coalesce(m.destination3, '')) like lower(concat('%', :keyword, '%'))
-                   or lower(coalesce(m.destination4, '')) like lower(concat('%', :keyword, '%'))
-                   or lower(coalesce(m.destination5, '')) like lower(concat('%', :keyword, '%'))
-                   or lower(coalesce(m.remarks, '')) like lower(concat('%', :keyword, '%')))
-            """)
+    @Query(value = """
+            select m.*
+            from machine_inventory m
+            where (:includeLocked = true or coalesce(m.is_locked, 0) = 0)
+              and (:keywordPrefix is null
+                   or m.vehicle_number like :keywordPrefix escape '!'
+                   or m.application_number like :keywordPrefix escape '!'
+                   or m.material_number like :keywordPrefix escape '!'
+                   or m.stock_status like :keywordPrefix escape '!'
+                   or (:fullTextKeyword is not null
+                       and match(
+                         m.name,
+                         m.specification_model,
+                         m.configuration,
+                         m.machine_type,
+                         m.supplier,
+                         m.warehouse_name,
+                         m.destination1,
+                         m.destination2,
+                         m.destination3,
+                         m.destination4,
+                         m.destination5,
+                         m.remarks
+                       ) against (:fullTextKeyword in boolean mode)))
+            order by m.id desc
+            """,
+            countQuery = """
+            select count(*)
+            from machine_inventory m
+            where (:includeLocked = true or coalesce(m.is_locked, 0) = 0)
+              and (:keywordPrefix is null
+                   or m.vehicle_number like :keywordPrefix escape '!'
+                   or m.application_number like :keywordPrefix escape '!'
+                   or m.material_number like :keywordPrefix escape '!'
+                   or m.stock_status like :keywordPrefix escape '!'
+                   or (:fullTextKeyword is not null
+                       and match(
+                         m.name,
+                         m.specification_model,
+                         m.configuration,
+                         m.machine_type,
+                         m.supplier,
+                         m.warehouse_name,
+                         m.destination1,
+                         m.destination2,
+                         m.destination3,
+                         m.destination4,
+                         m.destination5,
+                         m.remarks
+                       ) against (:fullTextKeyword in boolean mode)))
+            """,
+            nativeQuery = true)
     Page<MachineInventory> searchPage(
-            @Param("keyword") String keyword,
+            @Param("keywordPrefix") String keywordPrefix,
+            @Param("fullTextKeyword") String fullTextKeyword,
             @Param("includeLocked") boolean includeLocked,
             Pageable pageable
     );
@@ -80,8 +112,16 @@ public interface MachineInventoryRepository extends JpaRepository<MachineInvento
             where coalesce(m.modelOnly, false) = false
               and coalesce(m.inventoryCount, 0) <= :threshold
             order by coalesce(m.inventoryCount, 0) asc, m.id asc
-            """)
+    """)
     List<MachineInventory> findLowStock(@Param("threshold") int threshold, Pageable pageable);
+
+    @Query("""
+            select count(m) from MachineInventory m
+            where (:includeLocked = true or m.isLocked = false)
+              and coalesce(m.modelOnly, false) = false
+              and coalesce(m.inventoryCount, 0) > 0
+            """)
+    long countInStockVehicleTodos(@Param("includeLocked") boolean includeLocked);
 
     @Query(value = """
             select
@@ -99,14 +139,17 @@ public interface MachineInventoryRepository extends JpaRepository<MachineInvento
               group_concat(case when coalesce(m.model_only, 0) = 0 then m.vehicle_number else null end order by m.vehicle_number separator ' ') as vehicleNumbers
             from machine_inventory m
             where (:includeLocked = true or coalesce(m.is_locked, 0) = 0)
-              and (:keyword is null or :keyword = ''
-                   or lower(coalesce(m.vehicle_number, '')) like lower(concat('%', :keyword, '%'))
-                   or lower(coalesce(m.name, '')) like lower(concat('%', :keyword, '%'))
-                   or lower(coalesce(m.specification_model, '')) like lower(concat('%', :keyword, '%'))
-                   or lower(coalesce(m.configuration, '')) like lower(concat('%', :keyword, '%'))
-                   or lower(coalesce(m.machine_type, '')) like lower(concat('%', :keyword, '%'))
-                   or lower(coalesce(m.supplier, '')) like lower(concat('%', :keyword, '%'))
-                   or lower(coalesce(m.warehouse_name, '')) like lower(concat('%', :keyword, '%')))
+              and (:keywordPrefix is null
+                   or m.vehicle_number like :keywordPrefix escape '!'
+                   or (:fullTextKeyword is not null
+                       and match(
+                         m.name,
+                         m.specification_model,
+                         m.configuration,
+                         m.machine_type,
+                         m.supplier,
+                         m.warehouse_name
+                       ) against (:fullTextKeyword in boolean mode)))
             group by coalesce(m.name, ''), coalesce(m.specification_model, ''), coalesce(m.machine_type, '')
             order by coalesce(m.name, ''), coalesce(m.specification_model, ''), coalesce(m.machine_type, '')
             """,
@@ -115,20 +158,24 @@ public interface MachineInventoryRepository extends JpaRepository<MachineInvento
               select 1
               from machine_inventory m
               where (:includeLocked = true or coalesce(m.is_locked, 0) = 0)
-                and (:keyword is null or :keyword = ''
-                     or lower(coalesce(m.vehicle_number, '')) like lower(concat('%', :keyword, '%'))
-                     or lower(coalesce(m.name, '')) like lower(concat('%', :keyword, '%'))
-                     or lower(coalesce(m.specification_model, '')) like lower(concat('%', :keyword, '%'))
-                     or lower(coalesce(m.configuration, '')) like lower(concat('%', :keyword, '%'))
-                     or lower(coalesce(m.machine_type, '')) like lower(concat('%', :keyword, '%'))
-                     or lower(coalesce(m.supplier, '')) like lower(concat('%', :keyword, '%'))
-                     or lower(coalesce(m.warehouse_name, '')) like lower(concat('%', :keyword, '%')))
+                and (:keywordPrefix is null
+                     or m.vehicle_number like :keywordPrefix escape '!'
+                     or (:fullTextKeyword is not null
+                         and match(
+                           m.name,
+                           m.specification_model,
+                           m.configuration,
+                           m.machine_type,
+                           m.supplier,
+                           m.warehouse_name
+                         ) against (:fullTextKeyword in boolean mode)))
               group by coalesce(m.name, ''), coalesce(m.specification_model, ''), coalesce(m.machine_type, '')
             ) model_count
             """,
             nativeQuery = true)
     Page<VehicleModelSummaryProjection> searchModelSummaries(
-            @Param("keyword") String keyword,
+            @Param("keywordPrefix") String keywordPrefix,
+            @Param("fullTextKeyword") String fullTextKeyword,
             @Param("includeLocked") boolean includeLocked,
             Pageable pageable
     );

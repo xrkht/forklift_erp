@@ -172,6 +172,8 @@ function mutationGroups(path) {
     ["/api/purchase-orders", ["/api/purchase-orders", "type=purchases", "type=suppliers"]],
     ["/api/stocktaking-records", ["/api/stocktaking-records", "type=stocktakes"]],
     ["/api/warehouses", ["/api/warehouses", "/api/inventory", "/api/parts"]],
+    ["/api/attachments", ["/api/attachments", "/api/outbound-orders", "type=outboundOrders"]],
+    ["/api/imports", ["/api/imports", "/api/inventory", "/api/parts", "/api/customers", "/api/outbound-orders", "type=vehicles", "type=parts", "type=outboundOrders"]],
     ["/api/auth/users", ["/api/auth/users"]]
   ];
   for (const [prefix, affected] of rules) {

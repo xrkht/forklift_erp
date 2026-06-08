@@ -26,6 +26,8 @@ public interface ConfigValueRepository extends JpaRepository<ConfigValue, Long> 
      */
     List<ConfigValue> findByConfigItemIdOrderBySortOrderAsc(Long configItemId);
 
+    List<ConfigValue> findByConfigItemIdInOrderByConfigItemIdAscSortOrderAsc(List<Long> configItemIds);
+
     /**
      * 根据配置项ID查询默认值
      */

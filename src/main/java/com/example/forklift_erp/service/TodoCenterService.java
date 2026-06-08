@@ -2,9 +2,7 @@ package com.example.forklift_erp.service;
 
 import com.example.forklift_erp.constant.RentalStatuses;
 import com.example.forklift_erp.dto.TodoCenterVO;
-import com.example.forklift_erp.entity.MachineInventory;
 import com.example.forklift_erp.entity.OutboundOrder;
-import com.example.forklift_erp.entity.PartInventory;
 import com.example.forklift_erp.entity.RentalRecord;
 import com.example.forklift_erp.entity.RepairRecord;
 import com.example.forklift_erp.repository.MachineInventoryRepository;
@@ -15,6 +13,7 @@ import com.example.forklift_erp.repository.RepairRecordRepository;
 import com.example.forklift_erp.service.impl.OutboundUploadReadinessPolicy;
 import com.example.forklift_erp.util.SecurityUtils;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -24,7 +23,9 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.temporal.ChronoUnit;
 import java.util.Comparator;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
 @Service
 public class TodoCenterService {
@@ -52,79 +53,57 @@ public class TodoCenterService {
     public TodoCenterVO dashboard() {
         TodoCenterVO dashboard = new TodoCenterVO();
         dashboard.setGeneratedAt(LocalDateTime.now());
+        boolean includeLocked = SecurityUtils.isAdminOrSuperAdmin();
 
-        List<OutboundOrder> orders = SecurityUtils.isAdminOrSuperAdmin()
-                ? outboundOrderRepository.findAllByOrderByCreatedAtDesc()
-                : outboundOrderRepository.findAllByIsLockedFalseOrderByCreatedAtDesc();
-        orders.forEach(order -> addOrderTodos(dashboard, order));
+        applyOrderSummary(dashboard, outboundOrderRepository.summarizeTodos(includeLocked));
+        loadOrderTodoCandidates(includeLocked).forEach(order -> addOrderTodoItems(dashboard, order));
 
-        List<RepairRecord> repairs = SecurityUtils.isAdminOrSuperAdmin()
-                ? repairRepository.findAll()
-                : repairRepository.findAllByIsLockedFalse();
-        repairs.stream()
-                .filter(repair -> !"COMPLETED".equals(repair.getStatus()))
-                .forEach(repair -> {
-                    dashboard.setPendingRepairCount(dashboard.getPendingRepairCount() + 1);
-                    dashboard.getItems().add(item(
-                            "REPAIR_PENDING",
-                            "维修跟进",
-                            safe(repair.getCustomerName(), repair.getVehicleNumber(), "维修记录 " + repair.getId()),
-                            safe(repair.getFaultDescription(), repair.getStatus(), "待处理"),
-                            "primary",
-                            "REPAIR",
-                            repair.getId(),
-                            amount(repair.getTotalFee()),
-                            null,
-                            repair.getUpdatedAt()
-                    ));
-                });
+        dashboard.setPendingRepairCount(toSafeInt(repairRepository.countPendingTodos(includeLocked)));
+        repairRepository.findPendingTodos(includeLocked, todoPage()).forEach(repair ->
+                dashboard.getItems().add(item(
+                        "REPAIR_PENDING",
+                        "\u7ef4\u4fee\u8ddf\u8fdb",
+                        safe(repair.getCustomerName(), repair.getVehicleNumber(), "\u7ef4\u4fee\u8bb0\u5f55 " + repair.getId()),
+                        safe(repair.getFaultDescription(), repair.getStatus(), "\u5f85\u5904\u7406"),
+                        "primary",
+                        "REPAIR",
+                        repair.getId(),
+                        amount(repair.getTotalFee()),
+                        null,
+                        repair.getUpdatedAt()
+                )));
 
-        rentalRepository.findAllByOrderByCreatedAtDesc().stream()
-                .filter(rental -> RentalStatuses.ACTIVE.equals(rental.getStatus()))
-                .forEach(rental -> {
-                    dashboard.setActiveRentalCount(dashboard.getActiveRentalCount() + 1);
-                    dashboard.getItems().add(item(
-                            "RENTAL_ACTIVE",
-                            "租赁跟进",
-                            safe(rental.getVehicleNumber(), rental.getRentalNo(), "租赁记录 " + rental.getId()),
-                            safe(rental.getCustomerName(), rental.getDestination(), "租赁中"),
-                            "primary",
-                            "RENTAL",
-                            rental.getId(),
-                            amount(rental.getMonthlyRentalPrice()),
-                            rental.getEndDate(),
-                            rental.getUpdatedAt()
-                    ));
-                });
+        dashboard.setActiveRentalCount(toSafeInt(rentalRepository.countByStatus(RentalStatuses.ACTIVE)));
+        rentalRepository.findByStatusOrderByUpdatedAtDescIdDesc(RentalStatuses.ACTIVE, todoPage()).forEach(rental ->
+                dashboard.getItems().add(item(
+                        "RENTAL_ACTIVE",
+                        "\u79df\u8d41\u8ddf\u8fdb",
+                        safe(rental.getVehicleNumber(), rental.getRentalNo(), "\u79df\u8d41\u8bb0\u5f55 " + rental.getId()),
+                        safe(rental.getCustomerName(), rental.getDestination(), "\u79df\u8d41\u4e2d"),
+                        "primary",
+                        "RENTAL",
+                        rental.getId(),
+                        amount(rental.getMonthlyRentalPrice()),
+                        rental.getEndDate(),
+                        rental.getUpdatedAt()
+                )));
 
-        List<PartInventory> parts = SecurityUtils.isAdminOrSuperAdmin()
-                ? partRepository.findAll()
-                : partRepository.findAllByIsLockedFalse();
-        parts.stream()
-                .filter(part -> quantity(part.getQuantity()) <= 0)
-                .forEach(part -> {
-                    dashboard.setLowStockCount(dashboard.getLowStockCount() + 1);
-                    dashboard.getItems().add(item(
-                            "PART_LOW_STOCK",
-                            "库存预警",
-                            safe(part.getPartCode(), "配件 " + part.getId()),
-                            safe(part.getPartName(), "库存为 0"),
-                            "danger",
-                            "PART",
-                            part.getId(),
-                            null,
-                            null,
-                            part.getUpdatedAt()
-                    ));
-                });
+        dashboard.setLowStockCount(toSafeInt(partRepository.countLowStockTodos(0, includeLocked)));
+        partRepository.findLowStockTodos(0, includeLocked, todoPage()).forEach(part ->
+                dashboard.getItems().add(item(
+                        "PART_LOW_STOCK",
+                        "\u5e93\u5b58\u9884\u8b66",
+                        safe(part.getPartCode(), "\u914d\u4ef6 " + part.getId()),
+                        safe(part.getPartName(), "\u5e93\u5b58\u4e3a 0"),
+                        "danger",
+                        "PART",
+                        part.getId(),
+                        null,
+                        null,
+                        part.getUpdatedAt()
+                )));
 
-        List<MachineInventory> machines = SecurityUtils.isAdminOrSuperAdmin()
-                ? machineRepository.findAll()
-                : machineRepository.findAllByIsLockedFalse();
-        machines.stream()
-                .filter(machine -> !Boolean.TRUE.equals(machine.getModelOnly()))
-                .filter(machine -> quantity(machine.getInventoryCount()) > 0)
-                .forEach(machine -> dashboard.setInStockVehicleCount(dashboard.getInStockVehicleCount() + 1));
+        dashboard.setInStockVehicleCount(toSafeInt(machineRepository.countInStockVehicleTodos(includeLocked)));
 
         dashboard.getItems().sort(
                 Comparator.comparing((TodoCenterVO.TodoItem item) -> priorityRank(item.getPriority()))
@@ -146,27 +125,57 @@ public class TodoCenterService {
         return dashboard;
     }
 
-    private void addOrderTodos(TodoCenterVO dashboard, OutboundOrder order) {
+    private void applyOrderSummary(TodoCenterVO dashboard, OutboundOrderRepository.OutboundTodoSummaryProjection summary) {
+        if (summary == null) {
+            return;
+        }
+        dashboard.setReceivableAmount(amount(summary.getReceivableAmount()));
+        dashboard.setReceivedAmount(amount(summary.getReceivedAmount()));
+        dashboard.setOutstandingAmount(amount(summary.getOutstandingAmount()));
+        dashboard.setOverdueAmount(amount(summary.getOverdueAmount()));
+        dashboard.setPendingPaymentCount(toSafeInt(summary.getPendingPaymentCount()));
+        dashboard.setOverduePaymentCount(toSafeInt(summary.getOverduePaymentCount()));
+        dashboard.setPendingSalesReportCount(toSafeInt(summary.getPendingSalesReportCount()));
+        dashboard.setPendingInvoiceApplicationCount(toSafeInt(summary.getPendingInvoiceApplicationCount()));
+        dashboard.setPendingInvoiceFileCount(toSafeInt(summary.getPendingInvoiceFileCount()));
+        dashboard.setPendingContractFileCount(toSafeInt(summary.getPendingContractFileCount()));
+    }
+
+    private List<OutboundOrder> loadOrderTodoCandidates(boolean includeLocked) {
+        Map<Long, OutboundOrder> orders = new LinkedHashMap<>();
+        addOrderCandidates(orders, outboundOrderRepository.findOverduePaymentTodos(includeLocked, todoPage()));
+        addOrderCandidates(orders, outboundOrderRepository.findPendingPaymentTodos(includeLocked, todoPage()));
+        addOrderCandidates(orders, outboundOrderRepository.findSalesReportTodos(includeLocked, todoPage()));
+        addOrderCandidates(orders, outboundOrderRepository.findInvoiceApplicationTodos(includeLocked, todoPage()));
+        addOrderCandidates(orders, outboundOrderRepository.findInvoiceFileTodos(includeLocked, todoPage()));
+        addOrderCandidates(orders, outboundOrderRepository.findContractFileTodos(includeLocked, todoPage()));
+        return orders.values().stream().toList();
+    }
+
+    private void addOrderCandidates(Map<Long, OutboundOrder> target, List<OutboundOrder> rows) {
+        for (OutboundOrder order : rows) {
+            if (order.getId() != null) {
+                target.putIfAbsent(order.getId(), order);
+            }
+        }
+    }
+
+    private PageRequest todoPage() {
+        return PageRequest.of(0, ITEM_LIMIT);
+    }
+
+    private void addOrderTodoItems(TodoCenterVO dashboard, OutboundOrder order) {
         BigDecimal receivable = amount(firstAmount(order.getReceivableAmount(), order.getSettlementPrice()));
         BigDecimal received = amount(order.getReceivedAmount());
         BigDecimal outstanding = receivable.subtract(received).max(BigDecimal.ZERO).setScale(2, RoundingMode.HALF_UP);
         int overdueDays = overdueDays(outstanding, order.getPaymentDueDate());
 
-        dashboard.setReceivableAmount(dashboard.getReceivableAmount().add(receivable));
-        dashboard.setReceivedAmount(dashboard.getReceivedAmount().add(received));
-        dashboard.setOutstandingAmount(dashboard.getOutstandingAmount().add(outstanding));
-
-        String title = safe(order.getResourceCode(), order.getOrderNo(), "订单 " + order.getId());
+        String title = safe(order.getResourceCode(), order.getOrderNo(), "\u8ba2\u5355 " + order.getId());
         String detail = safe(order.getCustomerName(), order.getPaymentRemark(), order.getOrderNo());
         if (outstanding.signum() > 0) {
-            dashboard.setPendingPaymentCount(dashboard.getPendingPaymentCount() + 1);
-            if (overdueDays > 0) {
-                dashboard.setOverduePaymentCount(dashboard.getOverduePaymentCount() + 1);
-                dashboard.setOverdueAmount(dashboard.getOverdueAmount().add(outstanding));
-            }
             TodoCenterVO.TodoItem item = item(
                     "ORDER_PAYMENT",
-                    overdueDays > 0 ? "逾期收款" : "待收款",
+                    overdueDays > 0 ? "\u903e\u671f\u6536\u6b3e" : "\u5f85\u6536\u6b3e",
                     title,
                     detail,
                     overdueDays > 0 ? "danger" : "warn",
@@ -180,26 +189,22 @@ public class TodoCenterService {
             dashboard.getItems().add(item);
         }
         if (Boolean.TRUE.equals(order.getPaymentSettled()) && !Boolean.TRUE.equals(order.getSalesReported())) {
-            dashboard.setPendingSalesReportCount(dashboard.getPendingSalesReportCount() + 1);
-            dashboard.getItems().add(item("ORDER_SALES_REPORT", "待报销售", title, detail, "primary",
+            dashboard.getItems().add(item("ORDER_SALES_REPORT", "\u5f85\u62a5\u9500\u552e", title, detail, "primary",
                     "OUTBOUND_ORDER", order.getId(), null, null, order.getUpdatedAt()));
         }
         if (Boolean.TRUE.equals(order.getPaymentSettled())
                 && Boolean.TRUE.equals(order.getSalesReported())
                 && !Boolean.TRUE.equals(order.getInvoiceApplied())) {
-            dashboard.setPendingInvoiceApplicationCount(dashboard.getPendingInvoiceApplicationCount() + 1);
-            dashboard.getItems().add(item("ORDER_INVOICE_APPLICATION", "待申请发票", title, detail, "warn",
+            dashboard.getItems().add(item("ORDER_INVOICE_APPLICATION", "\u5f85\u7533\u8bf7\u53d1\u7968", title, detail, "warn",
                     "OUTBOUND_ORDER", order.getId(), null, null, order.getUpdatedAt()));
         }
         if (uploadReadinessPolicy.isInvoiceUploadReady(order) && isBlank(order.getInvoiceStoredFileName())) {
-            dashboard.setPendingInvoiceFileCount(dashboard.getPendingInvoiceFileCount() + 1);
-            dashboard.getItems().add(item("ORDER_INVOICE_FILE", "待上传发票", title,
+            dashboard.getItems().add(item("ORDER_INVOICE_FILE", "\u5f85\u4e0a\u4f20\u53d1\u7968", title,
                     safe(order.getInvoiceStatus(), detail), "primary", "OUTBOUND_ORDER", order.getId(),
                     null, null, order.getUpdatedAt()));
         }
         if (uploadReadinessPolicy.isContractUploadReady(order) && isBlank(order.getContractStoredFileName())) {
-            dashboard.setPendingContractFileCount(dashboard.getPendingContractFileCount() + 1);
-            dashboard.getItems().add(item("ORDER_CONTRACT_FILE", "待上传合同", title,
+            dashboard.getItems().add(item("ORDER_CONTRACT_FILE", "\u5f85\u4e0a\u4f20\u5408\u540c", title,
                     safe(order.getContractType(), detail), "teal", "OUTBOUND_ORDER", order.getId(),
                     null, null, order.getUpdatedAt()));
         }
@@ -245,10 +250,6 @@ public class TodoCenterService {
         return BigDecimal.ZERO;
     }
 
-    private int quantity(Integer value) {
-        return value == null ? 0 : value;
-    }
-
     private int overdueDays(BigDecimal outstanding, LocalDate dueDate) {
         if (dueDate == null || outstanding == null || outstanding.signum() <= 0) {
             return 0;
@@ -270,6 +271,14 @@ public class TodoCenterService {
             }
         }
         return "-";
+    }
+
+    private int toSafeInt(Long value) {
+        return value == null ? 0 : toSafeInt(value.longValue());
+    }
+
+    private int toSafeInt(long value) {
+        return value > Integer.MAX_VALUE ? Integer.MAX_VALUE : Math.toIntExact(value);
     }
 
     private boolean isBlank(String value) {

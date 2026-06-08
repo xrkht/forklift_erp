@@ -18,13 +18,10 @@ public class OperationLogController {
 
     @GetMapping
     @PreAuthorize("@permissionService.hasPermission(authentication, 'log:read')")
-    public Result<?> getAll(@RequestParam(defaultValue = "false") boolean paged,
+    public Result<?> getAll(@RequestParam(defaultValue = "true") boolean paged,
                             @RequestParam(required = false) String keyword,
                             @RequestParam(required = false) Integer page,
                             @RequestParam(required = false) Integer size) {
-        if (paged) {
-            return Result.success(operationLogService.findPage(keyword, page, size));
-        }
-        return Result.success(operationLogService.findAll());
+        return Result.success(operationLogService.findPage(keyword, page, size));
     }
 }

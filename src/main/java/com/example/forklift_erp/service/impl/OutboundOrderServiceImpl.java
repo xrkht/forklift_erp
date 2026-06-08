@@ -24,13 +24,14 @@ import com.example.forklift_erp.repository.StockOperationLogRepository;
 import com.example.forklift_erp.service.CollaborationService;
 import com.example.forklift_erp.service.OperationAuditService;
 import com.example.forklift_erp.service.OutboundOrderService;
+import com.example.forklift_erp.service.ResourceAttachmentService;
 import com.example.forklift_erp.service.StockLedgerService;
 import com.example.forklift_erp.util.ListPageSupport;
+import com.example.forklift_erp.util.SearchKeywordSupport;
 import com.example.forklift_erp.util.SecurityUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
-import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
@@ -86,6 +87,9 @@ public class OutboundOrderServiceImpl implements OutboundOrderService {
     @Autowired
     private OutboundResourceLockService resourceLockService;
 
+    @Autowired
+    private ResourceAttachmentService resourceAttachmentService;
+
     @Override
     @Transactional(readOnly = true)
     public List<OutboundOrderVO> findAll() {
@@ -103,9 +107,10 @@ public class OutboundOrderServiceImpl implements OutboundOrderService {
         int normalizedPage = ListPageSupport.page(page);
         int normalizedSize = ListPageSupport.size(size);
         Page<OutboundOrder> result = outboundOrderRepository.searchPage(
-                normalizeKeyword(keyword),
+                SearchKeywordSupport.likePrefix(keyword),
+                SearchKeywordSupport.fullTextBoolean(keyword),
                 SecurityUtils.isAdminOrSuperAdmin(),
-                PageRequest.of(normalizedPage, normalizedSize, Sort.by(Sort.Direction.DESC, "createdAt"))
+                PageRequest.of(normalizedPage, normalizedSize)
         );
         return PageResult.of(
                 result.getContent().stream().map(OutboundOrderVO::fromEntity).toList(),
@@ -179,7 +184,7 @@ public class OutboundOrderServiceImpl implements OutboundOrderService {
         order.setOrderRemark(blankToNull(request.getOrderRemark()));
         syncReceivableStatus(order);
         collaborationService.stampWrite(order);
-        OutboundOrder savedOrder = outboundOrderRepository.saveAndFlush(order);
+        OutboundOrder savedOrder = outboundOrderRepository.save(order);
 
         int after = before - 1;
         machine.setInventoryCount(after);
@@ -192,7 +197,7 @@ public class OutboundOrderServiceImpl implements OutboundOrderService {
         machine.setSalesReportDate(order.getSalesReportDate());
         machine.setIsInvoiceApplied(yesNo(order.getInvoiceApplied()));
         collaborationService.stampWrite(machine);
-        MachineInventory savedMachine = machineRepository.saveAndFlush(machine);
+        MachineInventory savedMachine = machineRepository.save(machine);
 
         StockOperationLog stockLog = saveStockLog(
                 OutboundOrder.RESOURCE_MACHINE,
@@ -257,13 +262,13 @@ public class OutboundOrderServiceImpl implements OutboundOrderService {
         order.setOrderRemark(blankToNull(request.getOrderRemark()));
         syncReceivableStatus(order);
         collaborationService.stampWrite(order);
-        OutboundOrder savedOrder = outboundOrderRepository.saveAndFlush(order);
+        OutboundOrder savedOrder = outboundOrderRepository.save(order);
 
         int after = before - quantity;
         part.setQuantity(after);
         part.setIsSalesReported("\u5426");
         collaborationService.stampWrite(part);
-        PartInventory savedPart = partRepository.saveAndFlush(part);
+        PartInventory savedPart = partRepository.save(part);
 
         StockOperationLog stockLog = saveStockLog(
                 OutboundOrder.RESOURCE_PART,
@@ -387,6 +392,7 @@ public class OutboundOrderServiceImpl implements OutboundOrderService {
         collaborationService.stampWrite(order);
 
         OutboundOrder saved = outboundOrderRepository.saveAndFlush(order);
+        resourceAttachmentService.recordLegacyOrderAttachment(saved, "INVOICE", storedFile);
         operationAuditService.record("Outbound order", "UPLOAD_INVOICE", "OUTBOUND_ORDER", saved.getId(),
                 saved.getOrderNo(), saved.getCustomerName(), "Upload invoice: " + storedFile.originalName(),
                 saved.getOperator(), saved.getOrderRemark(), SOURCE_TYPE, saved.getId());
@@ -422,6 +428,7 @@ public class OutboundOrderServiceImpl implements OutboundOrderService {
         collaborationService.stampWrite(order);
 
         OutboundOrder saved = outboundOrderRepository.saveAndFlush(order);
+        resourceAttachmentService.recordLegacyOrderAttachment(saved, "CONTRACT", storedFile);
         operationAuditService.record("Outbound order", "UPLOAD_CONTRACT", "OUTBOUND_ORDER", saved.getId(),
                 saved.getOrderNo(), saved.getCustomerName(), "Upload contract: " + storedFile.originalName(),
                 saved.getOperator(), saved.getOrderRemark(), SOURCE_TYPE, saved.getId());
@@ -479,7 +486,7 @@ public class OutboundOrderServiceImpl implements OutboundOrderService {
                 machine.setSalesReportDate(order.getSalesReportDate());
                 machine.setIsInvoiceApplied(yesNo(order.getInvoiceApplied()));
                 collaborationService.stampWrite(machine);
-                machineRepository.saveAndFlush(machine);
+                machineRepository.save(machine);
             });
             return;
         }
@@ -488,7 +495,7 @@ public class OutboundOrderServiceImpl implements OutboundOrderService {
                 part.setIsSalesReported(yesNo(order.getSalesReported()));
                 part.setSalesReportDate(order.getSalesReportDate());
                 collaborationService.stampWrite(part);
-                partRepository.saveAndFlush(part);
+                partRepository.save(part);
             });
         }
     }
@@ -583,10 +590,6 @@ public class OutboundOrderServiceImpl implements OutboundOrderService {
 
     private String blankToNull(String value) {
         return value == null || value.isBlank() ? null : value.trim();
-    }
-
-    private String normalizeKeyword(String keyword) {
-        return keyword == null || keyword.isBlank() ? null : keyword.trim();
     }
 
     private String joinRemark(String... values) {

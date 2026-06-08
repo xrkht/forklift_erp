@@ -24,10 +24,10 @@ import com.example.forklift_erp.service.MachineConfigService;
 import com.example.forklift_erp.service.MachineInventoryService;
 import com.example.forklift_erp.service.OperationAuditService;
 import com.example.forklift_erp.service.StockLedgerService;
+import com.example.forklift_erp.util.SearchKeywordSupport;
 import com.example.forklift_erp.util.SecurityUtils;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
-import org.springframework.data.domain.Sort;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -81,9 +81,10 @@ public class MachineInventoryServiceImpl implements MachineInventoryService {
         int normalizedPage = com.example.forklift_erp.util.ListPageSupport.page(page);
         int normalizedSize = com.example.forklift_erp.util.ListPageSupport.size(size);
         Page<MachineInventory> result = repository.searchPage(
-                normalizeKeyword(keyword),
+                SearchKeywordSupport.likePrefix(keyword),
+                SearchKeywordSupport.fullTextBoolean(keyword),
                 SecurityUtils.isAdminOrSuperAdmin(),
-                PageRequest.of(normalizedPage, normalizedSize, Sort.by(Sort.Direction.DESC, "id"))
+                PageRequest.of(normalizedPage, normalizedSize)
         );
         return PageResult.of(
                 result.getContent().stream().map(MachineInventoryVO::fromEntity).toList(),
@@ -99,7 +100,8 @@ public class MachineInventoryServiceImpl implements MachineInventoryService {
         int normalizedPage = com.example.forklift_erp.util.ListPageSupport.page(page);
         int normalizedSize = com.example.forklift_erp.util.ListPageSupport.size(size);
         Page<MachineInventoryRepository.VehicleModelSummaryProjection> result = repository.searchModelSummaries(
-                normalizeKeyword(keyword),
+                SearchKeywordSupport.likePrefix(keyword),
+                SearchKeywordSupport.fullTextBoolean(keyword),
                 SecurityUtils.isAdminOrSuperAdmin(),
                 PageRequest.of(normalizedPage, normalizedSize)
         );
@@ -193,7 +195,7 @@ public class MachineInventoryServiceImpl implements MachineInventoryService {
         }
 
         collaborationService.stampWrite(machineInventory);
-        MachineInventory saved = repository.saveAndFlush(machineInventory);
+        MachineInventory saved = repository.save(machineInventory);
         if (!Boolean.TRUE.equals(saved.getModelOnly())) {
             stockLedgerService.syncBalance(
                     StockLedgerService.RESOURCE_MACHINE,
@@ -455,10 +457,6 @@ public class MachineInventoryServiceImpl implements MachineInventoryService {
                 ("INBOUND".equals(operationType) ? "Machine inbound " : "Machine outbound ") + quantity,
                 operator, remark, "STOCK", savedLog.getId());
         return savedLog;
-    }
-
-    private String normalizeKeyword(String keyword) {
-        return keyword == null ? null : keyword.trim();
     }
 
     private String normalizeModelField(String value) {

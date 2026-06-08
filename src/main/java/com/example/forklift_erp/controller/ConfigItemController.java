@@ -17,7 +17,9 @@ import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.stream.Collectors;
 
 @Slf4j
@@ -95,6 +97,16 @@ public class ConfigItemController {
                 .map(ConfigValueVO::fromEntity)
                 .collect(Collectors.toList());
         return Result.success(list);
+    }
+
+    @GetMapping("/values")
+    public Result<Map<Long, List<ConfigValueVO>>> getValuesByItemIds(@RequestParam List<Long> itemIds) {
+        Map<Long, List<ConfigValueVO>> valuesByItemId = new LinkedHashMap<>();
+        configItemService.getValuesByItemIds(itemIds)
+                .forEach((itemId, values) -> valuesByItemId.put(itemId, values.stream()
+                        .map(ConfigValueVO::fromEntity)
+                        .toList()));
+        return Result.success(valuesByItemId);
     }
 
     @PostMapping("/values")

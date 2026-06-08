@@ -17,9 +17,13 @@ import java.util.Optional;
 public interface RepairRecordRepository extends JpaRepository<RepairRecord, Long> {
 
     List<RepairRecord> findByMachineIdOrderByRepairDateDesc(Long machineId);
+    List<RepairRecord> findByMachineIdAndIsLockedFalseOrderByRepairDateDesc(Long machineId);
     List<RepairRecord> findByRepairPerson(String repairPerson);
+    List<RepairRecord> findByRepairPersonAndIsLockedFalse(String repairPerson);
     List<RepairRecord> findByStatus(String status);
+    List<RepairRecord> findByStatusAndIsLockedFalse(String status);
     List<RepairRecord> findByRepairDateBetween(LocalDateTime start, LocalDateTime end);
+    List<RepairRecord> findByRepairDateBetweenAndIsLockedFalse(LocalDateTime start, LocalDateTime end);
 
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("select r from RepairRecord r where r.id = :id")
@@ -62,4 +66,19 @@ public interface RepairRecordRepository extends JpaRepository<RepairRecord, Long
             @Param("includeLocked") boolean includeLocked,
             Pageable pageable
     );
+
+    @Query("""
+            select count(r) from RepairRecord r
+            where (:includeLocked = true or r.isLocked = false)
+              and (r.status is null or r.status <> 'COMPLETED')
+            """)
+    long countPendingTodos(@Param("includeLocked") boolean includeLocked);
+
+    @Query("""
+            select r from RepairRecord r
+            where (:includeLocked = true or r.isLocked = false)
+              and (r.status is null or r.status <> 'COMPLETED')
+            order by r.updatedAt desc, r.id desc
+            """)
+    List<RepairRecord> findPendingTodos(@Param("includeLocked") boolean includeLocked, Pageable pageable);
 }

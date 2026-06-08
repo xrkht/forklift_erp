@@ -13,6 +13,8 @@ export function createInitialState({ token = "", user = null } = {}) {
       parts: "",
       modificationOrders: "",
       outboundOrders: "",
+      attachments: "",
+      imports: "",
       rentals: "",
       customers: "",
       suppliers: "",
@@ -32,6 +34,14 @@ export function createInitialState({ token = "", user = null } = {}) {
         power: "",
         supplier: "",
         stock: ""
+      },
+      attachments: {
+        resourceType: "",
+        category: "",
+        includeDeleted: ""
+      },
+      imports: {
+        importType: ""
       }
     },
     sorts: {},
@@ -41,6 +51,8 @@ export function createInitialState({ token = "", user = null } = {}) {
       parts: [],
       modificationOrders: [],
       outboundOrders: [],
+      attachments: [],
+      importJobs: [],
       todoCenter: null,
       rentals: [],
       customers: [],
@@ -64,6 +76,8 @@ export function createInitialState({ token = "", user = null } = {}) {
       parts: createPageState(LIST_PAGE_SIZE),
       modificationOrders: createPageState(LIST_PAGE_SIZE),
       outboundOrders: createPageState(LIST_PAGE_SIZE),
+      attachments: createPageState(LIST_PAGE_SIZE),
+      imports: createPageState(LIST_PAGE_SIZE),
       rentals: createPageState(LIST_PAGE_SIZE),
       customers: createPageState(LIST_PAGE_SIZE),
       suppliers: createPageState(LIST_PAGE_SIZE),
@@ -93,6 +107,8 @@ export function createInitialState({ token = "", user = null } = {}) {
     visibleLogRows: LOG_PAGE_SIZE,
     detailDrawer: null,
     batchSelections: {},
+    importValidation: null,
+    importSelectedType: "vehicle-workbook",
     tableDensity: "comfortable",
     tableColumns: {},
     filterViews: {},

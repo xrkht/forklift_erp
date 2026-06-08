@@ -34,9 +34,13 @@ public interface PartInventoryRepository extends JpaRepository<PartInventory, Lo
     @Query("select p from PartInventory p where p.partCode = :partCode and p.isLocked = false")
     Optional<PartInventory> findByPartCodeAndIsLockedFalseForUpdate(@Param("partCode") String partCode);
     List<PartInventory> findByPartCategory(String partCategory);
+    List<PartInventory> findByPartCategoryAndIsLockedFalse(String partCategory);
     List<PartInventory> findByQuantityGreaterThan(Integer minQuantity);
+    List<PartInventory> findByQuantityGreaterThanAndIsLockedFalse(Integer minQuantity);
     List<PartInventory> findBySource(String source);
+    List<PartInventory> findBySourceAndIsLockedFalse(String source);
     List<PartInventory> findBySourceMachineId(Long machineId);
+    List<PartInventory> findBySourceMachineIdAndIsLockedFalse(Long machineId);
 
     long countByWarehouseId(Long warehouseId);
 
@@ -45,21 +49,45 @@ public interface PartInventoryRepository extends JpaRepository<PartInventory, Lo
     Optional<PartInventory> findByIdAndIsLockedFalse(Long id);
     Optional<PartInventory> findByPartCodeAndIsLockedFalse(String partCode);
 
-    @Query("""
-            select p from PartInventory p
-            where (:includeLocked = true or p.isLocked = false)
-              and (:keyword is null or :keyword = ''
-                   or lower(coalesce(p.partCode, '')) like lower(concat('%', :keyword, '%'))
-                   or lower(coalesce(p.partName, '')) like lower(concat('%', :keyword, '%'))
-                   or lower(coalesce(p.partBrand, '')) like lower(concat('%', :keyword, '%'))
-                   or lower(coalesce(p.specification, '')) like lower(concat('%', :keyword, '%'))
-                   or lower(coalesce(p.partCategory, '')) like lower(concat('%', :keyword, '%'))
-                   or lower(coalesce(p.applicableModels, '')) like lower(concat('%', :keyword, '%'))
-                   or lower(coalesce(p.source, '')) like lower(concat('%', :keyword, '%'))
-                   or lower(coalesce(p.remarks, '')) like lower(concat('%', :keyword, '%')))
-            """)
+    @Query(value = """
+            select p.*
+            from part_inventory p
+            where (:includeLocked = true or coalesce(p.is_locked, 0) = 0)
+              and (:keywordPrefix is null
+                   or p.part_code like :keywordPrefix escape '!'
+                   or (:fullTextKeyword is not null
+                       and match(
+                         p.part_name,
+                         p.part_brand,
+                         p.specification,
+                         p.part_category,
+                         p.applicable_models,
+                         p.source,
+                         p.remarks
+                       ) against (:fullTextKeyword in boolean mode)))
+            order by p.id desc
+            """,
+            countQuery = """
+            select count(*)
+            from part_inventory p
+            where (:includeLocked = true or coalesce(p.is_locked, 0) = 0)
+              and (:keywordPrefix is null
+                   or p.part_code like :keywordPrefix escape '!'
+                   or (:fullTextKeyword is not null
+                       and match(
+                         p.part_name,
+                         p.part_brand,
+                         p.specification,
+                         p.part_category,
+                         p.applicable_models,
+                         p.source,
+                         p.remarks
+                       ) against (:fullTextKeyword in boolean mode)))
+            """,
+            nativeQuery = true)
     Page<PartInventory> searchPage(
-            @Param("keyword") String keyword,
+            @Param("keywordPrefix") String keywordPrefix,
+            @Param("fullTextKeyword") String fullTextKeyword,
             @Param("includeLocked") boolean includeLocked,
             Pageable pageable
     );
@@ -78,8 +106,27 @@ public interface PartInventoryRepository extends JpaRepository<PartInventory, Lo
             select p from PartInventory p
             where coalesce(p.quantity, 0) <= :threshold
             order by coalesce(p.quantity, 0) asc, p.id asc
-            """)
+    """)
     List<PartInventory> findLowStock(@Param("threshold") int threshold, Pageable pageable);
+
+    @Query("""
+            select count(p) from PartInventory p
+            where (:includeLocked = true or p.isLocked = false)
+              and coalesce(p.quantity, 0) <= :threshold
+            """)
+    long countLowStockTodos(@Param("threshold") int threshold, @Param("includeLocked") boolean includeLocked);
+
+    @Query("""
+            select p from PartInventory p
+            where (:includeLocked = true or p.isLocked = false)
+              and coalesce(p.quantity, 0) <= :threshold
+            order by p.updatedAt desc, p.id desc
+            """)
+    List<PartInventory> findLowStockTodos(
+            @Param("threshold") int threshold,
+            @Param("includeLocked") boolean includeLocked,
+            Pageable pageable
+    );
 
     interface StockValueProjection {
         Long getItemCount();

@@ -3686,6 +3686,19 @@ body,
   min-width: 0;
 }
 
+.import-workspace,
+.import-validation {
+  display: grid;
+  gap: 14px;
+}
+
+.import-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 12px;
+  align-items: end;
+}
+
 @media (max-width: 760px) {
   .nav-quick-actions {
     position: static;

@@ -15,12 +15,12 @@ import com.example.forklift_erp.service.OperationAuditService;
 import com.example.forklift_erp.service.PartInventoryService;
 import com.example.forklift_erp.service.StockLedgerService;
 import com.example.forklift_erp.util.ListPageSupport;
+import com.example.forklift_erp.util.SearchKeywordSupport;
 import com.example.forklift_erp.util.SecurityUtils;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
-import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -61,9 +61,10 @@ public class PartInventoryServiceImpl implements PartInventoryService {
         int normalizedPage = ListPageSupport.page(page);
         int normalizedSize = ListPageSupport.size(size);
         Page<PartInventory> result = partRepository.searchPage(
-                normalizeKeyword(keyword),
+                SearchKeywordSupport.likePrefix(keyword),
+                SearchKeywordSupport.fullTextBoolean(keyword),
                 SecurityUtils.isAdminOrSuperAdmin(),
-                PageRequest.of(normalizedPage, normalizedSize, Sort.by(Sort.Direction.DESC, "id"))
+                PageRequest.of(normalizedPage, normalizedSize)
         );
         return PageResult.of(
                 result.getContent().stream().map(PartInventoryVO::fromEntity).toList(),
@@ -140,7 +141,7 @@ public class PartInventoryServiceImpl implements PartInventoryService {
         }
         log.info("Save part: partCode={}, name={}, quantity={}", part.getPartCode(), part.getPartName(), part.getQuantity());
         collaborationService.stampWrite(part);
-        PartInventory saved = partRepository.saveAndFlush(part);
+        PartInventory saved = partRepository.save(part);
         stockLedgerService.syncBalance(
                 StockLedgerService.RESOURCE_PART,
                 saved.getId(),
@@ -213,9 +214,7 @@ public class PartInventoryServiceImpl implements PartInventoryService {
         if (SecurityUtils.isAdminOrSuperAdmin()) {
             return partRepository.findByPartCategory(category);
         }
-        return partRepository.findByPartCategory(category).stream()
-                .filter(p -> !Boolean.TRUE.equals(p.getIsLocked()))
-                .toList();
+        return partRepository.findByPartCategoryAndIsLockedFalse(category);
     }
 
     @Override
@@ -223,9 +222,7 @@ public class PartInventoryServiceImpl implements PartInventoryService {
         if (SecurityUtils.isAdminOrSuperAdmin()) {
             return partRepository.findByQuantityGreaterThan(0);
         }
-        return partRepository.findByQuantityGreaterThan(0).stream()
-                .filter(p -> !Boolean.TRUE.equals(p.getIsLocked()))
-                .toList();
+        return partRepository.findByQuantityGreaterThanAndIsLockedFalse(0);
     }
 
     @Override
@@ -233,9 +230,7 @@ public class PartInventoryServiceImpl implements PartInventoryService {
         if (SecurityUtils.isAdminOrSuperAdmin()) {
             return partRepository.findBySource(source);
         }
-        return partRepository.findBySource(source).stream()
-                .filter(p -> !Boolean.TRUE.equals(p.getIsLocked()))
-                .toList();
+        return partRepository.findBySourceAndIsLockedFalse(source);
     }
 
     @Override
@@ -243,9 +238,7 @@ public class PartInventoryServiceImpl implements PartInventoryService {
         if (SecurityUtils.isAdminOrSuperAdmin()) {
             return partRepository.findBySourceMachineId(machineId);
         }
-        return partRepository.findBySourceMachineId(machineId).stream()
-                .filter(p -> !Boolean.TRUE.equals(p.getIsLocked()))
-                .toList();
+        return partRepository.findBySourceMachineIdAndIsLockedFalse(machineId);
     }
 
     @Override
@@ -264,7 +257,7 @@ public class PartInventoryServiceImpl implements PartInventoryService {
         part.setInboundDate(LocalDateTime.now());
         log.info("Part inbound: partCode={}, quantity={}, currentQuantity={}", partCode, quantity, part.getQuantity());
         collaborationService.stampWrite(part);
-        PartInventory saved = partRepository.saveAndFlush(part);
+        PartInventory saved = partRepository.save(part);
         stockLedgerService.syncBalance(
                 StockLedgerService.RESOURCE_PART,
                 saved.getId(),
@@ -292,7 +285,7 @@ public class PartInventoryServiceImpl implements PartInventoryService {
         part.setQuantity(part.getQuantity() - quantity);
         log.info("Part outbound: partCode={}, quantity={}, currentQuantity={}", partCode, quantity, part.getQuantity());
         collaborationService.stampWrite(part);
-        PartInventory saved = partRepository.saveAndFlush(part);
+        PartInventory saved = partRepository.save(part);
         stockLedgerService.syncBalance(
                 StockLedgerService.RESOURCE_PART,
                 saved.getId(),
@@ -355,7 +348,4 @@ public class PartInventoryServiceImpl implements PartInventoryService {
         return savedLog;
     }
 
-    private String normalizeKeyword(String keyword) {
-        return keyword == null || keyword.isBlank() ? null : keyword.trim();
-    }
 }

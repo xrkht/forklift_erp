@@ -35,7 +35,7 @@ public class OutboundResourceLockService {
                 machine.setIsLocked(true);
                 order.setResourceLockedByOrder(previouslyOrderLocked || !alreadyLocked);
                 collaborationService.stampWrite(machine);
-                machineRepository.saveAndFlush(machine);
+                machineRepository.save(machine);
             });
             return;
         }
@@ -45,7 +45,7 @@ public class OutboundResourceLockService {
                 part.setIsLocked(true);
                 order.setResourceLockedByOrder(previouslyOrderLocked || !alreadyLocked);
                 collaborationService.stampWrite(part);
-                partRepository.saveAndFlush(part);
+                partRepository.save(part);
             });
         }
     }
@@ -63,13 +63,13 @@ public class OutboundResourceLockService {
             machineRepository.findByIdForUpdate(order.getResourceId()).ifPresent(machine -> {
                 machine.setIsLocked(false);
                 collaborationService.stampWrite(machine);
-                machineRepository.saveAndFlush(machine);
+                machineRepository.save(machine);
             });
         } else if (OutboundOrder.RESOURCE_PART.equals(order.getResourceType())) {
             partRepository.findByIdForUpdate(order.getResourceId()).ifPresent(part -> {
                 part.setIsLocked(false);
                 collaborationService.stampWrite(part);
-                partRepository.saveAndFlush(part);
+                partRepository.save(part);
             });
         }
         order.setResourceLockedByOrder(false);

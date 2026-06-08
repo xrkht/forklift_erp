@@ -27,6 +27,7 @@ export const endpoints = {
     delete: id => `/api/config/items/${id}`
   },
   configValue: {
+    listByItems: "/api/config/values",
     create: "/api/config/values",
     delete: id => `/api/config/values/${id}`
   },
@@ -50,6 +51,14 @@ export const endpoints = {
     downloadInvoice: id => `/api/outbound-orders/${id}/invoice`,
     uploadContract: id => `/api/outbound-orders/${id}/contract`,
     downloadContract: id => `/api/outbound-orders/${id}/contract`
+  },
+  attachments: {
+    list: "/api/attachments",
+    byResource: "/api/attachments/resource",
+    upload: "/api/attachments",
+    download: id => `/api/attachments/${id}/download`,
+    preview: id => `/api/attachments/${id}/preview`,
+    delete: id => `/api/attachments/${id}`
   },
   rental: {
     list: "/api/rentals",
@@ -118,6 +127,13 @@ export const endpoints = {
     suppliers: "/api/export/suppliers",
     purchases: "/api/export/purchase-orders",
     stocktakes: "/api/export/stocktaking-records"
+  },
+  imports: {
+    list: "/api/imports",
+    detail: id => `/api/imports/${id}`,
+    template: type => `/api/imports/templates/${type}`,
+    validate: type => `/api/imports/${type}/validate`,
+    confirm: id => `/api/imports/${id}/confirm`
   },
   logs: "/api/logs",
   todos: "/api/todos",

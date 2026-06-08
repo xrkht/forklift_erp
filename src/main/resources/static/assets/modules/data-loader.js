@@ -133,8 +133,13 @@ export function createDataLoaders({
     const pageState = state.pages[tab];
     pageState.loading = true;
     const keyword = state.search[config.searchKey] || "";
+    const extraParams = typeof config.buildParams === "function" ? config.buildParams(state, options) || {} : {};
+    const baseUrl = pageUrl(config.endpoint, pageState, keyword);
+    const url = Object.keys(extraParams).length
+      ? `${baseUrl}&${new URLSearchParams(Object.entries(extraParams).filter(([, value]) => value !== null && value !== undefined && String(value).trim() !== "")).toString()}`
+      : baseUrl;
     const [payload, summary] = await Promise.all([
-      api(pageUrl(config.endpoint, pageState, keyword)),
+      api(url),
       loadListSummary(tab, keyword)
     ]);
     const rows = pageContent(payload);
@@ -202,12 +207,23 @@ export function createDataLoaders({
     return api(`/api/config/items/${itemId}/values`);
   }
 
+  async function fetchConfigValueMap(itemIds = []) {
+    const ids = [...new Set((itemIds || [])
+      .map(id => Number(id))
+      .filter(id => Number.isFinite(id) && id > 0))];
+    if (!ids.length) return {};
+    const params = new URLSearchParams();
+    ids.forEach(id => params.append("itemIds", String(id)));
+    return api(`${endpoints.configValue.listByItems}?${params.toString()}`);
+  }
+
   async function loadConfigValueCache(items = state.data.configItems) {
-    const entries = await Promise.all((items || []).map(async item => {
-      const values = sortById(await fetchConfigValues(item.id), false);
-      return [item.id, values];
+    const safeItems = items || [];
+    const valueMap = await fetchConfigValueMap(safeItems.map(item => item.id));
+    state.data.configValueMap = Object.fromEntries(safeItems.map(item => {
+      const values = valueMap[item.id] || valueMap[String(item.id)] || [];
+      return [item.id, sortById(values, false)];
     }));
-    state.data.configValueMap = Object.fromEntries(entries);
   }
 
   async function loadConfigValues(itemId, options = {}) {
@@ -226,6 +242,7 @@ export function createDataLoaders({
   return {
     ensureConfigData,
     fetchConfigValues,
+    fetchConfigValueMap,
     loadAllData,
     loadConfigValueCache,
     loadConfigValues,

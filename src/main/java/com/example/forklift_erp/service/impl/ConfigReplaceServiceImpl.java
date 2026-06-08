@@ -90,7 +90,7 @@ public class ConfigReplaceServiceImpl implements ConfigReplaceService {
             oldConfig.setInstalledDate(LocalDateTime.now());
             oldConfig.setUpdatedAt(LocalDateTime.now());
             collaborationService.stampWrite(oldConfig);
-            machineConfigRepository.saveAndFlush(oldConfig);
+            machineConfigRepository.save(oldConfig);
             log.info("更新车辆配置: machineId={}, 配置项={}, 旧值={} -> 新值={}",
                     machine.getId(), oldConfig.getItemName(), oldValue, newConfigValue.getValueLabel());
         } else {
@@ -109,7 +109,7 @@ public class ConfigReplaceServiceImpl implements ConfigReplaceService {
             newConfig.setIsStandard(false);  // 非原厂，因为不是入库时设置的
             newConfig.setInstalledDate(LocalDateTime.now());
             collaborationService.stampWrite(newConfig);
-            machineConfigRepository.saveAndFlush(newConfig);
+            machineConfigRepository.save(newConfig);
             log.info("新增车辆配置: machineId={}, 配置项={}, 值={}",
                     machine.getId(), configItem.getItemName(), newConfigValue.getValueLabel());
         }
@@ -126,7 +126,7 @@ public class ConfigReplaceServiceImpl implements ConfigReplaceService {
             int beforeQuantity = newPart.getQuantity();
             newPart.setQuantity(beforeQuantity - 1);
             collaborationService.stampWrite(newPart);
-            newPart = partRepository.saveAndFlush(newPart);
+            newPart = partRepository.save(newPart);
             savePartStockLog(newPart, "OUTBOUND", 1, beforeQuantity, newPart.getQuantity(),
                     request.getOperator(), "Config replace outbound; machineId=" + machine.getId());
             log.info("配件出库: partCode={}, 剩余库存={}", newPart.getPartCode(), newPart.getQuantity());
@@ -144,7 +144,7 @@ public class ConfigReplaceServiceImpl implements ConfigReplaceService {
         }
 
         collaborationService.stampWrite(machine);
-        machineRepository.saveAndFlush(machine);
+        machineRepository.save(machine);
 
         // 7. 记录替换日志
         ConfigReplaceLog logEntry = new ConfigReplaceLog();
@@ -215,7 +215,7 @@ public class ConfigReplaceServiceImpl implements ConfigReplaceService {
         int newPartBeforeQuantity = newPart.getQuantity();
         newPart.setQuantity(newPartBeforeQuantity - quantity);
         collaborationService.stampWrite(newPart);
-        newPart = partRepository.saveAndFlush(newPart);
+        newPart = partRepository.save(newPart);
         savePartStockLog(newPart, "OUTBOUND", quantity, newPartBeforeQuantity, newPart.getQuantity(),
                 request.getOperator(), "配件替换出库；车辆ID=" + machine.getId(),
                 request.getStockMovementSourceType(), request.getStockMovementSourceId());
@@ -238,7 +238,7 @@ public class ConfigReplaceServiceImpl implements ConfigReplaceService {
             removedPart.setRemarks("配件替换拆下入库；车辆ID=" + machine.getId()
                     + (request.getRemark() == null || request.getRemark().isBlank() ? "" : "；" + request.getRemark()));
             collaborationService.stampWrite(removedPart);
-            removedPart = partRepository.saveAndFlush(removedPart);
+            removedPart = partRepository.save(removedPart);
             savePartStockLog(removedPart, "INBOUND", quantity, 0, quantity,
                     request.getOperator(), "配件替换拆下入库；车辆ID=" + machine.getId(),
                     request.getStockMovementSourceType(), request.getStockMovementSourceId());
@@ -250,10 +250,10 @@ public class ConfigReplaceServiceImpl implements ConfigReplaceService {
         oldConfig.setInstalledDate(LocalDateTime.now());
         oldConfig.setRemark(request.getRemark());
         collaborationService.stampWrite(oldConfig);
-        machineConfigRepository.saveAndFlush(oldConfig);
+        machineConfigRepository.save(oldConfig);
 
         collaborationService.stampWrite(machine);
-        machineRepository.saveAndFlush(machine);
+        machineRepository.save(machine);
 
         ConfigReplaceLog logEntry = new ConfigReplaceLog();
         logEntry.setMachineId(machine.getId());
@@ -310,7 +310,7 @@ public class ConfigReplaceServiceImpl implements ConfigReplaceService {
         int beforeQuantity = newPart.getQuantity();
         newPart.setQuantity(beforeQuantity - quantity);
         collaborationService.stampWrite(newPart);
-        newPart = partRepository.saveAndFlush(newPart);
+        newPart = partRepository.save(newPart);
         savePartStockLog(newPart, "OUTBOUND", quantity, beforeQuantity, newPart.getQuantity(),
                 request.getOperator(),
                 "整车新增配件装车；车辆ID=" + machine.getId(),
@@ -329,10 +329,10 @@ public class ConfigReplaceServiceImpl implements ConfigReplaceService {
                 + "；数量=" + quantity
                 + (request.getRemark() == null || request.getRemark().isBlank() ? "" : "；" + request.getRemark()));
         collaborationService.stampWrite(newConfig);
-        newConfig = machineConfigRepository.saveAndFlush(newConfig);
+        newConfig = machineConfigRepository.save(newConfig);
 
         collaborationService.stampWrite(machine);
-        machineRepository.saveAndFlush(machine);
+        machineRepository.save(machine);
 
         ConfigReplaceLog logEntry = new ConfigReplaceLog();
         logEntry.setMachineId(machine.getId());

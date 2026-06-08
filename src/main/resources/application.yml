@@ -10,6 +10,8 @@ server:
     key-alias: forklift-erp
 
 spring:
+  profiles:
+    default: prod
   application:
     name: forklift-erp # 应用名称，与Spring Initializr创建时保持一致
   datasource:

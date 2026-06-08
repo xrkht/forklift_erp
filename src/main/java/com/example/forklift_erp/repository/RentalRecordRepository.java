@@ -75,6 +75,10 @@ public interface RentalRecordRepository extends JpaRepository<RentalRecord, Long
 
     boolean existsByMachineIdAndStatus(Long machineId, String status);
 
+    long countByStatus(String status);
+
+    List<RentalRecord> findByStatusOrderByUpdatedAtDescIdDesc(String status, Pageable pageable);
+
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("select r from RentalRecord r where r.id = :id")
     Optional<RentalRecord> findByIdForUpdate(@Param("id") Long id);

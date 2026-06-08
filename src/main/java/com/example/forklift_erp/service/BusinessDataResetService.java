@@ -15,6 +15,8 @@ import com.example.forklift_erp.repository.StockBalanceRepository;
 import com.example.forklift_erp.repository.StockMovementLineRepository;
 import com.example.forklift_erp.repository.StockMovementRepository;
 import com.example.forklift_erp.repository.StockOperationLogRepository;
+import com.example.forklift_erp.repository.DataImportJobRepository;
+import com.example.forklift_erp.repository.ResourceAttachmentRepository;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -75,6 +77,12 @@ public class BusinessDataResetService {
     @Autowired
     private OperationAuditLogRepository operationAuditLogRepository;
 
+    @Autowired
+    private ResourceAttachmentRepository resourceAttachmentRepository;
+
+    @Autowired
+    private DataImportJobRepository dataImportJobRepository;
+
     @Transactional
     public Map<String, Long> resetBusinessData() {
         Map<String, Long> summary = new LinkedHashMap<>();
@@ -94,6 +102,8 @@ public class BusinessDataResetService {
         summary.put("partInventories", deleteAll(partInventoryRepository));
         summary.put("machineInventories", deleteAll(machineInventoryRepository));
         summary.put("customers", deleteAll(customerRepository));
+        summary.put("resourceAttachments", deleteAll(resourceAttachmentRepository));
+        summary.put("dataImportJobs", deleteAll(dataImportJobRepository));
         summary.put("operationAuditLogs", deleteAll(operationAuditLogRepository));
 
         return summary;

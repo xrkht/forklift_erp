@@ -165,38 +165,34 @@ public class RepairRecordServiceImpl implements RepairRecordService {
 
     @Override
     public List<RepairRecord> findByMachineId(Long machineId) {
-        List<RepairRecord> list = repairRepository.findByMachineIdOrderByRepairDateDesc(machineId);
-        if (!SecurityUtils.isAdminOrSuperAdmin()) {
-            list = list.stream().filter(r -> !Boolean.TRUE.equals(r.getIsLocked())).collect(Collectors.toList());
+        if (SecurityUtils.isAdminOrSuperAdmin()) {
+            return repairRepository.findByMachineIdOrderByRepairDateDesc(machineId);
         }
-        return list;
+        return repairRepository.findByMachineIdAndIsLockedFalseOrderByRepairDateDesc(machineId);
     }
 
     @Override
     public List<RepairRecord> findByRepairPerson(String repairPerson) {
-        List<RepairRecord> list = repairRepository.findByRepairPerson(repairPerson);
-        if (!SecurityUtils.isAdminOrSuperAdmin()) {
-            list = list.stream().filter(r -> !Boolean.TRUE.equals(r.getIsLocked())).collect(Collectors.toList());
+        if (SecurityUtils.isAdminOrSuperAdmin()) {
+            return repairRepository.findByRepairPerson(repairPerson);
         }
-        return list;
+        return repairRepository.findByRepairPersonAndIsLockedFalse(repairPerson);
     }
 
     @Override
     public List<RepairRecord> findByStatus(String status) {
-        List<RepairRecord> list = repairRepository.findByStatus(status);
-        if (!SecurityUtils.isAdminOrSuperAdmin()) {
-            list = list.stream().filter(r -> !Boolean.TRUE.equals(r.getIsLocked())).collect(Collectors.toList());
+        if (SecurityUtils.isAdminOrSuperAdmin()) {
+            return repairRepository.findByStatus(status);
         }
-        return list;
+        return repairRepository.findByStatusAndIsLockedFalse(status);
     }
 
     @Override
     public List<RepairRecord> findByDateRange(LocalDateTime start, LocalDateTime end) {
-        List<RepairRecord> list = repairRepository.findByRepairDateBetween(start, end);
-        if (!SecurityUtils.isAdminOrSuperAdmin()) {
-            list = list.stream().filter(r -> !Boolean.TRUE.equals(r.getIsLocked())).collect(Collectors.toList());
+        if (SecurityUtils.isAdminOrSuperAdmin()) {
+            return repairRepository.findByRepairDateBetween(start, end);
         }
-        return list;
+        return repairRepository.findByRepairDateBetweenAndIsLockedFalse(start, end);
     }
 
     @Override

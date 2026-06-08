@@ -20,76 +20,264 @@ public interface OutboundOrderRepository extends JpaRepository<OutboundOrder, Lo
 
     List<OutboundOrder> findAllByIsLockedFalseOrderByCreatedAtDesc();
 
-    @Query("""
-            select o from OutboundOrder o
-            where (:includeLocked = true or o.isLocked = false)
-              and (:keyword is null
-                or lower(coalesce(o.orderNo, '')) like lower(concat('%', :keyword, '%'))
-                or lower(coalesce(o.resourceType, '')) like lower(concat('%', :keyword, '%'))
-                or lower(coalesce(o.resourceCode, '')) like lower(concat('%', :keyword, '%'))
-                or lower(coalesce(o.resourceName, '')) like lower(concat('%', :keyword, '%'))
-                or lower(coalesce(o.specificationModel, '')) like lower(concat('%', :keyword, '%'))
-                or lower(coalesce(o.customerName, '')) like lower(concat('%', :keyword, '%'))
-                or lower(coalesce(o.customerAddress, '')) like lower(concat('%', :keyword, '%'))
-                or lower(coalesce(o.contactName, '')) like lower(concat('%', :keyword, '%'))
-                or lower(coalesce(o.contactPhone, '')) like lower(concat('%', :keyword, '%'))
-                or lower(coalesce(o.operator, '')) like lower(concat('%', :keyword, '%'))
-                or lower(coalesce(o.paymentRemark, '')) like lower(concat('%', :keyword, '%'))
-                or lower(coalesce(o.invoiceStatus, '')) like lower(concat('%', :keyword, '%'))
-                or lower(coalesce(o.invoiceOriginalName, '')) like lower(concat('%', :keyword, '%'))
-                or lower(coalesce(o.registrationStatus, '')) like lower(concat('%', :keyword, '%'))
-                or lower(coalesce(o.contractType, '')) like lower(concat('%', :keyword, '%'))
-                or lower(coalesce(o.contractOriginalName, '')) like lower(concat('%', :keyword, '%'))
-                or lower(coalesce(o.orderRemark, '')) like lower(concat('%', :keyword, '%')))
-            """)
+    @Query(value = """
+            select o.*
+            from outbound_order o
+            where (:includeLocked = true or coalesce(o.is_locked, 0) = 0)
+              and (:keywordPrefix is null
+                or o.order_no like :keywordPrefix escape '!'
+                or o.resource_type like :keywordPrefix escape '!'
+                or o.resource_code like :keywordPrefix escape '!'
+                or o.contact_phone like :keywordPrefix escape '!'
+                or o.invoice_status like :keywordPrefix escape '!'
+                or o.registration_status like :keywordPrefix escape '!'
+                or o.contract_type like :keywordPrefix escape '!'
+                or (:fullTextKeyword is not null
+                    and match(
+                      o.resource_name,
+                      o.specification_model,
+                      o.customer_name,
+                      o.customer_address,
+                      o.contact_name,
+                      o.operator,
+                      o.payment_remark,
+                      o.invoice_original_name,
+                      o.contract_original_name,
+                      o.order_remark
+                    ) against (:fullTextKeyword in boolean mode)))
+            order by o.created_at desc, o.id desc
+            """,
+            countQuery = """
+            select count(*)
+            from outbound_order o
+            where (:includeLocked = true or coalesce(o.is_locked, 0) = 0)
+              and (:keywordPrefix is null
+                or o.order_no like :keywordPrefix escape '!'
+                or o.resource_type like :keywordPrefix escape '!'
+                or o.resource_code like :keywordPrefix escape '!'
+                or o.contact_phone like :keywordPrefix escape '!'
+                or o.invoice_status like :keywordPrefix escape '!'
+                or o.registration_status like :keywordPrefix escape '!'
+                or o.contract_type like :keywordPrefix escape '!'
+                or (:fullTextKeyword is not null
+                    and match(
+                      o.resource_name,
+                      o.specification_model,
+                      o.customer_name,
+                      o.customer_address,
+                      o.contact_name,
+                      o.operator,
+                      o.payment_remark,
+                      o.invoice_original_name,
+                      o.contract_original_name,
+                      o.order_remark
+                    ) against (:fullTextKeyword in boolean mode)))
+            """,
+            nativeQuery = true)
     Page<OutboundOrder> searchPage(
-            @Param("keyword") String keyword,
+            @Param("keywordPrefix") String keywordPrefix,
+            @Param("fullTextKeyword") String fullTextKeyword,
             @Param("includeLocked") boolean includeLocked,
             Pageable pageable
     );
 
-    @Query("""
+    @Query(value = """
             select
-              count(o) as totalCount,
-              sum(case when o.paymentSettled = true then 0 else 1 end) as unsettledOrders,
-              sum(case when o.salesReported = true then 0 else 1 end) as pendingReports,
-              sum(case when o.invoiceApplied = true then 0 else 1 end) as pendingInvoices,
-              sum(case when o.paymentSettled = true then 1 else 0 end) as settledOrders,
-              sum(case when o.invoiceStoredFileName is null or o.invoiceStoredFileName = '' then 0 else 1 end) as uploadedInvoices,
-              sum(case when o.contractStoredFileName is null or o.contractStoredFileName = '' then 0 else 1 end) as uploadedContracts,
-              sum(case when o.resourceType = 'MACHINE' then 1 else 0 end) as machineOrders,
-              sum(case when coalesce(o.receivableAmount, o.settlementPrice, 0) - coalesce(o.receivedAmount, 0) > 0
-                       then coalesce(o.receivableAmount, o.settlementPrice, 0) - coalesce(o.receivedAmount, 0)
+              count(o.id) as totalCount,
+              sum(case when coalesce(o.payment_settled, 0) = 1 then 0 else 1 end) as unsettledOrders,
+              sum(case when coalesce(o.sales_reported, 0) = 1 then 0 else 1 end) as pendingReports,
+              sum(case when coalesce(o.invoice_applied, 0) = 1 then 0 else 1 end) as pendingInvoices,
+              sum(case when coalesce(o.payment_settled, 0) = 1 then 1 else 0 end) as settledOrders,
+              sum(case when o.invoice_stored_file_name is null or o.invoice_stored_file_name = '' then 0 else 1 end) as uploadedInvoices,
+              sum(case when o.contract_stored_file_name is null or o.contract_stored_file_name = '' then 0 else 1 end) as uploadedContracts,
+              sum(case when o.resource_type = 'MACHINE' then 1 else 0 end) as machineOrders,
+              sum(case when coalesce(o.receivable_amount, o.settlement_price, 0) - coalesce(o.received_amount, 0) > 0
+                       then coalesce(o.receivable_amount, o.settlement_price, 0) - coalesce(o.received_amount, 0)
                        else 0 end) as outstandingAmount,
-              sum(case when o.paymentDueDate is not null
-                            and o.paymentDueDate < current_date
-                            and coalesce(o.receivableAmount, o.settlementPrice, 0) - coalesce(o.receivedAmount, 0) > 0
+              sum(case when o.payment_due_date is not null
+                            and o.payment_due_date < current_date
+                            and coalesce(o.receivable_amount, o.settlement_price, 0) - coalesce(o.received_amount, 0) > 0
                        then 1 else 0 end) as overdueOrders
-            from OutboundOrder o
-            where (:includeLocked = true or o.isLocked = false)
-              and (:keyword is null
-                or lower(coalesce(o.orderNo, '')) like lower(concat('%', :keyword, '%'))
-                or lower(coalesce(o.resourceType, '')) like lower(concat('%', :keyword, '%'))
-                or lower(coalesce(o.resourceCode, '')) like lower(concat('%', :keyword, '%'))
-                or lower(coalesce(o.resourceName, '')) like lower(concat('%', :keyword, '%'))
-                or lower(coalesce(o.specificationModel, '')) like lower(concat('%', :keyword, '%'))
-                or lower(coalesce(o.customerName, '')) like lower(concat('%', :keyword, '%'))
-                or lower(coalesce(o.customerAddress, '')) like lower(concat('%', :keyword, '%'))
-                or lower(coalesce(o.contactName, '')) like lower(concat('%', :keyword, '%'))
-                or lower(coalesce(o.contactPhone, '')) like lower(concat('%', :keyword, '%'))
-                or lower(coalesce(o.operator, '')) like lower(concat('%', :keyword, '%'))
-                or lower(coalesce(o.paymentRemark, '')) like lower(concat('%', :keyword, '%'))
-                or lower(coalesce(o.invoiceStatus, '')) like lower(concat('%', :keyword, '%'))
-                or lower(coalesce(o.invoiceOriginalName, '')) like lower(concat('%', :keyword, '%'))
-                or lower(coalesce(o.registrationStatus, '')) like lower(concat('%', :keyword, '%'))
-                or lower(coalesce(o.contractType, '')) like lower(concat('%', :keyword, '%'))
-                or lower(coalesce(o.contractOriginalName, '')) like lower(concat('%', :keyword, '%'))
-                or lower(coalesce(o.orderRemark, '')) like lower(concat('%', :keyword, '%')))
-            """)
+            from outbound_order o
+            where (:includeLocked = true or coalesce(o.is_locked, 0) = 0)
+              and (:keywordPrefix is null
+                or o.order_no like :keywordPrefix escape '!'
+                or o.resource_type like :keywordPrefix escape '!'
+                or o.resource_code like :keywordPrefix escape '!'
+                or o.contact_phone like :keywordPrefix escape '!'
+                or o.invoice_status like :keywordPrefix escape '!'
+                or o.registration_status like :keywordPrefix escape '!'
+                or o.contract_type like :keywordPrefix escape '!'
+                or (:fullTextKeyword is not null
+                    and match(
+                      o.resource_name,
+                      o.specification_model,
+                      o.customer_name,
+                      o.customer_address,
+                      o.contact_name,
+                      o.operator,
+                      o.payment_remark,
+                      o.invoice_original_name,
+                      o.contract_original_name,
+                      o.order_remark
+                    ) against (:fullTextKeyword in boolean mode)))
+            """,
+            nativeQuery = true)
     OutboundOrderSummaryProjection summarize(
-            @Param("keyword") String keyword,
+            @Param("keywordPrefix") String keywordPrefix,
+            @Param("fullTextKeyword") String fullTextKeyword,
             @Param("includeLocked") boolean includeLocked
     );
+
+    @Query("""
+            select
+              sum(coalesce(coalesce(o.receivableAmount, o.settlementPrice), 0)) as receivableAmount,
+              sum(coalesce(o.receivedAmount, 0)) as receivedAmount,
+              sum(case when coalesce(coalesce(o.receivableAmount, o.settlementPrice), 0) - coalesce(o.receivedAmount, 0) > 0
+                       then coalesce(coalesce(o.receivableAmount, o.settlementPrice), 0) - coalesce(o.receivedAmount, 0)
+                       else 0 end) as outstandingAmount,
+              sum(case when coalesce(coalesce(o.receivableAmount, o.settlementPrice), 0) - coalesce(o.receivedAmount, 0) > 0
+                       then 1 else 0 end) as pendingPaymentCount,
+              sum(case when o.paymentDueDate is not null
+                            and o.paymentDueDate < current_date
+                            and coalesce(coalesce(o.receivableAmount, o.settlementPrice), 0) - coalesce(o.receivedAmount, 0) > 0
+                       then 1 else 0 end) as overduePaymentCount,
+              sum(case when o.paymentDueDate is not null
+                            and o.paymentDueDate < current_date
+                            and coalesce(coalesce(o.receivableAmount, o.settlementPrice), 0) - coalesce(o.receivedAmount, 0) > 0
+                       then coalesce(coalesce(o.receivableAmount, o.settlementPrice), 0) - coalesce(o.receivedAmount, 0)
+                       else 0 end) as overdueAmount,
+              sum(case when o.paymentSettled = true and (o.salesReported is null or o.salesReported = false)
+                       then 1 else 0 end) as pendingSalesReportCount,
+              sum(case when o.paymentSettled = true
+                            and o.salesReported = true
+                            and (o.invoiceApplied is null or o.invoiceApplied = false)
+                       then 1 else 0 end) as pendingInvoiceApplicationCount,
+              sum(case when (
+                            o.invoiceApplied = true
+                            or o.invoiceIssuedDate is not null
+                            or lower(coalesce(o.invoiceStatus, '')) like '%issued%'
+                            or lower(coalesce(o.invoiceStatus, '')) like '%invoiced%'
+                            or coalesce(o.invoiceStatus, '') like '%\u5f00\u7968\u5b8c\u6210%'
+                            or coalesce(o.invoiceStatus, '') like '%\u5b8c\u6210\u5f00\u7968%'
+                            or coalesce(o.invoiceStatus, '') like '%\u5df2\u51fa\u7968%'
+                          )
+                          and (o.invoiceStoredFileName is null or o.invoiceStoredFileName = '')
+                       then 1 else 0 end) as pendingInvoiceFileCount,
+              sum(case when o.contractType is not null
+                            and trim(o.contractType) <> ''
+                            and lower(trim(o.contractType)) not like 'no%'
+                            and lower(trim(o.contractType)) not like 'none%'
+                            and lower(trim(o.contractType)) not like 'false%'
+                            and trim(o.contractType) not like '\u5426%'
+                            and trim(o.contractType) not like '\u65e0%'
+                            and trim(o.contractType) not like '\u6ca1%'
+                            and trim(o.contractType) not like '\u4e0d%'
+                            and trim(o.contractType) not like '%\u65e0\u5408\u540c%'
+                            and (o.contractStoredFileName is null or o.contractStoredFileName = '')
+                       then 1 else 0 end) as pendingContractFileCount
+            from OutboundOrder o
+            where (:includeLocked = true or o.isLocked = false)
+            """)
+    OutboundTodoSummaryProjection summarizeTodos(@Param("includeLocked") boolean includeLocked);
+
+    @Query("""
+            select o from OutboundOrder o
+            where (:includeLocked = true or o.isLocked = false)
+              and o.paymentDueDate is not null
+              and o.paymentDueDate < current_date
+              and coalesce(coalesce(o.receivableAmount, o.settlementPrice), 0) - coalesce(o.receivedAmount, 0) > 0
+            order by o.updatedAt desc, o.id desc
+            """)
+    List<OutboundOrder> findOverduePaymentTodos(@Param("includeLocked") boolean includeLocked, Pageable pageable);
+
+    @Query("""
+            select o from OutboundOrder o
+            where (:includeLocked = true or o.isLocked = false)
+              and (o.paymentDueDate is null or o.paymentDueDate >= current_date)
+              and coalesce(coalesce(o.receivableAmount, o.settlementPrice), 0) - coalesce(o.receivedAmount, 0) > 0
+            order by o.updatedAt desc, o.id desc
+            """)
+    List<OutboundOrder> findPendingPaymentTodos(@Param("includeLocked") boolean includeLocked, Pageable pageable);
+
+    @Query("""
+            select o from OutboundOrder o
+            where (:includeLocked = true or o.isLocked = false)
+              and o.paymentSettled = true
+              and (o.salesReported is null or o.salesReported = false)
+            order by o.updatedAt desc, o.id desc
+            """)
+    List<OutboundOrder> findSalesReportTodos(@Param("includeLocked") boolean includeLocked, Pageable pageable);
+
+    @Query("""
+            select o from OutboundOrder o
+            where (:includeLocked = true or o.isLocked = false)
+              and o.paymentSettled = true
+              and o.salesReported = true
+              and (o.invoiceApplied is null or o.invoiceApplied = false)
+            order by o.updatedAt desc, o.id desc
+            """)
+    List<OutboundOrder> findInvoiceApplicationTodos(@Param("includeLocked") boolean includeLocked, Pageable pageable);
+
+    @Query("""
+            select o from OutboundOrder o
+            where (:includeLocked = true or o.isLocked = false)
+              and (
+                o.invoiceApplied = true
+                or o.invoiceIssuedDate is not null
+                or lower(coalesce(o.invoiceStatus, '')) like '%issued%'
+                or lower(coalesce(o.invoiceStatus, '')) like '%invoiced%'
+                or coalesce(o.invoiceStatus, '') like '%\u5f00\u7968\u5b8c\u6210%'
+                or coalesce(o.invoiceStatus, '') like '%\u5b8c\u6210\u5f00\u7968%'
+                or coalesce(o.invoiceStatus, '') like '%\u5df2\u51fa\u7968%'
+              )
+              and (o.invoiceStoredFileName is null or o.invoiceStoredFileName = '')
+            order by o.updatedAt desc, o.id desc
+            """)
+    List<OutboundOrder> findInvoiceFileTodos(@Param("includeLocked") boolean includeLocked, Pageable pageable);
+
+    @Query("""
+            select o from OutboundOrder o
+            where (:includeLocked = true or o.isLocked = false)
+              and o.contractType is not null
+              and trim(o.contractType) <> ''
+              and lower(trim(o.contractType)) not like 'no%'
+              and lower(trim(o.contractType)) not like 'none%'
+              and lower(trim(o.contractType)) not like 'false%'
+              and trim(o.contractType) not like '\u5426%'
+              and trim(o.contractType) not like '\u65e0%'
+              and trim(o.contractType) not like '\u6ca1%'
+              and trim(o.contractType) not like '\u4e0d%'
+              and trim(o.contractType) not like '%\u65e0\u5408\u540c%'
+              and (o.contractStoredFileName is null or o.contractStoredFileName = '')
+            order by o.updatedAt desc, o.id desc
+            """)
+    List<OutboundOrder> findContractFileTodos(@Param("includeLocked") boolean includeLocked, Pageable pageable);
+
+    @Query("""
+            select o from OutboundOrder o
+            where (
+                coalesce(o.invoiceStoredFileName, '') <> ''
+                and not exists (
+                    select 1 from ResourceAttachment a
+                    where a.resourceType = 'OUTBOUND_ORDER'
+                      and a.resourceId = o.id
+                      and a.attachmentCategory = 'INVOICE'
+                      and a.deleted = false
+                )
+            ) or (
+                coalesce(o.contractStoredFileName, '') <> ''
+                and not exists (
+                    select 1 from ResourceAttachment a
+                    where a.resourceType = 'OUTBOUND_ORDER'
+                      and a.resourceId = o.id
+                      and a.attachmentCategory = 'CONTRACT'
+                      and a.deleted = false
+                )
+            )
+            order by o.id asc
+            """)
+    List<OutboundOrder> findLegacyAttachmentBackfillCandidates(Pageable pageable);
 
     Optional<OutboundOrder> findByIdAndIsLockedFalse(Long id);
 
@@ -118,5 +306,18 @@ public interface OutboundOrderRepository extends JpaRepository<OutboundOrder, Lo
         Long getMachineOrders();
         BigDecimal getOutstandingAmount();
         Long getOverdueOrders();
+    }
+
+    interface OutboundTodoSummaryProjection {
+        BigDecimal getReceivableAmount();
+        BigDecimal getReceivedAmount();
+        BigDecimal getOutstandingAmount();
+        Long getPendingPaymentCount();
+        Long getOverduePaymentCount();
+        BigDecimal getOverdueAmount();
+        Long getPendingSalesReportCount();
+        Long getPendingInvoiceApplicationCount();
+        Long getPendingInvoiceFileCount();
+        Long getPendingContractFileCount();
     }
 }

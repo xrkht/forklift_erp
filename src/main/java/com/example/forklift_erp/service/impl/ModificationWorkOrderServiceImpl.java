@@ -153,14 +153,14 @@ public class ModificationWorkOrderServiceImpl implements ModificationWorkOrderSe
         workOrder.setOperator(blankToNull(request.getOperator()));
         workOrder.setRemark(blankToNull(request.getRemark()));
         workOrder.setStatus(ModificationWorkOrderStatuses.WAITING_PARTS);
-        ModificationWorkOrder savedOrder = workOrderRepository.saveAndFlush(workOrder);
+        ModificationWorkOrder savedOrder = workOrderRepository.save(workOrder);
 
         preparedLines.forEach(line -> line.setWorkOrderId(savedOrder.getId()));
         lineRepository.saveAllAndFlush(preparedLines);
 
         machine.setStockStatus(MachineStockStatuses.PENDING_MODIFICATION);
         collaborationService.stampWrite(machine);
-        machineRepository.saveAndFlush(machine);
+        machineRepository.save(machine);
 
         operationAuditService.record("Modification work order", "CREATE", "MODIFICATION_WORK_ORDER", savedOrder.getId(),
                 savedOrder.getWorkOrderNo(), "鏉烇箒绶營D " + savedOrder.getMachineId(),
@@ -191,10 +191,10 @@ public class ModificationWorkOrderServiceImpl implements ModificationWorkOrderSe
                 .orElseThrow(() -> new BusinessException(ResultCode.VEHICLE_NOT_FOUND, "Vehicle not found"));
         machine.setStockStatus(MachineStockStatuses.MODIFYING);
         collaborationService.stampWrite(machine);
-        machineRepository.saveAndFlush(machine);
+        machineRepository.save(machine);
 
         workOrder.setStatus(ModificationWorkOrderStatuses.IN_PROGRESS);
-        workOrderRepository.saveAndFlush(workOrder);
+        workOrderRepository.save(workOrder);
 
         String operator = firstNonBlank(request == null ? null : request.getOperator(), workOrder.getOperator());
         String actionRemark = request == null ? null : request.getRemark();
@@ -230,13 +230,13 @@ public class ModificationWorkOrderServiceImpl implements ModificationWorkOrderSe
         if (actionRemark != null && !actionRemark.isBlank()) {
             workOrder.setRemark(joinRemark(workOrder.getRemark(), actionRemark));
         }
-        ModificationWorkOrder savedOrder = workOrderRepository.saveAndFlush(workOrder);
+        ModificationWorkOrder savedOrder = workOrderRepository.save(workOrder);
 
         MachineInventory completedMachine = machineRepository.findByIdForUpdate(workOrder.getMachineId())
                 .orElseThrow(() -> new BusinessException(ResultCode.VEHICLE_NOT_FOUND, "Vehicle not found"));
         completedMachine.setStockStatus(MachineStockStatuses.PENDING_OUTBOUND);
         collaborationService.stampWrite(completedMachine);
-        machineRepository.saveAndFlush(completedMachine);
+        machineRepository.save(completedMachine);
 
         operationAuditService.record("Modification work order", "COMPLETE", "MODIFICATION_WORK_ORDER", savedOrder.getId(),
                 savedOrder.getWorkOrderNo(), "鏉烇箒绶營D " + savedOrder.getMachineId(),
@@ -267,7 +267,7 @@ public class ModificationWorkOrderServiceImpl implements ModificationWorkOrderSe
         if (remark != null && !remark.isBlank()) {
             workOrder.setRemark(joinRemark(workOrder.getRemark(), remark));
         }
-        ModificationWorkOrder savedOrder = workOrderRepository.saveAndFlush(workOrder);
+        ModificationWorkOrder savedOrder = workOrderRepository.save(workOrder);
         restoreMachineStatusIfNoActiveOrder(savedOrder.getMachineId(), savedOrder.getId());
 
         operationAuditService.record("Modification work order", "CANCEL", "MODIFICATION_WORK_ORDER", savedOrder.getId(),
@@ -397,7 +397,7 @@ public class ModificationWorkOrderServiceImpl implements ModificationWorkOrderSe
                 line.getRemark(),
                 actionRemark));
         collaborationService.stampWrite(config);
-        machineConfigRepository.saveAndFlush(config);
+        machineConfigRepository.save(config);
 
         line.setNewConfigValueId(value.getId());
         line.setNewPartName(value.getValueLabel());
@@ -421,7 +421,7 @@ public class ModificationWorkOrderServiceImpl implements ModificationWorkOrderSe
         machineRepository.findByIdForUpdate(machineId).ifPresent(machine -> {
             machine.setStockStatus(MachineStockStatuses.IN_STOCK);
             collaborationService.stampWrite(machine);
-            machineRepository.saveAndFlush(machine);
+            machineRepository.save(machine);
         });
     }
 

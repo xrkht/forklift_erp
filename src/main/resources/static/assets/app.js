@@ -29,6 +29,7 @@ const {
   loadCurrentTab,
   loadPagedTab,
   loadStatistics,
+  loadTodoCenter,
   loadVehicleModelData
 } = createDataLoaders({
   state,
@@ -87,7 +88,10 @@ const fields = createFields({
   stocktakingStatusOptions,
   warehouseOptions,
   transferResourceTypeOptions,
-  stockTransferResourceOptions
+  stockTransferResourceOptions,
+  attachmentResourceTypeOptions,
+  attachmentResourceOptions,
+  attachmentCategoryOptions
 });
 
 let els;
@@ -448,7 +452,16 @@ async function handleContentClick(event) {
         ...(state.filters[key] || {}),
         [name]: control.dataset.filterValue || ""
       };
+      if (key === "attachments" && name === "resourceType") {
+        state.filters.attachments.resourceId = "";
+      }
       if (state.pages[key]) resetPage(state.pages[key]);
+      if (["attachments", "imports"].includes(key) && key === activePagedTab()) {
+        els.content.innerHTML = renderLoading();
+        await loadPagedTab(key, { force: true });
+        renderCurrentTab();
+        return;
+      }
       renderCurrentTab();
       return;
     }
@@ -643,6 +656,35 @@ async function handleContentClick(event) {
     }
     if (action === "download-contract") {
       await downloadContract(findEntity("outboundOrder", id));
+      return;
+    }
+    if (action === "preview-attachment") {
+      await previewAttachment(findEntity("attachment", id));
+      return;
+    }
+    if (action === "download-attachment") {
+      await downloadAttachment(findEntity("attachment", id));
+      return;
+    }
+    if (action === "delete-attachment") {
+      await deleteAttachment(findEntity("attachment", id));
+      return;
+    }
+    if (action === "download-import-template") {
+      await downloadImportTemplate(control.dataset.importType || state.filters.imports?.importType || "vehicle-workbook");
+      return;
+    }
+    if (action === "validate-import-file") {
+      await validateImportFromPage();
+      return;
+    }
+    if (action === "confirm-import-job") {
+      await confirmImportJob(id);
+      return;
+    }
+    if (action === "clear-import-validation") {
+      state.importValidation = null;
+      renderCurrentTab();
       return;
     }
     if (action === "go-tab") {
@@ -878,6 +920,13 @@ function schedulePagedReload(tab) {
 }
 
 async function handleContentChange(event) {
+  const importTypeSelect = event.target.closest("[data-import-type-select]");
+  if (importTypeSelect) {
+    state.importSelectedType = importTypeSelect.value || "vehicle-workbook";
+    renderCurrentTab();
+    return;
+  }
+
   const filter = event.target.closest("[data-filter-for]");
   if (filter) {
     const key = filter.dataset.filterFor;
@@ -886,7 +935,16 @@ async function handleContentChange(event) {
       ...(state.filters[key] || {}),
       [name]: filter.value
     };
+    if (key === "attachments" && name === "resourceType") {
+      state.filters.attachments.resourceId = "";
+    }
     if (state.pages[key]) resetPage(state.pages[key]);
+    if (["attachments", "imports"].includes(key) && key === activePagedTab()) {
+      els.content.innerHTML = renderLoading();
+      await loadPagedTab(key, { force: true });
+      renderCurrentTab();
+      return;
+    }
     renderCurrentTab();
     return;
   }
@@ -1072,6 +1130,13 @@ async function handleModalChange(event) {
     state.modal.item[event.target.name] = event.target.type === "checkbox" ? event.target.checked : event.target.value;
   }
 
+  if (kind === "attachmentUpload" && event.target.name === "resourceType") {
+    state.modal.item.resourceId = null;
+    state.modal.item.attachmentCategory = attachmentDefaultCategoryForResourceType(event.target.value);
+    renderModal();
+    return;
+  }
+
   if (kind === "configItem") {
     syncConfigItemFields(form, event.target.name);
   }
@@ -1229,6 +1294,20 @@ async function handleModalSubmit(event) {
   const item = state.modal?.item || {};
   const activeModelKey = state.vehicleDetail?.modelKey || item.__modelKey || "";
 
+  if (kind === "attachmentUpload") {
+    try {
+      await uploadAttachmentsFromModal(form);
+      closeModal();
+      if (state.activeTab === "attachments") {
+        await loadPagedTab("attachments", { force: true });
+      }
+      renderCurrentTab();
+    } catch (error) {
+      handleActionError(error);
+    }
+    return;
+  }
+
   if (kind === "invoiceUpload" || kind === "contractUpload") {
     if (!(await confirmDanger(modalDangerConfirmation(kind, item, {}) || {
       title: kind === "invoiceUpload" ? "确认上传发票" : "确认上传合同",
@@ -1243,7 +1322,7 @@ async function handleModalSubmit(event) {
       }
       closeModal();
       markReferenceDataStale(referenceKindsForMutation(kind));
-      await loadAllData();
+      await refreshAfterMutation(kind, { refreshDetail: false });
       renderCurrentTab();
     } catch (error) {
       handleActionError(error);
@@ -1454,16 +1533,10 @@ async function handleModalSubmit(event) {
     closeModal();
     resetPageAfterMutation(kind);
     markReferenceDataStale(referenceKindsForMutation(kind));
-    await loadAllData();
-    if ((kind === "vehicle" || kind === "vehicleInbound" || kind === "vehicleOutbound") && activeModelKey) {
-      await loadVehicleModelDetail(activeModelKey, state.selectedVehicleId, false);
-    } else if ((kind === "partReplace" || kind === "modificationOrder" || kind === "vehiclePartInstall") && payload.machineId) {
-      if (activeModelKey) {
-        await loadVehicleModelDetail(activeModelKey, payload.machineId, false);
-      } else {
-        await loadVehicleDetail(payload.machineId, false);
-      }
-    }
+    await refreshAfterMutation(kind, {
+      activeModelKey,
+      machineId: payload.machineId || item.machineId || state.selectedVehicleId
+    });
     renderCurrentTab();
   } catch (error) {
     handleActionError(error);
@@ -1488,7 +1561,10 @@ async function deleteEntity(kind, id) {
   if (kind === "configValue") {
     await loadConfigValues(state.selectedConfigItemId);
   } else {
-    await loadAllData();
+    resetPageAfterMutation(kind);
+    await refreshAfterMutation(kind, {
+      machineId: item.machineId || state.selectedVehicleId
+    });
     renderCurrentTab();
   }
 }
@@ -1514,14 +1590,8 @@ async function completeModificationOrder(id) {
   });
   showContextSuccess("改装工单已完成", entityDisplayName("modificationOrder", order), "车辆配置与配件库存已同步");
   markReferenceDataStale(["vehicle", "part"]);
-  await loadAllData();
-  if (targetMachineId) {
-    if (activeModelKey) {
-      await loadVehicleModelDetail(activeModelKey, targetMachineId, false);
-    } else {
-      await loadVehicleDetail(targetMachineId, false);
-    }
-  }
+  resetPageAfterMutation("modificationOrder");
+  await refreshAfterMutation("modificationOrder", { activeModelKey, machineId: targetMachineId });
   renderCurrentTab();
 }
 
@@ -1542,7 +1612,7 @@ async function completeStocktaking(id) {
   showContextSuccess("盘点已入账", entityDisplayName("stocktaking", record), "库存数量已同步");
   markReferenceDataStale(["vehicle", "part"]);
   resetPageAfterMutation("stocktaking");
-  await loadAllData();
+  await refreshAfterMutation("stocktaking", { machineId: record.resourceType === "MACHINE" ? record.resourceId : state.selectedVehicleId });
   renderCurrentTab();
 }
 
@@ -1568,7 +1638,7 @@ async function togglePurchaseReceived(id) {
   await api(url, { method: "PUT" });
   showToast(nextReceived ? "采购订单已收货，运费默认为 0" : "采购订单已改为待收货", "success");
   resetPageAfterMutation("purchaseOrder");
-  await loadAllData();
+  await refreshAfterMutation("purchaseOrder", { refreshDetail: false });
   renderCurrentTab();
 }
 
@@ -1598,14 +1668,8 @@ async function cancelModificationOrder(id) {
   });
   showContextSuccess("改装工单已取消", entityDisplayName("modificationOrder", order), "车辆和配件数据已刷新");
   markReferenceDataStale(["vehicle", "part"]);
-  await loadAllData();
-  if (targetMachineId) {
-    if (activeModelKey) {
-      await loadVehicleModelDetail(activeModelKey, targetMachineId, false);
-    } else {
-      await loadVehicleDetail(targetMachineId, false);
-    }
-  }
+  resetPageAfterMutation("modificationOrder");
+  await refreshAfterMutation("modificationOrder", { activeModelKey, machineId: targetMachineId });
   renderCurrentTab();
 }
 
@@ -1785,6 +1849,159 @@ async function uploadContractForOrder(order, form) {
   showContextSuccess("合同已上传", entityDisplayName("outboundOrder", order), file.name);
 }
 
+async function uploadAttachmentsFromModal(form) {
+  const resourceType = String(form.elements.resourceType?.value || "").trim();
+  const resourceId = String(form.elements.resourceId?.value || "").trim();
+  const category = String(form.elements.attachmentCategory?.value || "OTHER").trim();
+  const files = Array.from(form.elements.files?.files || []);
+  if (!resourceType) throw new Error("请选择业务对象类型");
+  if (!resourceId) throw new Error("请选择业务对象");
+  if (!files.length) throw new Error("请选择附件文件");
+
+  const formData = new FormData();
+  formData.append("resourceType", resourceType);
+  formData.append("resourceId", resourceId);
+  formData.append("category", category);
+  formData.append("attachmentLabel", String(form.elements.attachmentLabel?.value || "").trim());
+  formData.append("uploadNote", String(form.elements.uploadNote?.value || "").trim());
+  files.forEach(file => formData.append("files", file));
+
+  const created = await api(endpoints.attachments.upload, {
+    method: "POST",
+    body: formData
+  });
+  state.filters.attachments = {
+    ...(state.filters.attachments || {}),
+    resourceType,
+    resourceId,
+    category
+  };
+  if (state.pages.attachments) resetPage(state.pages.attachments);
+  showContextSuccess("附件已上传", attachmentResourceTypeLabel(resourceType), `${created?.length || files.length} 个文件`);
+}
+
+async function previewAttachment(row = {}) {
+  if (!row?.id || row.deleted) {
+    showToast("附件不可预览", "error");
+    return;
+  }
+  if (!row.previewable) {
+    await downloadAttachment(row);
+    return;
+  }
+  const { blob, filename } = await fetchProtectedBlob(endpoints.attachments.preview(row.id), row.originalName || "attachment");
+  const objectUrl = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = objectUrl;
+  link.target = "_blank";
+  link.rel = "noopener";
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  setTimeout(() => URL.revokeObjectURL(objectUrl), 60000);
+}
+
+async function downloadAttachment(row = {}) {
+  if (!row?.id || row.deleted) {
+    showToast("附件不可下载", "error");
+    return;
+  }
+  await downloadProtectedFile(endpoints.attachments.download(row.id), row.originalName || "attachment");
+}
+
+async function deleteAttachment(row = {}) {
+  if (!row?.id || row.deleted) return;
+  if (!canManageAttachmentType(row.resourceType)) {
+    showToast("当前账号无权删除该附件", "error");
+    return;
+  }
+  if (!(await confirmDanger({
+    title: "删除附件",
+    target: entityDisplayName("attachment", row),
+    impact: "删除后文件会被移除，系统会保留删除人、时间和原因审计。"
+  }))) return;
+  const reason = window.prompt("请输入删除原因（可选）", "");
+  if (reason === null) return;
+  const params = new URLSearchParams();
+  if (String(reason || "").trim()) params.set("reason", String(reason).trim());
+  await api(`${endpoints.attachments.delete(row.id)}${params.toString() ? "?" + params.toString() : ""}`, { method: "DELETE" });
+  showToast("附件已删除", "success");
+  await loadPagedTab("attachments", { force: true });
+  renderCurrentTab();
+}
+
+async function downloadImportTemplate(type) {
+  const importType = String(type || state.importSelectedType || "vehicle-workbook").trim();
+  state.importSelectedType = importType;
+  await downloadProtectedFile(endpoints.imports.template(importType), `${importType}-template.xlsx`);
+  showToast("模板下载已开始", "success");
+}
+
+async function validateImportFromPage() {
+  const typeSelect = els.content.querySelector("[data-import-type-select]");
+  const fileInput = els.content.querySelector("[data-import-file]");
+  const importType = String(typeSelect?.value || state.importSelectedType || "vehicle-workbook").trim();
+  const file = fileInput?.files?.[0];
+  if (!file) {
+    showToast("请选择 Excel 文件", "error");
+    return;
+  }
+  state.importSelectedType = importType;
+  const formData = new FormData();
+  formData.append("file", file);
+  const validation = await api(endpoints.imports.validate(importType), {
+    method: "POST",
+    body: formData
+  });
+  state.importValidation = validation;
+  if (state.pages.imports) resetPage(state.pages.imports);
+  await loadPagedTab("imports", { force: true });
+  renderCurrentTab();
+  showToast(validation.importable ? "预校验通过，可确认导入" : `预校验发现 ${(validation.errors || []).length} 个问题`, validation.importable ? "success" : "error");
+}
+
+async function confirmImportJob(id) {
+  const validationJob = state.importValidation?.job || {};
+  let job = findEntity("importJob", id);
+  if (!job?.id && Number(validationJob.id) === Number(id)) {
+    job = validationJob;
+  }
+  if (!id) return;
+  if (!(await confirmDanger({
+    title: "确认导入",
+    target: entityDisplayName("importJob", job),
+    impact: "确认后会写入业务数据，并刷新车辆、客户、订单或配件相关列表。"
+  }))) return;
+  const result = await api(endpoints.imports.confirm(id), { method: "POST" });
+  state.importValidation = result;
+  markReferenceDataStale();
+  resetPage(state.pages.imports);
+  await loadAllData({ force: true });
+  renderCurrentTab();
+  showToast("导入完成", "success");
+}
+
+async function fetchProtectedBlob(url, fallbackName) {
+  const headers = {};
+  if (state.token) {
+    headers.Authorization = `Bearer ${state.token}`;
+  }
+  const response = await fetch(url, { headers });
+  if (response.status === 401) {
+    const error = new Error("未登录或登录已过期");
+    error.authExpired = true;
+    throw error;
+  }
+  if (!response.ok) {
+    const payload = await response.json().catch(() => null);
+    throw new Error(payload?.message || `文件读取失败：${response.status}`);
+  }
+  const blob = await response.blob();
+  const filename = filenameFromDisposition(response.headers.get("Content-Disposition")) || fallbackName;
+  return { blob, filename };
+}
+
 async function downloadInvoice(order) {
   if (!order?.id || !order.invoiceFileAvailable) {
     showToast("该订单还没有发票文件", "error");
@@ -1938,7 +2155,9 @@ async function toggleOutboundOrderStatus(id, field) {
   });
   showToast("订单状态已更新", "success");
   markReferenceDataStale(["vehicle", "outboundOrder"]);
-  await loadAllData();
+  await refreshAfterMutation("outboundOrder", {
+    machineId: order.resourceType === "MACHINE" ? order.resourceId : state.selectedVehicleId
+  });
   renderCurrentTab();
 }
 
@@ -1960,7 +2179,7 @@ async function toggleRepairStatus(id) {
   });
   showToast("维修状态已更新", "success");
   markReferenceDataStale(["repair"]);
-  await loadAllData();
+  await refreshAfterMutation("repair", { machineId: repair.machineId || state.selectedVehicleId });
   renderCurrentTab();
 }
 
@@ -1989,7 +2208,8 @@ async function batchCompleteRepairs() {
   showContextSuccess("维修记录已批量完成", `${rows.length} 条`, "列表已刷新");
   clearBatchSelection("repair");
   markReferenceDataStale(["repair"]);
-  await loadAllData();
+  resetPageAfterMutation("repair");
+  await refreshAfterMutation("repair", { refreshDetail: false });
   renderCurrentTab();
 }
 
@@ -2008,7 +2228,7 @@ async function batchReceivePurchases() {
   showContextSuccess("采购订单已批量收货", `${rows.length} 条`, "采购列表已刷新");
   clearBatchSelection("purchaseOrder");
   resetPageAfterMutation("purchaseOrder");
-  await loadAllData();
+  await refreshAfterMutation("purchaseOrder", { refreshDetail: false });
   renderCurrentTab();
 }
 
@@ -2028,7 +2248,7 @@ async function batchCompleteStocktakes() {
   clearBatchSelection("stocktaking");
   markReferenceDataStale(["vehicle", "part"]);
   resetPageAfterMutation("stocktaking");
-  await loadAllData();
+  await refreshAfterMutation("stocktaking", { refreshDetail: false });
   renderCurrentTab();
 }
 
@@ -2047,7 +2267,7 @@ async function batchDeleteStocktakeDrafts() {
   showContextSuccess("盘点草稿已批量删除", `${rows.length} 条`, "盘点列表已刷新");
   clearBatchSelection("stocktaking");
   resetPageAfterMutation("stocktaking");
-  await loadAllData();
+  await refreshAfterMutation("stocktaking", { refreshDetail: false });
   renderCurrentTab();
 }
 
@@ -2069,7 +2289,7 @@ async function toggleUserJobTag(id) {
   });
   showToast(`职务已切换为${jobTagLabel(nextTag)}`, "success");
   markReferenceDataStale(["repairUser"]);
-  await loadAllData();
+  await refreshAfterMutation("user", { refreshDetail: false });
   renderCurrentTab();
 }
 
@@ -2091,7 +2311,7 @@ async function toggleUserEnabled(id) {
   });
   showToast(nextEnabled ? "用户已启用" : "用户已停用", "success");
   markReferenceDataStale(["repairUser"]);
-  await loadAllData();
+  await refreshAfterMutation("user", { refreshDetail: false });
   renderCurrentTab();
 }
 
@@ -2110,7 +2330,9 @@ async function toggleOutboundOrderLock(id, locked) {
   await api(`${endpoints.outboundOrder.lock(order.id)}?${params.toString()}`, { method: "PUT" });
   showToast(locked ? "订单已锁定，关联记录仅管理员可见" : "订单已解锁", "success");
   markReferenceDataStale(["vehicle", "part", "outboundOrder"]);
-  await loadAllData();
+  await refreshAfterMutation("outboundOrder", {
+    machineId: order.resourceType === "MACHINE" ? order.resourceId : state.selectedVehicleId
+  });
   renderCurrentTab();
 }
 
@@ -2119,6 +2341,21 @@ async function goToTab(tab, data = {}) {
   state.activeTab = tab;
   if (tab === "vehicles") {
     state.filters.vehicles.stock = data.stock || "";
+  }
+  if (tab === "attachments") {
+    state.filters.attachments = {
+      ...(state.filters.attachments || {}),
+      resourceType: data.resourceType || "",
+      resourceId: data.resourceId || "",
+      category: data.category || "",
+      includeDeleted: data.includeDeleted || ""
+    };
+  }
+  if (tab === "imports") {
+    state.filters.imports = {
+      ...(state.filters.imports || {}),
+      importType: data.importType || ""
+    };
   }
   els.content.innerHTML = renderLoading();
   await loadCurrentTab({ force: true });
@@ -2209,13 +2446,15 @@ async function openEntityModal(kind, item = {}) {
 }
 
 async function ensureModalDependencies(kind) {
-  const needsVehicles = ["vehicleStock", "vehicleOutbound", "partReplace", "vehiclePartInstall", "modificationOrder", "vehicleInbound", "rental", "repair", "stocktaking", "stockTransfer"].includes(kind);
-  const needsParts = ["part", "partStock", "partReplace", "vehiclePartInstall", "modificationOrder", "repair", "stocktaking", "stockTransfer"].includes(kind);
-  const needsCustomers = ["vehicleOutbound", "partStock", "partOutbound", "customer", "rental", "repair"].includes(kind);
+  const needsVehicles = ["vehicleStock", "vehicleOutbound", "partReplace", "vehiclePartInstall", "modificationOrder", "vehicleInbound", "rental", "repair", "stocktaking", "stockTransfer", "attachmentUpload"].includes(kind);
+  const needsParts = ["part", "partStock", "partReplace", "vehiclePartInstall", "modificationOrder", "repair", "stocktaking", "stockTransfer", "attachmentUpload"].includes(kind);
+  const needsCustomers = ["vehicleOutbound", "partStock", "partOutbound", "customer", "rental", "repair", "attachmentUpload"].includes(kind);
   const needsSuppliers = kind === "purchaseOrder";
   const needsRentals = ["vehicleOutbound", "rental", "repair"].includes(kind);
   const needsRepairUsers = kind === "repair";
   const needsWarehouses = ["warehouse", "stockTransfer"].includes(kind);
+  const needsRepairs = kind === "attachmentUpload";
+  const needsOutboundOrders = kind === "attachmentUpload";
   const requests = [];
   if (needsVehicles && !state.reference.vehiclesLoaded) {
     requests.push(api(referencePageUrl(endpoints.vehicle.list)).then(payload => {
@@ -2257,6 +2496,17 @@ async function ensureModalDependencies(kind) {
     requests.push(api(referencePageUrl(endpoints.warehouse.list)).then(payload => {
       state.data.warehouses = sortById(rowsFromPayload(payload), false);
       state.reference.warehousesLoaded = true;
+    }));
+  }
+  if (needsRepairs) {
+    requests.push(api(referencePageUrl(endpoints.repair.list)).then(payload => {
+      state.data.repairs = sortById(rowsFromPayload(payload));
+    }));
+  }
+  if (needsOutboundOrders && hasPermission("stock:adjust")) {
+    requests.push(api(referencePageUrl(endpoints.outboundOrder.list)).then(payload => {
+      state.data.outboundOrders = sortById(rowsFromPayload(payload));
+      state.reference.outboundOrdersLoaded = true;
     }));
   }
   await Promise.all(requests);
@@ -2302,29 +2552,133 @@ function referenceKindsForMutation(kind) {
   return mapping[kind] || [];
 }
 
-function resetPageAfterMutation(kind) {
+function tabsForMutation(kind) {
   const mapping = {
-    vehicle: "vehicles",
-    vehicleModel: "vehicles",
-    vehicleInbound: "vehicles",
-    modificationOrder: "modificationOrders",
-    rental: "rentals",
-    part: "parts",
-    vehiclePartInstall: "vehicles",
-    customer: "customers",
-    repair: "repairs",
-    outboundOrder: "outboundOrders",
-    supplier: "suppliers",
-    warehouse: "warehouses",
-    stockTransfer: "warehouses",
-    purchaseOrder: "purchases",
-    purchaseFreight: "purchases",
-    stocktaking: "stocktakes"
+    vehicle: ["vehicles"],
+    vehicleModel: ["vehicles"],
+    vehicleInbound: ["vehicles"],
+    vehicleOutbound: ["vehicles", "outboundOrders", "customers"],
+    vehicleStock: ["vehicles"],
+    part: ["parts"],
+    partStock: ["parts", "outboundOrders", "customers"],
+    partReplace: ["vehicles", "parts"],
+    vehiclePartInstall: ["vehicles", "parts"],
+    modificationOrder: ["modificationOrders", "vehicles", "parts"],
+    outboundOrder: ["outboundOrders", "vehicles", "parts"],
+    invoiceUpload: ["outboundOrders", "attachments"],
+    contractUpload: ["outboundOrders", "attachments"],
+    rental: ["rentals", "vehicles"],
+    repair: ["repairs", "vehicles", "parts", "customers", "rentals"],
+    customer: ["customers"],
+    supplier: ["suppliers"],
+    warehouse: ["warehouses"],
+    stockTransfer: ["warehouses", "stockMovements", "vehicles", "parts"],
+    purchaseOrder: ["purchases"],
+    purchaseFreight: ["purchases"],
+    stocktaking: ["stocktakes", "vehicles", "parts"],
+    user: ["users"],
+    userUsername: ["users"],
+    userPassword: ["users"]
   };
-  const tab = mapping[kind];
-  if (tab && state.pages[tab]) {
+  return mapping[kind] || [];
+}
+
+function resetPageAfterMutation(kind) {
+  for (const tab of tabsForMutation(kind)) {
+    if (!state.pages[tab]) continue;
     resetPage(state.pages[tab]);
   }
+}
+
+async function refreshAfterMutation(kind, options = {}) {
+  const affectedTabs = new Set(tabsForMutation(kind));
+  const requests = [];
+  const activeTab = state.activeTab;
+  const activePageKey = activePagedTab();
+
+  if (activeTab === "overview") {
+    if (hasPermission("stock:adjust")) {
+      requests.push(loadTodoCenter());
+    }
+    for (const tab of affectedTabs) {
+      if (tab === "vehicles") {
+        requests.push(loadVehicleModelData({ force: true, silent: true }));
+      } else if (pagedTabs[tab]) {
+        requests.push(loadPagedTab(tab, { force: true, silent: true }));
+      }
+    }
+  } else if (activeTab === "vehicles" && affectedTabs.has("vehicles")) {
+    requests.push(loadVehicleModelData({ force: true }));
+  } else if (activePageKey && affectedTabs.has(activePageKey)) {
+    requests.push(loadPagedTab(activePageKey, { force: true }));
+  } else if (activeTab === "stats" && mutationTouchesFinance(kind) && hasPermission("log:read")) {
+    requests.push(loadStatistics(state.selectedStatsYear));
+  } else if (activeTab === "configs" && (kind === "configItem" || kind === "configValue")) {
+    requests.push(ensureConfigData(true));
+  }
+
+  if (hasPermission("stock:adjust") && state.data.todoCenter && activeTab !== "overview" && mutationTouchesTodoCenter(kind)) {
+    requests.push(loadTodoCenter());
+  }
+
+  await Promise.all(requests);
+  await refreshSelectedVehicleDetail(kind, options);
+}
+
+async function refreshSelectedVehicleDetail(kind, options = {}) {
+  if (options.refreshDetail === false) return;
+  if (!mutationTouchesVehicleDetail(kind)) return;
+  const targetMachineId = Number(options.machineId || state.selectedVehicleId || 0);
+  if (!targetMachineId) return;
+  const modelKey = options.activeModelKey || state.vehicleDetail?.modelKey || "";
+  if (modelKey) {
+    await loadVehicleModelDetail(modelKey, targetMachineId, false);
+  } else {
+    await loadVehicleDetail(targetMachineId, false);
+  }
+}
+
+function mutationTouchesTodoCenter(kind) {
+  return [
+    "vehicle",
+    "vehicleModel",
+    "vehicleInbound",
+    "vehicleOutbound",
+    "vehicleStock",
+    "part",
+    "partStock",
+    "partReplace",
+    "vehiclePartInstall",
+    "modificationOrder",
+    "outboundOrder",
+    "invoiceUpload",
+    "contractUpload",
+    "rental",
+    "repair",
+    "stockTransfer",
+    "stocktaking"
+  ].includes(kind);
+}
+
+function mutationTouchesVehicleDetail(kind) {
+  return [
+    "vehicle",
+    "vehicleInbound",
+    "vehicleOutbound",
+    "vehicleStock",
+    "partReplace",
+    "vehiclePartInstall",
+    "modificationOrder",
+    "rental",
+    "repair",
+    "stockTransfer",
+    "stocktaking"
+  ].includes(kind);
+}
+
+function mutationTouchesFinance(kind) {
+  return mutationTouchesTodoCenter(kind)
+    || ["purchaseOrder", "purchaseFreight"].includes(kind);
 }
 
 function closeModal() {
@@ -2475,6 +2829,12 @@ function renderCurrentTab() {
       break;
     case "stats":
       els.content.innerHTML = renderStatistics();
+      break;
+    case "attachments":
+      els.content.innerHTML = renderAttachments();
+      break;
+    case "imports":
+      els.content.innerHTML = renderImports();
       break;
     case "stockMovements":
       els.content.innerHTML = renderStockMovements();
@@ -3305,6 +3665,423 @@ function renderOutboundOrders() {
         { label: "操作", html: true, render: row => outboundOrderActions(row) }
       ], rows, listTableOptions("outboundOrder", "outboundOrders")))}
       ${renderPagination("outboundOrders")}
+    </div>
+  `;
+}
+
+function renderAttachments() {
+  const filters = state.filters.attachments || {};
+  const rows = filterRows(state.data.attachments || [], state.search.attachments, [
+    "resourceType", "resourceCode", "resourceName", "attachmentCategory", "attachmentLabel", "originalName",
+    "uploadNote", "uploadedBy", "deletedBy", "deleteReason"
+  ]);
+  const activeScope = attachmentScopeLabel(filters);
+  const deletedCount = rows.filter(row => Boolean(row.deleted)).length;
+  const previewableCount = rows.filter(row => row.previewable && !row.deleted).length;
+  const readyCount = rows.filter(row => !row.deleted).length;
+
+  return `
+    <div class="page">
+      <section class="summary-grid">
+        ${summaryCard("附件总数", pageTotal("attachments", rows.length), `${previewableCount} 个可预览`)}
+        ${summaryCard("有效附件", readyCount, activeScope || "全部业务对象")}
+        ${summaryCard("已删除", deletedCount, "删除审计已保留")}
+      </section>
+      ${renderToolbar("attachments", "搜索业务对象、文件名、标题、备注或上传人", "attachmentUpload", "上传附件", null, {
+        create: canUploadAttachment(),
+        exportType: false,
+        main: [renderAttachmentFilterBar()]
+      })}
+      ${activeScope ? `<div class="helper-inline">当前范围：${escapeHtml(activeScope)}</div>` : ""}
+      ${renderSurface("附件列表", renderTable([
+        { label: "业务对象", html: true, render: row => attachmentResourceSummary(row) },
+        { label: "类型", html: true, render: row => attachmentCategoryBadge(row) },
+        { label: "文件", html: true, render: row => attachmentFileSummary(row) },
+        { label: "上传信息", html: true, render: row => attachmentUploadSummary(row) },
+        { label: "状态", html: true, render: row => attachmentStatusSummary(row) },
+        { label: "备注", key: "uploadNote" },
+        { label: "操作", html: true, render: row => attachmentActions(row) }
+      ], rows, listTableOptions("attachment", "attachments", {
+        selectable: false,
+        batch: false,
+        emptyState: () => attachmentEmptyState()
+      })))}
+      ${renderPagination("attachments")}
+    </div>
+  `;
+}
+
+function renderImportTypeFilterBar() {
+  const filters = state.filters.imports || {};
+  return `
+    <div class="filter-row">
+      ${filterButtonGroup("imports", "importType", filters.importType || "", "导入类型", "全部导入类型", importTypeOptions())}
+    </div>
+  `;
+}
+
+function renderImportWorkspace() {
+  const selectedType = state.importSelectedType || state.filters.imports?.importType || "vehicle-workbook";
+  const templateLabel = importTypeLabel(selectedType);
+  const confirmable = Boolean(state.importValidation?.importable && state.importValidation?.job?.id);
+  return `
+    <div class="import-workspace">
+      <div class="import-grid">
+        <label class="field">
+          <span>导入类型</span>
+          <select data-import-type-select>
+            ${importTypeOptions().map(option => `<option value="${escapeAttr(option.value)}"${String(option.value) === String(selectedType) ? " selected" : ""}>${escapeHtml(option.label)}</option>`).join("")}
+          </select>
+        </label>
+        <label class="field">
+          <span>Excel 文件</span>
+          <input type="file" data-import-file accept=".xls,.xlsx,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet">
+        </label>
+      </div>
+      <div class="toolbar-actions">
+        <button class="btn btn-ghost" type="button" data-action="download-import-template" data-import-type="${escapeAttr(selectedType)}">${icon("download")}模板下载</button>
+        <button class="btn btn-primary" type="button" data-action="validate-import-file">${icon("fileSearch")}预校验</button>
+        ${confirmable ? `<button class="btn btn-primary" type="button" data-action="confirm-import-job" data-id="${escapeAttr(state.importValidation.job.id)}">${icon("fileCheck")}确认导入</button>` : ""}
+        ${state.importValidation ? `<button class="btn btn-ghost" type="button" data-action="clear-import-validation">${icon("minus")}清除结果</button>` : ""}
+      </div>
+      <div class="helper-inline">当前模板：${escapeHtml(templateLabel)}</div>
+    </div>
+  `;
+}
+
+function renderImportValidationPanel() {
+  const validation = state.importValidation;
+  if (!validation) {
+    return emptyState("请选择导入类型和 Excel 文件后点击预校验。");
+  }
+  const job = validation.job || {};
+  const errors = validation.errors || [];
+  const errorRows = errors.length ? renderTable([
+    { label: "Sheet", key: "sheetName" },
+    { label: "行号", key: "rowNumber" },
+    { label: "字段", key: "fieldName" },
+    { label: "错误提示", key: "message" },
+    { label: "值", key: "value" }
+  ], errors, listTableOptions("importJob", "imports", { selectable: false, batch: false, emptyState: false })) : emptyState("未发现校验错误");
+  return `
+    <div class="import-validation">
+      <section class="summary-grid">
+        ${summaryCard("状态", importStatusLabel(job.status), validation.importable ? "可以确认导入" : "请修正错误后重试")}
+        ${summaryCard("总行数", display(job.totalRows), `${display(job.validRows)} 行通过校验`)}
+        ${summaryCard("错误行", display(job.errorRows), `${display(job.importedRows)} 行已导入`)}
+      </section>
+      <div class="helper-inline">${escapeHtml(job.summary || "暂无摘要")}</div>
+      <div class="form-section-title">错误行提示</div>
+      ${errors.length ? errorRows : emptyState("本次预校验没有错误行。")}
+    </div>
+  `;
+}
+
+function renderImports() {
+  const filters = state.filters.imports || {};
+  const rows = filterRows(state.data.importJobs || [], state.search.imports, [
+    "importType", "templateName", "originalFileName", "status", "summary", "createdBy", "importedBy"
+  ]);
+  const readyCount = rows.filter(row => row.status === "READY").length;
+  const failedCount = rows.filter(row => ["FAILED", "VALIDATION_FAILED"].includes(row.status)).length;
+  const importedCount = rows.reduce((sum, row) => sum + Number(row.importedRows || 0), 0);
+
+  return `
+    <div class="page">
+      <section class="summary-grid">
+        ${summaryCard("导入记录", pageTotal("imports", rows.length), `${readyCount} 条待确认`)}
+        ${summaryCard("已导入行数", importedCount, `${failedCount} 条失败记录`)}
+        ${summaryCard("当前筛选", importTypeLabel(filters.importType || "全部"), "支持模板下载与预校验")}
+      </section>
+      ${renderToolbar("imports", "搜索导入类型、模板名、文件名、状态或摘要", null, "", null, {
+        create: false,
+        exportType: false,
+        main: [renderImportTypeFilterBar()],
+        actions: [`<button class="btn btn-ghost" type="button" data-action="download-import-template" data-import-type="${escapeAttr(state.importSelectedType || filters.importType || "vehicle-workbook")}">${icon("download")}模板下载</button>`]
+      })}
+      ${renderSurface("导入工作区", renderImportWorkspace())}
+      ${renderSurface("预校验结果", renderImportValidationPanel())}
+      ${renderSurface("导入记录", renderTable([
+        { label: "导入类型", html: true, render: row => importTypeBadge(row.importType) },
+        { label: "模板", key: "templateName" },
+        { label: "文件名", key: "originalFileName" },
+        { label: "状态", html: true, render: row => importStatusBadge(row.status) },
+        { label: "行数", html: true, render: row => importCountSummary(row) },
+        { label: "摘要", key: "summary" },
+        { label: "提交人", key: "createdBy" },
+        { label: "完成时间", key: "finishedAt", formatter: dateTime },
+        { label: "操作", html: true, render: row => importJobActions(row) }
+      ], rows, listTableOptions("importJob", "imports", {
+        selectable: false,
+        batch: false,
+        emptyState: () => emptyState("暂无导入记录，先下载模板并上传文件。")
+      })))}
+      ${renderPagination("imports")}
+    </div>
+  `;
+}
+
+function renderAttachmentFilterBar() {
+  const filters = state.filters.attachments || {};
+  return `
+    <div class="filter-row">
+      ${filterButtonGroup("attachments", "resourceType", filters.resourceType || "", "业务对象", "全部对象", attachmentAllResourceTypeOptions())}
+      ${filterButtonGroup("attachments", "category", filters.category || "", "附件类型", "全部类型", attachmentCategoryOptions())}
+      ${filterButtonGroup("attachments", "includeDeleted", filters.includeDeleted || "", "删除状态", "仅有效", [{ value: "true", label: "含已删除" }])}
+    </div>
+  `;
+}
+
+function attachmentAllResourceTypeOptions() {
+  return [
+    { value: "MACHINE", label: "车辆" },
+    { value: "REPAIR", label: "维修" },
+    { value: "OUTBOUND_ORDER", label: "订单" },
+    { value: "PART", label: "配件" },
+    { value: "CUSTOMER", label: "客户" }
+  ];
+}
+
+function attachmentResourceTypeOptions() {
+  return attachmentAllResourceTypeOptions().filter(option => canManageAttachmentType(option.value));
+}
+
+function attachmentCategoryOptions() {
+  return [
+    { value: "PHOTO", label: "照片/图片" },
+    { value: "INVOICE", label: "发票" },
+    { value: "CONTRACT", label: "合同" },
+    { value: "OTHER", label: "其他附件" }
+  ];
+}
+
+function attachmentResourceOptions() {
+  const type = String(state.modal?.item?.resourceType || "MACHINE").toUpperCase();
+  const rows = {
+    MACHINE: (state.data.vehicles || []).filter(item => !item.modelOnly),
+    REPAIR: state.data.repairs || [],
+    OUTBOUND_ORDER: state.data.outboundOrders || [],
+    PART: state.data.parts || [],
+    CUSTOMER: state.data.customers || []
+  }[type] || [];
+  return rows.map(item => ({
+    value: item.id,
+    label: attachmentResourceOptionLabel(type, item)
+  }));
+}
+
+function attachmentResourceOptionLabel(type, item = {}) {
+  if (type === "MACHINE") return vehicleNumberLabel(item);
+  if (type === "REPAIR") return `${item.vehicleNumber || item.id || "-"} · ${item.customerName || item.faultDescription || "-"}`;
+  if (type === "OUTBOUND_ORDER") return `${item.orderNo || item.id || "-"} · ${item.resourceCode || item.resourceName || item.customerName || "-"}`;
+  if (type === "PART") return `${item.partCode || item.id || "-"} · ${item.partName || "-"}`;
+  if (type === "CUSTOMER") return `${item.companyName || item.id || "-"} · ${item.contactName || "-"}`;
+  return `${item.id || "-"} · ${item.name || item.resourceName || "-"}`;
+}
+
+function attachmentDefaultCategoryForResourceType(resourceType) {
+  const type = String(resourceType || "").toUpperCase();
+  if (type === "OUTBOUND_ORDER") return "INVOICE";
+  return "PHOTO";
+}
+
+function attachmentResourceTypeLabel(value) {
+  return attachmentAllResourceTypeOptions().find(option => option.value === String(value || "").toUpperCase())?.label
+    || resourceTypeLabel(value)
+    || value
+    || "-";
+}
+
+function attachmentCategoryLabel(value) {
+  return attachmentCategoryOptions().find(option => option.value === String(value || "").toUpperCase())?.label
+    || value
+    || "-";
+}
+
+function attachmentCategoryBadge(row = {}) {
+  const type = String(row.attachmentCategory || "").toUpperCase();
+  const tone = type === "INVOICE" ? "warn" : type === "CONTRACT" ? "teal" : type === "PHOTO" ? "primary" : "primary";
+  return badge(attachmentCategoryLabel(type), tone);
+}
+
+function attachmentScopeLabel(filters = {}) {
+  const parts = [];
+  if (filters.resourceType) {
+    parts.push(attachmentResourceTypeLabel(filters.resourceType));
+  }
+  if (filters.resourceId) {
+    parts.push(attachmentResourceNameById(filters.resourceType, filters.resourceId));
+  }
+  if (filters.category) {
+    parts.push(attachmentCategoryLabel(filters.category));
+  }
+  if (filters.includeDeleted === "true") {
+    parts.push("含已删除");
+  }
+  return parts.filter(Boolean).join(" / ");
+}
+
+function attachmentResourceNameById(resourceType, resourceId) {
+  if (!resourceId) return "";
+  const type = String(resourceType || "").toUpperCase();
+  const row = {
+    MACHINE: state.data.vehicles.find(item => Number(item.id) === Number(resourceId)),
+    REPAIR: state.data.repairs.find(item => Number(item.id) === Number(resourceId)),
+    OUTBOUND_ORDER: state.data.outboundOrders.find(item => Number(item.id) === Number(resourceId)),
+    PART: state.data.parts.find(item => Number(item.id) === Number(resourceId)),
+    CUSTOMER: state.data.customers.find(item => Number(item.id) === Number(resourceId))
+  }[type];
+  return row ? attachmentResourceOptionLabel(type, row) : `ID ${resourceId}`;
+}
+
+function attachmentResourceSummary(row = {}) {
+  return `
+    <div class="cell-stack">
+      <strong>${escapeHtml(attachmentResourceTypeLabel(row.resourceType))}</strong>
+      <span class="helper-inline">${escapeHtml(row.resourceCode || `ID ${row.resourceId || "-"}`)}</span>
+      <span class="helper-inline">${escapeHtml(row.resourceName || "-")}</span>
+    </div>
+  `;
+}
+
+function attachmentFileSummary(row = {}) {
+  return `
+    <div class="cell-stack">
+      <strong>${escapeHtml(row.originalName || row.attachmentLabel || "-")}</strong>
+      <span class="helper-inline">${escapeHtml(fileSize(row.fileSize))}${row.contentType ? ` · ${escapeHtml(row.contentType)}` : ""}</span>
+      ${row.previewable ? `<span class="helper-inline">可预览</span>` : ""}
+    </div>
+  `;
+}
+
+function attachmentUploadSummary(row = {}) {
+  return `
+    <div class="cell-stack">
+      <span>${escapeHtml(row.uploadedBy || "-")}</span>
+      <span class="helper-inline">${escapeHtml(dateTime(row.uploadedAt) || "-")}</span>
+    </div>
+  `;
+}
+
+function attachmentStatusSummary(row = {}) {
+  if (!row.deleted) return badge("有效", "teal");
+  return `
+    <div class="cell-stack">
+      ${badge("已删除", "danger")}
+      <span class="helper-inline">${escapeHtml(row.deletedBy || "-")} · ${escapeHtml(dateTime(row.deletedAt) || "-")}</span>
+      ${row.deleteReason ? `<span class="helper-inline">${escapeHtml(row.deleteReason)}</span>` : ""}
+    </div>
+  `;
+}
+
+function attachmentActions(row = {}) {
+  if (row.deleted) return "";
+  return `
+    <div class="action-row">
+      ${row.previewable ? `<button class="btn btn-sm" type="button" data-action="preview-attachment" data-id="${escapeAttr(row.id)}">${icon("eye")}预览</button>` : ""}
+      <button class="btn btn-sm" type="button" data-action="download-attachment" data-id="${escapeAttr(row.id)}">${icon("download")}下载</button>
+      ${canManageAttachmentType(row.resourceType) ? `<button class="btn btn-sm btn-danger" type="button" data-action="delete-attachment" data-id="${escapeAttr(row.id)}">${icon("trash")}删除</button>` : ""}
+    </div>
+  `;
+}
+
+function attachmentEmptyState() {
+  return `
+    <div class="empty-state empty-state-actionable">
+      <div class="empty-state-main">
+        <strong>暂无附件</strong>
+        ${canUploadAttachment() ? `<button class="btn btn-primary" type="button" data-action="create" data-kind="attachmentUpload">${icon("paperclip")}上传附件</button>` : ""}
+      </div>
+      <span>可将车辆照片、维修照片、合同、发票等文件按业务对象统一挂载。</span>
+    </div>
+  `;
+}
+
+function canUploadAttachment() {
+  return attachmentResourceTypeOptions().length > 0;
+}
+
+function canManageAttachmentType(resourceType) {
+  if (hasPermission("stock:adjust")) return true;
+  const permissions = {
+    MACHINE: "vehicle:write",
+    REPAIR: "repair:write",
+    OUTBOUND_ORDER: "stock:adjust",
+    PART: "part:write",
+    CUSTOMER: "vehicle:write"
+  };
+  const permission = permissions[String(resourceType || "").toUpperCase()];
+  return permission ? hasPermission(permission) : false;
+}
+
+function attachmentResourceTypeForKind(kind) {
+  return {
+    vehicle: "MACHINE",
+    repair: "REPAIR",
+    outboundOrder: "OUTBOUND_ORDER",
+    part: "PART",
+    customer: "CUSTOMER"
+  }[kind] || "";
+}
+
+function importTypeOptions() {
+  return [
+    { value: "vehicle-workbook", label: "车辆工作簿" },
+    { value: "parts-purchase", label: "配件采购" }
+  ];
+}
+
+function importTypeLabel(value) {
+  const normalized = String(value || "").toLowerCase();
+  if (!normalized || normalized === "全部") return "全部";
+  return importTypeOptions().find(option => option.value === normalized)?.label || value || "-";
+}
+
+function importTypeBadge(value) {
+  const normalized = String(value || "").toLowerCase();
+  const tone = normalized.includes("part") ? "teal" : "primary";
+  return badge(importTypeLabel(value), tone);
+}
+
+function importStatusLabel(status) {
+  const labels = {
+    VALIDATING: "校验中",
+    READY: "待确认",
+    VALIDATION_FAILED: "校验失败",
+    IMPORTING: "导入中",
+    COMPLETED: "已完成",
+    FAILED: "失败",
+    DRAFT: "草稿"
+  };
+  return labels[status] || status || "-";
+}
+
+function importStatusBadge(status) {
+  const tones = {
+    READY: "warn",
+    COMPLETED: "teal",
+    IMPORTING: "primary",
+    VALIDATION_FAILED: "danger",
+    FAILED: "danger"
+  };
+  return badge(importStatusLabel(status), tones[status] || "primary");
+}
+
+function importCountSummary(row = {}) {
+  return `
+    <div class="cell-stack">
+      <span>总行 ${escapeHtml(display(row.totalRows))}</span>
+      <span class="helper-inline">有效 ${escapeHtml(display(row.validRows))} / 错误 ${escapeHtml(display(row.errorRows))}</span>
+      <span class="helper-inline">导入 ${escapeHtml(display(row.importedRows))} / 跳过 ${escapeHtml(display(row.skippedRows))}</span>
+    </div>
+  `;
+}
+
+function importJobActions(row = {}) {
+  if (row.status !== "READY") return "";
+  return `
+    <div class="action-row">
+      <button class="btn btn-sm btn-primary" type="button" data-action="confirm-import-job" data-id="${escapeAttr(row.id)}">${icon("fileCheck")}确认导入</button>
     </div>
   `;
 }
@@ -5125,6 +5902,7 @@ function renderConfigItemCard(item) {
 function rowActions(kind, row, actions) {
   const canWrite = canWriteEntity(kind);
   const canAdjustStock = hasPermission("stock:adjust");
+  const attachmentResourceType = attachmentResourceTypeForKind(kind);
   return `
     <div class="action-row">
       ${actions.includes("detail") ? `<button class="btn btn-sm" type="button" data-action="detail-vehicle" data-id="${escapeAttr(row.id)}">${icon("eye")}详情</button>` : ""}
@@ -5607,7 +6385,7 @@ function renderField(field, data) {
     return `
       <label class="field"${span}>
         <span>${escapeHtml(field.label)}</span>
-        <input name="${escapeAttr(field.name)}" type="file"${field.accept ? ` accept="${escapeAttr(field.accept)}"` : ""}${required}>
+        <input name="${escapeAttr(field.name)}" type="file"${field.accept ? ` accept="${escapeAttr(field.accept)}"` : ""}${field.multiple ? " multiple" : ""}${required}>
       </label>
     `;
   }
@@ -6046,6 +6824,18 @@ function defaultEntity(kind) {
   }
   if (kind === "dataRestore") {
     return { confirmation: "RESTORE-DATA-BACKUP" };
+  }
+  if (kind === "attachmentUpload") {
+    const filters = state.filters.attachments || {};
+    const resourceType = filters.resourceType || "MACHINE";
+    const entity = {
+      resourceType,
+      attachmentCategory: filters.category || attachmentDefaultCategoryForResourceType(resourceType)
+    };
+    if (filters.resourceId) {
+      setPrefill(entity, "resourceId", filters.resourceId, `预填：${filters.resourceId}`);
+    }
+    return entity;
   }
   const entity = {};
   if (kind === "configValue" && state.selectedConfigItemId) {
@@ -6601,12 +7391,16 @@ function entityRows(kind) {
     repair: "repairs",
     configItem: "configItems",
     configValue: "configValues",
+    attachment: "attachments",
+    importJob: "importJobs",
     user: "users"
   }[kind];
   return state.data[key] || [];
 }
 
 function entityLabel(kind) {
+  if (kind === "attachment") return "附件";
+  if (kind === "importJob") return "导入记录";
   return {
     vehicle: "车辆",
     part: "配件",
@@ -6628,6 +7422,8 @@ function entityLabel(kind) {
 }
 
 function entityDisplayName(kind, item = {}) {
+  if (kind === "attachment") return display(item.originalName || item.attachmentLabel || item.id);
+  if (kind === "importJob") return display(item.originalFileName || item.templateName || item.id);
   const value = {
     vehicle: item.vehicleProductNumber || item.name || item.id,
     part: [item.partCode, item.partName].filter(Boolean).join(" / "),
@@ -6659,6 +7455,9 @@ function findModificationOrder(id) {
 }
 
 function modalTitle(kind, item) {
+  if (kind === "attachmentUpload") {
+    return item?.resourceType ? `附件上传：${attachmentResourceTypeLabel(item.resourceType)}` : "附件上传";
+  }
   const names = {
     vehicle: "整车档案",
     vehicleModel: "车型",
@@ -6698,6 +7497,9 @@ function modalTitle(kind, item) {
 }
 
 function modalSubtitle(kind) {
+  if (kind === "attachmentUpload") {
+    return "选择业务对象后可一次上传多份图片、文档或票据，并记录删除审计。";
+  }
   const subtitles = {
     vehicle: "按进出库明细表直接录入单台整机的入库、库存、去向和后续跟进字段。",
     vehicleModel: "只维护车型、型号和动力信息；具体配置在入库时选择。",
@@ -7428,6 +8230,7 @@ function canAccessTab(tab) {
     stats: "log:read",
     stockMovements: "log:read",
     logs: "log:read",
+    imports: "stock:adjust",
     users: "user:read",
     maintenance: "user:admin"
   };

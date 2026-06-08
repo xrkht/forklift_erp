@@ -39,7 +39,10 @@ export function createFields(deps) {
     stocktakingStatusOptions,
     warehouseOptions,
     transferResourceTypeOptions,
-    stockTransferResourceOptions
+    stockTransferResourceOptions,
+    attachmentResourceTypeOptions,
+    attachmentResourceOptions,
+    attachmentCategoryOptions
   } = deps;
 
   return {
@@ -289,6 +292,14 @@ export function createFields(deps) {
   dataRestore: [
     { name: "backupFile", label: "备份文件", type: "file", required: true, span: 2, accept: ".json,application/json" },
     { name: "confirmation", label: "确认码", required: true, span: 2 }
+  ],
+  attachmentUpload: [
+    { name: "resourceType", label: "业务对象", type: "select", required: true, options: attachmentResourceTypeOptions, section: "附件信息" },
+    { name: "resourceId", label: "业务对象", type: "select", coerce: "int", required: true, options: attachmentResourceOptions, section: "附件信息" },
+    { name: "attachmentCategory", label: "附件类型", type: "select", required: true, options: attachmentCategoryOptions, defaultValue: "PHOTO", section: "附件信息" },
+    { name: "attachmentLabel", label: "附件标题", section: "附件信息" },
+    { name: "files", label: "附件文件", type: "file", multiple: true, required: true, span: 2, accept: ".pdf,.ofd,.jpg,.jpeg,.png,.webp,.gif,.bmp,.doc,.docx,.xls,.xlsx,.csv,application/pdf,image/jpeg,image/png,image/webp" },
+    { name: "uploadNote", label: "上传备注", type: "textarea", span: 2, section: "附件信息" }
   ],
   outboundOrder: [
     { name: "salesDate", label: "销售日期", type: "date", coerce: "date" },

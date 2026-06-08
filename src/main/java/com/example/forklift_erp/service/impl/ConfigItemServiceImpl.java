@@ -15,7 +15,10 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 
 @Slf4j
@@ -166,6 +169,28 @@ public class ConfigItemServiceImpl implements ConfigItemService {
     @Override
     public List<ConfigValue> getValuesByItemId(Long itemId) {
         return configValueRepository.findByConfigItemIdOrderBySortOrderAsc(itemId);
+    }
+
+    @Override
+    public Map<Long, List<ConfigValue>> getValuesByItemIds(List<Long> itemIds) {
+        if (itemIds == null || itemIds.isEmpty()) {
+            return Map.of();
+        }
+        List<Long> distinctIds = itemIds.stream()
+                .filter(Objects::nonNull)
+                .distinct()
+                .toList();
+        if (distinctIds.isEmpty()) {
+            return Map.of();
+        }
+
+        Map<Long, List<ConfigValue>> grouped = new LinkedHashMap<>();
+        distinctIds.forEach(id -> grouped.put(id, new java.util.ArrayList<>()));
+        configValueRepository.findByConfigItemIdInOrderByConfigItemIdAscSortOrderAsc(distinctIds)
+                .forEach(value -> grouped
+                        .computeIfAbsent(value.getConfigItemId(), id -> new java.util.ArrayList<>())
+                        .add(value));
+        return grouped;
     }
 
     @Override
