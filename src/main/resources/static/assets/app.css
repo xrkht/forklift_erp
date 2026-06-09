@@ -1848,6 +1848,116 @@ tbody tr.table-row-selectable:focus-visible {
   pointer-events: auto;
 }
 
+.command-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 65;
+  display: grid;
+  align-items: start;
+  justify-items: center;
+  padding: 9vh 18px 18px;
+  background: rgba(17, 24, 39, 0.34);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.16s var(--ease-standard);
+}
+
+.command-overlay.is-open {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.command-palette {
+  width: min(680px, 100%);
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #fff;
+  box-shadow: var(--shadow-strong);
+  transform: translateY(10px) scale(0.98);
+  transition: transform 0.18s var(--ease-emphasized);
+}
+
+.command-overlay.is-open .command-palette {
+  transform: translateY(0) scale(1);
+}
+
+.command-search-row {
+  position: relative;
+  border-bottom: 1px solid var(--line);
+}
+
+.command-search-row .search-icon {
+  left: 16px;
+}
+
+.command-input {
+  width: 100%;
+  min-height: 54px;
+  border: 0;
+  outline: none;
+  padding: 14px 18px 14px 46px;
+  color: var(--text);
+  font-size: 16px;
+}
+
+.command-results {
+  max-height: min(520px, 68vh);
+  overflow: auto;
+  padding: 8px;
+}
+
+.command-item {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  min-height: 56px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  padding: 9px 10px;
+  color: var(--text);
+  text-align: left;
+}
+
+.command-item:hover,
+.command-item.is-active {
+  border-color: #cfe0f5;
+  background: var(--primary-weak);
+}
+
+.command-item-main {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.command-item-main strong,
+.command-item-main span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.command-item-main span,
+.command-item em,
+.command-empty {
+  color: var(--muted);
+  font-size: 12px;
+  font-style: normal;
+}
+
+.command-item em {
+  flex: 0 0 auto;
+}
+
+.command-empty {
+  padding: 18px 12px;
+  text-align: center;
+}
+
 .confirm-dialog {
   width: min(460px, 100%);
   display: grid;

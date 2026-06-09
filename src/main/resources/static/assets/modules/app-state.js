@@ -35,6 +35,15 @@ export function createInitialState({ token = "", user = null } = {}) {
         supplier: "",
         stock: ""
       },
+      parts: {
+        stock: ""
+      },
+      outboundOrders: {
+        stage: ""
+      },
+      repairs: {
+        status: ""
+      },
       attachments: {
         resourceType: "",
         category: "",

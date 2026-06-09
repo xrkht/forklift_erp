@@ -101,6 +101,7 @@ let remoteComboRequestSequence = 0;
 let detailDrawerCloseTimer = null;
 let modalPointerDownStartedOnOverlay = false;
 let detailPointerDownStartedOnOverlay = false;
+let commandPalette = null;
 
 document.addEventListener("DOMContentLoaded", () => {
   els = {
@@ -152,9 +153,9 @@ document.addEventListener("DOMContentLoaded", () => {
       closeDetailDrawer();
       return;
     }
-    if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "k" && !state.modal && !isTypingTarget(event.target)) {
+    if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "k" && !state.modal) {
       event.preventDefault();
-      focusPrimarySearch();
+      openCommandPalette();
     }
   });
 
@@ -456,7 +457,7 @@ async function handleContentClick(event) {
         state.filters.attachments.resourceId = "";
       }
       if (state.pages[key]) resetPage(state.pages[key]);
-      if (["attachments", "imports"].includes(key) && key === activePagedTab()) {
+      if (pagedTabs[key] && key === activePagedTab()) {
         els.content.innerHTML = renderLoading();
         await loadPagedTab(key, { force: true });
         renderCurrentTab();
@@ -581,7 +582,7 @@ async function handleContentClick(event) {
       return;
     }
     if (action === "create") {
-      await openEntityModal(kind, defaultEntity(kind));
+      await openEntityModal(kind, defaultEntity(kind, control.dataset));
       return;
     }
     if (action === "model-inbound") {
@@ -1290,8 +1291,9 @@ async function handleModalSubmit(event) {
   event.preventDefault();
   const form = event.target;
   const kind = form.dataset.kind;
-  if (!validateCombos(form)) return;
   const item = state.modal?.item || {};
+  const shouldContinue = event.submitter?.dataset?.submitMode === "continue" && canSaveAndContinue(kind, item);
+  if (!validateCombos(form)) return;
   const activeModelKey = state.vehicleDetail?.modelKey || item.__modelKey || "";
 
   if (kind === "attachmentUpload") {
@@ -1530,6 +1532,7 @@ async function handleModalSubmit(event) {
       await api(endpoints[kind].create, { method: "POST", body: payload });
       showContextSuccess(`${entityLabel(kind)}已新增`, entityDisplayName(kind, payload), "当前列表已刷新");
     }
+    const nextEntity = shouldContinue ? nextEntityAfterContinue(kind, item, payload) : null;
     closeModal();
     resetPageAfterMutation(kind);
     markReferenceDataStale(referenceKindsForMutation(kind));
@@ -1538,6 +1541,10 @@ async function handleModalSubmit(event) {
       machineId: payload.machineId || item.machineId || state.selectedVehicleId
     });
     renderCurrentTab();
+    if (nextEntity) {
+      await openEntityModal(kind, nextEntity);
+      focusFirstModalField();
+    }
   } catch (error) {
     handleActionError(error);
   }
@@ -1629,14 +1636,9 @@ async function togglePurchaseReceived(id) {
     return;
   }
   const nextReceived = order.status !== "RECEIVED";
-  if (!(await confirmDanger({
-    title: nextReceived ? "确认采购收货" : "撤销采购收货",
-    target: entityDisplayName("purchaseOrder", order),
-    impact: nextReceived ? "订单会标记为已收货，并可能影响采购库存和成本跟踪。" : "订单会回到待收货状态，请确认业务状态仍允许撤销。"
-  }))) return;
   const url = withVersion(`${endpoints.purchaseOrder.received(id)}?received=${nextReceived ? "true" : "false"}`, order);
   await api(url, { method: "PUT" });
-  showToast(nextReceived ? "采购订单已收货，运费默认为 0" : "采购订单已改为待收货", "success");
+  showToast(nextReceived ? "采购订单已收货；再次点击可撤回" : "采购订单已改为待收货", "success");
   resetPageAfterMutation("purchaseOrder");
   await refreshAfterMutation("purchaseOrder", { refreshDetail: false });
   renderCurrentTab();
@@ -2143,17 +2145,12 @@ async function toggleOutboundOrderStatus(id, field) {
   if (!order?.id || !field) return;
   const overrides = orderStatusToggleOverrides(order, field);
   if (!overrides) return;
-  if (!(await confirmDanger({
-    title: "确认切换订单状态",
-    target: entityDisplayName("outboundOrder", order),
-    impact: "该操作会更新收款、报销售、发票或合同等关键跟进状态，请确认与实际业务一致。"
-  }))) return;
 
   await api(endpoints.outboundOrder.update(order.id), {
     method: "PUT",
     body: buildOutboundOrderStatusPayload(order, overrides)
   });
-  showToast("订单状态已更新", "success");
+  showToast("订单状态已更新；再次点击可切回", "success");
   markReferenceDataStale(["vehicle", "outboundOrder"]);
   await refreshAfterMutation("outboundOrder", {
     machineId: order.resourceType === "MACHINE" ? order.resourceId : state.selectedVehicleId
@@ -2165,11 +2162,6 @@ async function toggleRepairStatus(id) {
   const repair = findEntity("repair", id);
   if (!repair?.id || !hasPermission("repair:write")) return;
   const nextStatus = repair.status === "COMPLETED" ? "PENDING" : "COMPLETED";
-  if (!(await confirmDanger({
-    title: nextStatus === "COMPLETED" ? "确认完成维修" : "撤回维修完成状态",
-    target: entityDisplayName("repair", repair),
-    impact: nextStatus === "COMPLETED" ? "该维修记录会标记为已完成。" : "该维修记录会重新标记为待处理。"
-  }))) return;
   await api(endpoints.repair.updateStatus(repair.id), {
     method: "PUT",
     body: {
@@ -2177,7 +2169,7 @@ async function toggleRepairStatus(id) {
       status: nextStatus
     }
   });
-  showToast("维修状态已更新", "success");
+  showToast(nextStatus === "COMPLETED" ? "维修已标记完成；再次点击可撤回" : "维修已改回待处理", "success");
   markReferenceDataStale(["repair"]);
   await refreshAfterMutation("repair", { machineId: repair.machineId || state.selectedVehicleId });
   renderCurrentTab();
@@ -2341,6 +2333,24 @@ async function goToTab(tab, data = {}) {
   state.activeTab = tab;
   if (tab === "vehicles") {
     state.filters.vehicles.stock = data.stock || "";
+  }
+  if (tab === "parts") {
+    state.filters.parts = {
+      ...(state.filters.parts || {}),
+      stock: data.stock || ""
+    };
+  }
+  if (tab === "outboundOrders") {
+    state.filters.outboundOrders = {
+      ...(state.filters.outboundOrders || {}),
+      stage: data.stage || ""
+    };
+  }
+  if (tab === "repairs") {
+    state.filters.repairs = {
+      ...(state.filters.repairs || {}),
+      status: data.status || ""
+    };
   }
   if (tab === "attachments") {
     state.filters.attachments = {
@@ -2783,12 +2793,70 @@ function renderModal() {
       </div>
       <div class="modal-actions">
         <button class="btn btn-ghost" type="button" data-close-modal>取消</button>
+        ${canSaveAndContinue(kind, item) ? `<button class="btn" type="submit" data-submit-mode="continue">保存并继续</button>` : ""}
         <button class="btn btn-primary" type="submit">保存</button>
       </div>
     </form>
   `;
   els.modalOverlay.classList.remove("is-hidden");
   els.modalOverlay.setAttribute("aria-hidden", "false");
+}
+
+function canSaveAndContinue(kind, item = {}) {
+  if (item?.id) return false;
+  if (kind === "partStock") return item.direction === "inbound";
+  return ["vehicleInbound", "customer", "supplier", "purchaseOrder", "stocktaking", "repair"].includes(kind);
+}
+
+function nextEntityAfterContinue(kind, item = {}, payload = {}) {
+  if (kind === "vehicleInbound") {
+    return vehicleInboundDefaultsForModel({
+      modelKey: item.__modelKey || "",
+      name: payload.name,
+      specificationModel: payload.specificationModel,
+      configuration: payload.configuration,
+      machineType: payload.machineType,
+      supplier: payload.supplier,
+      warehouseName: payload.warehouseName,
+      purchasePrice: payload.purchasePrice,
+      salePrice: payload.salePrice
+    });
+  }
+  if (kind === "partStock") {
+    const next = { direction: "inbound", quantity: 1, operator: payload.operator || "" };
+    if (payload.partCode) setPrefill(next, "partCode", payload.partCode, `预填：${payload.partCode}`);
+    return next;
+  }
+  if (kind === "purchaseOrder") {
+    const next = purchaseOrderDefaults({
+      supplierId: payload.supplierId,
+      configItemId: payload.configItemId
+    });
+    next.operator = payload.operator || "";
+    next.unit = payload.unit || "件";
+    return next;
+  }
+  if (kind === "stocktaking") {
+    return {
+      resourceType: payload.resourceType || "PART",
+      actualQuantity: 0,
+      status: "DRAFT",
+      stocktakingDate: todayInputDate(),
+      operator: payload.operator || ""
+    };
+  }
+  if (kind === "repair") {
+    return repairDefaultsForMachine(findEntity("vehicle", Number(payload.machineId || 0)), { customerId: payload.customerId });
+  }
+  return defaultEntity(kind);
+}
+
+function focusFirstModalField() {
+  requestAnimationFrame(() => {
+    const first = els.modalCard.querySelector("input:not([type='hidden']):not([readonly]), textarea:not([readonly]), select");
+    first?.focus();
+    if (typeof first?.select === "function") first.select();
+  });
 }
 
 function renderCurrentTab() {
@@ -3065,7 +3133,7 @@ function renderDetailDrawerActions(kind, item) {
     modificationOrder: modificationOrderActions(item),
     outboundOrder: outboundOrderActions(item),
     rental: rowActions("rental", item, ["edit", "delete"]),
-    customer: rowActions("customer", item, ["edit", "delete"]),
+    customer: `${customerContextActions(item)}${rowActions("customer", item, ["edit", "delete"])}`,
     supplier: rowActions("supplier", item, ["edit", "delete"]),
     purchaseOrder: `${purchaseStatusControl(item)}${rowActions("purchaseOrder", item, ["edit", "delete"])}`,
     stocktaking: stocktakingActions(item),
@@ -3073,6 +3141,16 @@ function renderDetailDrawerActions(kind, item) {
     user: userActions(item)
   }[kind] || "";
   return actions ? `<div class="detail-drawer-actions">${actions}</div>` : "";
+}
+
+function customerContextActions(customer = {}) {
+  if (!customer?.id) return "";
+  const actions = [
+    hasPermission("stock:adjust") ? `<button class="btn btn-sm" type="button" data-action="create" data-kind="vehicleOutbound" data-customer-id="${escapeAttr(customer.id)}">${icon("minus")}登记销售</button>` : "",
+    hasPermission("stock:adjust") ? `<button class="btn btn-sm" type="button" data-action="create" data-kind="rental" data-customer-id="${escapeAttr(customer.id)}">${icon("plus")}租赁登记</button>` : "",
+    hasPermission("repair:write") ? `<button class="btn btn-sm" type="button" data-action="create" data-kind="repair" data-customer-id="${escapeAttr(customer.id)}">${icon("plus")}维修登记</button>` : ""
+  ].filter(Boolean);
+  return actions.length ? `<div class="action-row">${actions.join("")}</div>` : "";
 }
 
 function focusPrimarySearch() {
@@ -3083,6 +3161,178 @@ function focusPrimarySearch() {
   }
   input.focus();
   input.select();
+}
+
+function openCommandPalette() {
+  if (commandPalette?.overlay?.isConnected) {
+    commandPalette.input?.focus();
+    commandPalette.input?.select();
+    return;
+  }
+  const overlay = document.createElement("div");
+  overlay.className = "command-overlay";
+  overlay.innerHTML = `
+    <section class="command-palette" role="dialog" aria-modal="true" aria-label="全局操作">
+      <div class="command-search-row">
+        <span class="search-icon">${icons.search}</span>
+        <input class="command-input" type="search" placeholder="搜索车号、客户、配件、订单或输入操作" autocomplete="off" spellcheck="false">
+      </div>
+      <div class="command-results" role="listbox"></div>
+    </section>
+  `;
+  document.body.appendChild(overlay);
+  commandPalette = {
+    overlay,
+    input: overlay.querySelector(".command-input"),
+    results: overlay.querySelector(".command-results"),
+    items: [],
+    activeIndex: 0
+  };
+  commandPalette.input.addEventListener("input", () => renderCommandPalette(commandPalette.input.value));
+  commandPalette.input.addEventListener("keydown", handleCommandPaletteKeydown);
+  overlay.addEventListener("pointerdown", event => {
+    if (event.target === overlay) closeCommandPalette();
+  });
+  overlay.addEventListener("click", event => {
+    const item = event.target.closest("[data-command-index]");
+    if (!item) return;
+    void executeCommandItem(commandPalette.items[Number(item.dataset.commandIndex || 0)]);
+  });
+  renderCommandPalette("");
+  requestAnimationFrame(() => {
+    overlay.classList.add("is-open");
+    commandPalette.input.focus();
+  });
+}
+
+function closeCommandPalette() {
+  const overlay = commandPalette?.overlay;
+  commandPalette = null;
+  if (!overlay) return;
+  overlay.classList.remove("is-open");
+  window.setTimeout(() => overlay.remove(), 160);
+}
+
+function handleCommandPaletteKeydown(event) {
+  if (!commandPalette) return;
+  if (event.key === "Escape") {
+    event.preventDefault();
+    closeCommandPalette();
+    return;
+  }
+  if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+    event.preventDefault();
+    const delta = event.key === "ArrowDown" ? 1 : -1;
+    const length = commandPalette.items.length || 1;
+    commandPalette.activeIndex = (commandPalette.activeIndex + delta + length) % length;
+    paintCommandActiveItem();
+    return;
+  }
+  if (event.key === "Enter") {
+    event.preventDefault();
+    void executeCommandItem(commandPalette.items[commandPalette.activeIndex]);
+  }
+}
+
+function renderCommandPalette(query = "") {
+  if (!commandPalette) return;
+  commandPalette.items = commandItems(query).slice(0, 12);
+  commandPalette.activeIndex = Math.min(commandPalette.activeIndex, Math.max(0, commandPalette.items.length - 1));
+  commandPalette.results.innerHTML = commandPalette.items.length
+    ? commandPalette.items.map((item, index) => `
+      <button class="command-item${index === commandPalette.activeIndex ? " is-active" : ""}" type="button" data-command-index="${escapeAttr(index)}" role="option" aria-selected="${index === commandPalette.activeIndex ? "true" : "false"}">
+        <span class="command-item-main">
+          <strong>${escapeHtml(item.title)}</strong>
+          <span>${escapeHtml(item.detail || item.group || "")}</span>
+        </span>
+        <em>${escapeHtml(item.group || "")}</em>
+      </button>
+    `).join("")
+    : `<div class="command-empty">没有匹配结果</div>`;
+}
+
+function paintCommandActiveItem() {
+  if (!commandPalette) return;
+  commandPalette.results.querySelectorAll("[data-command-index]").forEach(button => {
+    const active = Number(button.dataset.commandIndex) === commandPalette.activeIndex;
+    button.classList.toggle("is-active", active);
+    button.setAttribute("aria-selected", active ? "true" : "false");
+    if (active) button.scrollIntoView({ block: "nearest" });
+  });
+}
+
+function commandItems(query = "") {
+  const normalized = normalizeText(query);
+  const items = [
+    { group: "日常操作", title: "整车入库", detail: "新车号入库", action: () => openEntityModal("vehicleInbound", vehicleInboundDefaultsForModel({})) },
+    { group: "日常操作", title: "配件入库", detail: "增加配件库存", action: () => openEntityModal("partStock", { direction: "inbound" }) },
+    { group: "日常操作", title: "销售出库", detail: "创建整车出库订单", action: () => openEntityModal("vehicleOutbound", defaultEntity("vehicleOutbound")) },
+    { group: "日常操作", title: "租赁登记", detail: "创建租赁记录", action: () => openEntityModal("rental", defaultEntity("rental")) },
+    { group: "日常操作", title: "维修登记", detail: "创建维修记录", action: () => openEntityModal("repair", defaultEntity("repair")) },
+    { group: "日常操作", title: "库存调拨", detail: "整车或配件转仓", action: () => openEntityModal("stockTransfer", defaultEntity("stockTransfer")) },
+    ...Object.entries(tabs).map(([tab, config]) => ({
+      group: "模块",
+      title: config.title,
+      detail: config.subtitle,
+      action: () => goToTab(tab)
+    })),
+    ...commandRows("车辆", state.data.vehicles.filter(item => !item.modelOnly), row => ({
+      title: row.vehicleProductNumber || `车辆 ${row.id}`,
+      detail: [row.name, row.specificationModel, row.customerName].filter(Boolean).join(" / "),
+      action: async () => {
+        state.activeTab = "vehicles";
+        els.content.innerHTML = renderLoading();
+        await loadCurrentTab({ force: true });
+        await loadVehicleDetail(row.id);
+        renderCurrentTab();
+        scrollToVehicleDetail();
+      }
+    })),
+    ...commandRows("配件", state.data.parts, row => ({
+      title: [row.partCode, row.partName].filter(Boolean).join(" / ") || `配件 ${row.id}`,
+      detail: [row.partCategory, `库存 ${row.quantity ?? 0}${row.unit || ""}`].filter(Boolean).join(" / "),
+      action: () => goToSearchedTab("parts", "parts", row.partCode || row.partName || "")
+    })),
+    ...commandRows("客户", state.data.customers, row => ({
+      title: row.companyName || row.contactName || `客户 ${row.id}`,
+      detail: [row.contactName, row.contactPhone, row.address].filter(Boolean).join(" / "),
+      action: () => goToSearchedTab("customers", "customers", row.companyName || row.contactPhone || "")
+    })),
+    ...commandRows("订单", state.data.outboundOrders, row => ({
+      title: row.orderNo || row.resourceCode || `订单 ${row.id}`,
+      detail: [row.customerName, row.resourceName, row.paymentSettled ? "已结清" : "待收款"].filter(Boolean).join(" / "),
+      action: () => goToSearchedTab("outboundOrders", "outboundOrders", row.orderNo || row.resourceCode || "")
+    })),
+    ...commandRows("维修", state.data.repairs, row => ({
+      title: row.vehicleNumber || row.customerName || `维修 ${row.id}`,
+      detail: [row.customerName, repairStatusText(row.status), row.faultDescription].filter(Boolean).join(" / "),
+      action: () => goToSearchedTab("repairs", "repairs", row.vehicleNumber || row.customerName || "")
+    }))
+  ];
+  if (!normalized) return items;
+  return items.filter(item => normalizeText(`${item.group} ${item.title} ${item.detail}`).includes(normalized));
+}
+
+function commandRows(group, rows = [], factory) {
+  return (rows || []).slice(0, 80).map(row => ({ group, ...factory(row) }));
+}
+
+async function goToSearchedTab(tab, searchKey, value) {
+  if (Object.prototype.hasOwnProperty.call(state.search, searchKey)) {
+    state.search[searchKey] = value || "";
+  }
+  if (state.pages[tab]) resetPage(state.pages[tab]);
+  await goToTab(tab);
+}
+
+async function executeCommandItem(item) {
+  if (!item?.action) return;
+  closeCommandPalette();
+  try {
+    await item.action();
+  } catch (error) {
+    handleActionError(error);
+  }
 }
 
 function syncShell() {
@@ -3157,12 +3407,12 @@ function renderOverview() {
 
       <section class="overview-stage-grid">
         ${overviewStageButton("在库待销售", inStockRows.length, "vehicles", { stock: "inStock" }, "teal")}
-        ${overviewStageButton("待收款", unsettledOrders, "outboundOrders", {}, "warn")}
-        ${overviewStageButton("待报销售", pendingSalesReports, "outboundOrders", {}, "primary")}
-        ${overviewStageButton("待申请发票", pendingInvoices, "outboundOrders", {}, "warn")}
-        ${overviewStageButton("待上传合同", missingContractFiles, "outboundOrders", {}, "teal")}
-        ${overviewStageButton("维修跟进", pendingRepairs, "repairs", {}, "primary")}
-        ${overviewStageButton("配件预警", lowParts, "parts", {}, "danger")}
+        ${overviewStageButton("待收款", unsettledOrders, "outboundOrders", { stage: "payment" }, "warn")}
+        ${overviewStageButton("待报销售", pendingSalesReports, "outboundOrders", { stage: "salesReport" }, "primary")}
+        ${overviewStageButton("待申请发票", pendingInvoices, "outboundOrders", { stage: "invoiceApplication" }, "warn")}
+        ${overviewStageButton("待上传合同", missingContractFiles, "outboundOrders", { stage: "contractFile" }, "teal")}
+        ${overviewStageButton("维修跟进", pendingRepairs, "repairs", { status: "pending" }, "primary")}
+        ${overviewStageButton("配件预警", lowParts, "parts", { stock: "low" }, "danger")}
       </section>
 
       <section class="overview-workbench">
@@ -3564,13 +3814,14 @@ function yesNoText(value) {
 }
 
 function renderParts() {
-  const rows = filterRows(state.data.parts, state.search.parts, [
+  const rows = filterPartRows(filterRows(state.data.parts, state.search.parts, [
     "partCode", "partName", "partBrand", "partCategory", "applicableModels", "source"
-  ]);
+  ]));
 
   return `
     <div class="page">
       ${renderToolbar("parts", "搜索编码、名称、品牌、分类", "part", "新增配件", "part:write", {
+        main: [partFilterControls()],
         actions: [
           hasPermission("stock:adjust") ? `<button class="btn" type="button" data-action="part-stock" data-direction="inbound">${icon("plus")}配件入库</button>` : "",
           hasPermission("stock:adjust") ? `<button class="btn" type="button" data-action="part-stock" data-direction="outbound">${icon("minus")}配件出库</button>` : ""
@@ -3626,31 +3877,34 @@ function modificationOrderMachineSummary(row) {
 }
 
 function renderOutboundOrders() {
-  const rows = filterRows(state.data.outboundOrders, state.search.outboundOrders, [
+  const baseRows = filterRows(state.data.outboundOrders, state.search.outboundOrders, [
     "orderNo", "resourceType", "resourceCode", "resourceName", "customerName", "operator", "orderRemark",
     "paymentRemark", "invoiceStatus", "invoiceOriginalName", "registrationStatus", "contractType", "contractOriginalName"
   ]);
+  const rows = filterOutboundOrderRows(baseRows);
 
   return `
     <div class="page">
       ${renderBackendSummary("outboundOrders", () => {
-        const unsettledOrders = rows.filter(item => !item.paymentSettled).length;
-        const pendingReports = rows.filter(item => !item.salesReported).length;
-        const pendingInvoices = rows.filter(item => !item.invoiceApplied).length;
-        const settledOrders = rows.filter(item => item.paymentSettled).length;
-        const uploadedInvoices = rows.filter(item => item.invoiceFileAvailable).length;
-        const uploadedContracts = rows.filter(item => item.contractFileAvailable).length;
-        const outstandingAmount = receivableOutstandingTotal(rows);
-        const overdueOrders = rows.filter(item => Number(item.overdueDays || 0) > 0).length;
+        const unsettledOrders = baseRows.filter(item => !item.paymentSettled).length;
+        const pendingReports = baseRows.filter(item => !item.salesReported).length;
+        const pendingInvoices = baseRows.filter(item => !item.invoiceApplied).length;
+        const settledOrders = baseRows.filter(item => item.paymentSettled).length;
+        const uploadedInvoices = baseRows.filter(item => item.invoiceFileAvailable).length;
+        const uploadedContracts = baseRows.filter(item => item.contractFileAvailable).length;
+        const outstandingAmount = receivableOutstandingTotal(baseRows);
+        const overdueOrders = baseRows.filter(item => Number(item.overdueDays || 0) > 0).length;
         return `<section class="summary-grid">
-          ${summaryCard("出库订单", rows.length, `${unsettledOrders} 单待收款`)}
+          ${summaryCard("出库订单", baseRows.length, `${unsettledOrders} 单待收款`)}
           ${summaryCard("应收欠款", money(outstandingAmount), `${overdueOrders} 单逾期`)}
-          ${summaryCard("待报销售", pendingReports, `${rows.filter(item => item.resourceType === "MACHINE").length} 单整机订单`)}
+          ${summaryCard("待报销售", pendingReports, `${baseRows.filter(item => item.resourceType === "MACHINE").length} 单整机订单`)}
           ${summaryCard("待申请发票", pendingInvoices, `${uploadedInvoices} 单已上传发票`)}
           ${summaryCard("已结清车款", settledOrders, `${uploadedContracts} 单已上传合同`)}
         </section>`;
       })}
-      ${renderToolbar("outboundOrders", "搜索订单号、客户、车号、收款情况、开票情况或备注", null, "", null)}
+      ${renderToolbar("outboundOrders", "搜索订单号、客户、车号、收款情况、开票情况或备注", null, "", null, {
+        main: [outboundOrderFilterControls()]
+      })}
       ${renderExportableSurface("出库订单列表", "outboundOrders", renderTable([
         { label: "订单号", html: true, render: row => orderNoSummary(row) },
         { label: "出库项", html: true, render: row => orderResourceSummary(row) },
@@ -4520,13 +4774,15 @@ function movementTypeText(type) {
 }
 
 function renderRepairs() {
-  const rows = filterRows(state.data.repairs, state.search.repairs, [
+  const rows = filterRepairRows(filterRows(state.data.repairs, state.search.repairs, [
     "vehicleNumber", "customerName", "repairPerson", "status", "faultDescription"
-  ]);
+  ]));
 
   return `
     <div class="page">
-      ${renderToolbar("repairs", "搜索客户、车号、维修人、状态", "repair", "新增维修", "repair:write")}
+      ${renderToolbar("repairs", "搜索客户、车号、维修人、状态", "repair", "新增维修", "repair:write", {
+        main: [repairFilterControls()]
+      })}
       ${renderExportableSurface("维修记录", "repairs", renderTable([
         { label: "维修时间", key: "repairDate", formatter: dateTime },
         { label: "车号", html: true, render: row => repairVehicleSummary(row) },
@@ -4971,7 +5227,7 @@ function renderVehicleRentalSurface(machine = {}) {
 function renderVehicleRepairSurface(machine = {}) {
   const repairs = vehicleRepairsForMachine(machine);
   const actions = hasPermission("repair:write")
-    ? `<button class="btn btn-sm" type="button" data-action="create" data-kind="repair">${icon("plus")}维修登记</button>`
+    ? `<button class="btn btn-sm" type="button" data-action="create" data-kind="repair" data-machine-id="${escapeAttr(machine.id || "")}">${icon("plus")}维修登记</button>`
     : "";
   const body = repairs.length ? renderTable([
     { label: "维修时间", key: "repairDate", formatter: dateTime },
@@ -5162,6 +5418,47 @@ function vehicleFilterControls() {
       ${filterButtonGroup("vehicles", "power", filters.power, "动力", "全部动力", powerTypeOptions())}
       ${filterButtonGroup("vehicles", "stock", filters.stock, "库存", "全部库存", stockFilterOptions())}
       ${filterButtonGroup("vehicles", "supplier", filters.supplier, "供应商", "全部供应商", supplierFilterOptions())}
+    </div>
+  `;
+}
+
+function partFilterControls() {
+  const filters = state.filters.parts || {};
+  return `
+    <div class="filter-row">
+      ${filterButtonGroup("parts", "stock", filters.stock || "", "库存", "全部库存", [
+        { value: "available", label: "有库存" },
+        { value: "low", label: "库存预警" }
+      ])}
+    </div>
+  `;
+}
+
+function outboundOrderFilterControls() {
+  const filters = state.filters.outboundOrders || {};
+  return `
+    <div class="filter-row">
+      ${filterButtonGroup("outboundOrders", "stage", filters.stage || "", "跟进", "全部跟进", [
+        { value: "payment", label: "待收款" },
+        { value: "overdue", label: "逾期收款" },
+        { value: "salesReport", label: "待报销售" },
+        { value: "invoiceApplication", label: "待申请发票" },
+        { value: "invoiceFile", label: "待上传发票" },
+        { value: "contractFile", label: "待上传合同" },
+        { value: "closed", label: "闭环完成" }
+      ])}
+    </div>
+  `;
+}
+
+function repairFilterControls() {
+  const filters = state.filters.repairs || {};
+  return `
+    <div class="filter-row">
+      ${filterButtonGroup("repairs", "status", filters.status || "", "状态", "全部状态", [
+        { value: "pending", label: "待处理" },
+        { value: "completed", label: "已完成" }
+      ])}
     </div>
   `;
 }
@@ -6800,18 +7097,21 @@ function coerceValue(value, coerce, inputType) {
   return value;
 }
 
-function defaultEntity(kind) {
+function defaultEntity(kind, context = {}) {
   if (kind === "vehicleOutbound") {
-    return vehicleOutboundDefaultsForMachine();
+    const machine = findEntity("vehicle", Number(context.machineId || 0));
+    return vehicleOutboundDefaultsForMachine(machine, null, context);
   }
   if (kind === "rental") {
-    return rentalDefaultsForMachine();
+    const machine = findEntity("vehicle", Number(context.machineId || 0));
+    return rentalDefaultsForMachine(machine, context);
   }
   if (kind === "repair") {
-    return repairDefaults();
+    const machine = findEntity("vehicle", Number(context.machineId || 0));
+    return repairDefaultsForMachine(machine, context);
   }
   if (kind === "purchaseOrder") {
-    return { resourceType: "PART", quantity: 1, unit: "件", status: "ORDERED", orderDate: todayInputDate() };
+    return purchaseOrderDefaults(context);
   }
   if (kind === "stocktaking") {
     return { resourceType: "PART", actualQuantity: 0, status: "DRAFT", stocktakingDate: todayInputDate() };
@@ -6842,6 +7142,17 @@ function defaultEntity(kind) {
     const selectedItem = state.data.configItems.find(item => Number(item.id) === Number(state.selectedConfigItemId));
     setPrefill(entity, "configItemId", state.selectedConfigItemId, selectedItem ? `预填：${configItemLabel(selectedItem)}` : undefined);
   }
+  return entity;
+}
+
+function purchaseOrderDefaults(context = {}) {
+  const entity = { resourceType: "PART", quantity: 1, unit: "件", status: "ORDERED", orderDate: todayInputDate() };
+  if (context.supplierId) {
+    const supplier = findEntity("supplier", Number(context.supplierId || 0));
+    setPrefill(entity, "supplierId", context.supplierId, supplier?.id ? `预填：${entityDisplayName("supplier", supplier)}` : undefined);
+  }
+  if (context.configItemId) setPrefill(entity, "configItemId", context.configItemId);
+  if (context.configValueId) setPrefill(entity, "configValueId", context.configValueId);
   return entity;
 }
 
@@ -6922,7 +7233,7 @@ function vehicleInboundDefaultsForModel(group = {}) {
   return entity;
 }
 
-function vehicleOutboundDefaultsForMachine(machine = {}, modelKey = null) {
+function vehicleOutboundDefaultsForMachine(machine = {}, modelKey = null, context = {}) {
   const entity = {
     __modelKey: modelKey || (machine?.id ? vehicleModelKey(machine) : ""),
     customerMode: "existing",
@@ -6951,6 +7262,7 @@ function vehicleOutboundDefaultsForMachine(machine = {}, modelKey = null) {
       machineId: "请选择准确出库车辆"
     };
   }
+  applyCustomerPrefill(entity, context.customerId || customerIdForMachine(machine));
   return entity;
 }
 
@@ -7024,7 +7336,7 @@ function modificationOrderDefaults(machine = {}, configId = null) {
   return entity;
 }
 
-function rentalDefaultsForMachine(machine = {}) {
+function rentalDefaultsForMachine(machine = {}, context = {}) {
   const entity = {
     status: "ACTIVE",
     startDate: todayInputDate(),
@@ -7039,6 +7351,7 @@ function rentalDefaultsForMachine(machine = {}) {
   if (machine?.id) {
     setPrefill(entity, "machineId", machine.id, `预填：${vehicleNumberLabel(machine)}`);
   }
+  applyCustomerPrefill(entity, context.customerId || customerIdForMachine(machine));
   return entity;
 }
 
@@ -7055,6 +7368,32 @@ function repairDefaults() {
   };
   setPrefill(entity, "repairPersonChoice", "OTHER", "预填：其他");
   return entity;
+}
+
+function repairDefaultsForMachine(machine = {}, context = {}) {
+  const entity = repairDefaults();
+  if (machine?.id) {
+    setPrefill(entity, "machineId", machine.id, `预填：${vehicleNumberLabel(machine)}`);
+  }
+  applyCustomerPrefill(entity, context.customerId || customerIdForMachine(machine));
+  return entity;
+}
+
+function applyCustomerPrefill(entity, customerId) {
+  const numericId = Number(customerId || 0);
+  if (!numericId) return entity;
+  const customer = findEntity("customer", numericId);
+  setPrefill(entity, "customerId", numericId, customer?.id ? `预填：${entityDisplayName("customer", customer)}` : undefined);
+  return entity;
+}
+
+function customerIdForMachine(machine = {}) {
+  if (!machine?.id) return null;
+  const rental = activeRentalForMachine(machine.id);
+  if (rental?.customerId) return rental.customerId;
+  const order = latestVehicleOutboundOrder(machine.id);
+  if (order?.customerId) return order.customerId;
+  return null;
 }
 
 function prepareRepairModalItem(item = {}) {
@@ -7595,6 +7934,49 @@ function filterVehicleRows(rows) {
     if (filters.supplier && row.supplier !== filters.supplier) return false;
     if (filters.stock === "inStock" && Number(row.inventoryCount || 0) <= 0) return false;
     if (filters.stock === "empty" && Number(row.inventoryCount || 0) !== 0) return false;
+    return true;
+  });
+}
+
+function filterPartRows(rows = []) {
+  const stock = state.filters.parts?.stock || "";
+  if (!stock) return rows;
+  return rows.filter(row => {
+    const quantity = Number(row.quantity || 0);
+    if (stock === "available") return quantity > 0;
+    if (stock === "low") return quantity <= 0;
+    return true;
+  });
+}
+
+function filterOutboundOrderRows(rows = []) {
+  const stage = state.filters.outboundOrders?.stage || "";
+  if (!stage) return rows;
+  return rows.filter(row => {
+    if (stage === "payment") return !row.paymentSettled;
+    if (stage === "overdue") return Number(row.overdueDays || 0) > 0;
+    if (stage === "salesReport") return Boolean(row.paymentSettled) && !Boolean(row.salesReported);
+    if (stage === "invoiceApplication") return Boolean(row.paymentSettled) && Boolean(row.salesReported) && !Boolean(row.invoiceApplied);
+    if (stage === "invoiceFile") return isInvoiceUploadReady(row) && !row.invoiceFileAvailable;
+    if (stage === "contractFile") return isContractUploadReady(row) && !row.contractFileAvailable;
+    if (stage === "closed") {
+      return Boolean(row.paymentSettled)
+        && Boolean(row.salesReported)
+        && Boolean(row.invoiceApplied)
+        && (!isInvoiceUploadReady(row) || Boolean(row.invoiceFileAvailable))
+        && (!isContractUploadReady(row) || Boolean(row.contractFileAvailable));
+    }
+    return true;
+  });
+}
+
+function filterRepairRows(rows = []) {
+  const status = state.filters.repairs?.status || "";
+  if (!status) return rows;
+  return rows.filter(row => {
+    const completed = row.status === "COMPLETED";
+    if (status === "completed") return completed;
+    if (status === "pending") return !completed;
     return true;
   });
 }
