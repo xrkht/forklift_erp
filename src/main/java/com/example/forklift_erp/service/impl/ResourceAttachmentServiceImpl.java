@@ -73,6 +73,9 @@ public class ResourceAttachmentServiceImpl implements ResourceAttachmentService 
     @Autowired
     private ResourceAttachmentStorage attachmentStorage;
 
+    @Autowired
+    private OutboundUploadReadinessPolicy uploadReadinessPolicy;
+
     @Override
     @Transactional(readOnly = true)
     public PageResult<ResourceAttachmentVO> findPage(String resourceType, Long resourceId, String category,
@@ -108,6 +111,19 @@ public class ResourceAttachmentServiceImpl implements ResourceAttachmentService 
         String normalizedCategory = normalizeCategory(category);
         ensureResourcePermission(normalizedType);
         ResourceContext context = resolveResourceContext(normalizedType, resourceId);
+        if (isOutboundOrder(normalizedType) && isOrderManagedCategory(normalizedCategory)) {
+            OutboundOrder order = outboundOrderRepository.findById(resourceId)
+                    .orElseThrow(() -> new BusinessException(ResultCode.NOT_FOUND, "Outbound order not found"));
+            if (Boolean.TRUE.equals(order.getIsLocked()) && !SecurityUtils.isAdminOrSuperAdmin()) {
+                throw new BusinessException(ResultCode.NOT_FOUND, "Outbound order not found");
+            }
+            if ("INVOICE".equals(normalizedCategory) && !uploadReadinessPolicy.isInvoiceUploadReady(order)) {
+                throw new BusinessException(ResultCode.PARAM_ERROR, "Order is not ready for invoice upload");
+            }
+            if ("CONTRACT".equals(normalizedCategory) && !uploadReadinessPolicy.isContractUploadReady(order)) {
+                throw new BusinessException(ResultCode.PARAM_ERROR, "Order is not ready for contract upload");
+            }
+        }
         MultipartFile[] payloadFiles = files == null ? new MultipartFile[0] : files;
         if (payloadFiles.length == 0) {
             throw new BusinessException(ResultCode.PARAM_ERROR, "请选择附件文件");

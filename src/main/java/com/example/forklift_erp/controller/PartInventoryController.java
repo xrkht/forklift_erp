@@ -2,6 +2,7 @@ package com.example.forklift_erp.controller;
 
 import com.example.forklift_erp.common.Result;
 import com.example.forklift_erp.common.ResultCode;
+import com.example.forklift_erp.constant.RoleNames;
 import com.example.forklift_erp.dto.PartInventoryCreateDTO;
 import com.example.forklift_erp.dto.PartInventoryVO;
 import com.example.forklift_erp.dto.PartStockAdjustRequestDTO;
@@ -107,7 +108,7 @@ public class PartInventoryController {
     }
 
     @PutMapping("/outbound")
-    @PreAuthorize("@permissionService.hasPermission(authentication, 'stock:adjust')")
+    @PreAuthorize("hasAnyRole('" + RoleNames.ADMIN + "','" + RoleNames.SUPER_ADMIN + "')")
     public Result<PartInventoryVO> outbound(@Valid @RequestBody PartStockAdjustRequestDTO request) {
         return Result.success("出库成功", partService.outbound(request));
     }

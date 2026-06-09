@@ -42,7 +42,9 @@ export function createFields(deps) {
     stockTransferResourceOptions,
     attachmentResourceTypeOptions,
     attachmentResourceOptions,
-    attachmentCategoryOptions
+    attachmentCategoryOptions,
+    attachmentUploadCategoryOptions,
+    vehicleConfigChangeModeOptions
   } = deps;
 
   return {
@@ -296,7 +298,7 @@ export function createFields(deps) {
   attachmentUpload: [
     { name: "resourceType", label: "业务对象", type: "select", required: true, options: attachmentResourceTypeOptions, section: "附件信息" },
     { name: "resourceId", label: "业务对象", type: "select", coerce: "int", required: true, options: attachmentResourceOptions, section: "附件信息" },
-    { name: "attachmentCategory", label: "附件类型", type: "select", required: true, options: attachmentCategoryOptions, defaultValue: "PHOTO", section: "附件信息" },
+    { name: "attachmentCategory", label: "附件类型", type: "select", required: true, options: attachmentUploadCategoryOptions, defaultValue: "PHOTO", section: "附件信息" },
     { name: "attachmentLabel", label: "附件标题", section: "附件信息" },
     { name: "files", label: "附件文件", type: "file", multiple: true, required: true, span: 2, accept: ".pdf,.ofd,.jpg,.jpeg,.png,.webp,.gif,.bmp,.doc,.docx,.xls,.xlsx,.csv,application/pdf,image/jpeg,image/png,image/webp" },
     { name: "uploadNote", label: "上传备注", type: "textarea", span: 2, section: "附件信息" }
@@ -327,6 +329,9 @@ export function createFields(deps) {
   ],
   contractUpload: [
     { name: "contractFile", label: "合同文件", type: "file", required: true, span: 2, accept: ".pdf,.ofd,.doc,.docx,.jpg,.jpeg,.png,.webp,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,image/jpeg,image/png,image/webp" }
+  ],
+  vehicleConfigChange: [
+    { name: "changeMode", label: "变更模式", type: "toggle", required: true, options: vehicleConfigChangeModeOptions, defaultValue: "INSTALL", section: "变更方式" }
   ],
   partReplace: [
     { name: "machineId", label: "整车", type: "select", coerce: "int", required: true, options: vehicleOptions },

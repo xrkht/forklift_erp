@@ -1,5 +1,5 @@
 export const tabs = {
-  overview: { title: "总览", subtitle: "系统概览与业务入口" },
+  overview: { title: "总览", subtitle: "系统概览与优先处理" },
   vehicles: { title: "车辆库存", subtitle: "车型库存、整机档案与库存状态" },
   parts: { title: "配件库存", subtitle: "配件档案、库存数量与价格信息" },
   modifications: { title: "改装工单", subtitle: "客户出库前改装、配件替换与拆下件回库" },
@@ -11,14 +11,13 @@ export const tabs = {
   stocktakes: { title: "库存盘点", subtitle: "创建盘点草稿，确认后同步整机或配件库存数量" },
   warehouses: { title: "仓库管理", subtitle: "维护仓库档案，执行整机、配件调拨并查看库存分布" },
   repairs: { title: "维修记录", subtitle: "维修工单、费用与状态追踪" },
-  stockMovements: { title: "库存流水", subtitle: "按仓库、资源和操作类型追踪库存变动明细" },
-  logs: { title: "日志查看", subtitle: "配件替换、维修和出入库流水日志" },
+  logs: { title: "审计记录", subtitle: "库存流水与关键操作审计" },
   stats: { title: "统计财报", subtitle: "按月度和年度汇总库存收支、维修收入与库存价值" },
   attachments: { title: "附件中心", subtitle: "统一管理车辆、维修、订单和配件的多文件附件" },
   imports: { title: "导入中心", subtitle: "模板下载、预校验、错误提示和导入记录" },
   configs: { title: "配置字典", subtitle: "车辆配置项与可选值维护" },
   users: { title: "用户管理", subtitle: "账号、角色与客户端登录切换" },
-  maintenance: { title: "数据维护", subtitle: "导出数据库备份，并在确认后恢复业务数据" }
+  maintenance: { title: "数据维护", subtitle: "导入中心、数据库备份与恢复" }
 };
 
 export const icons = {

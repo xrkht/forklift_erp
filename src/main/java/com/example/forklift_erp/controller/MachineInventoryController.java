@@ -3,6 +3,7 @@ package com.example.forklift_erp.controller;
 import com.example.forklift_erp.common.PageResult;
 import com.example.forklift_erp.common.Result;
 import com.example.forklift_erp.common.ResultCode;
+import com.example.forklift_erp.constant.RoleNames;
 import com.example.forklift_erp.dto.InboundRequestDTO;
 import com.example.forklift_erp.dto.MachineConfigVO;
 import com.example.forklift_erp.dto.MachineDetailVO;
@@ -135,7 +136,7 @@ public class MachineInventoryController {
     }
 
     @PutMapping("/{id}/outbound")
-    @PreAuthorize("@permissionService.hasPermission(authentication, 'stock:adjust')")
+    @PreAuthorize("hasAnyRole('" + RoleNames.ADMIN + "','" + RoleNames.SUPER_ADMIN + "')")
     public Result<MachineInventoryVO> outboundStock(@PathVariable Long id, @Valid @RequestBody StockAdjustRequestDTO request) {
         return Result.success("整车出库成功", service.outboundStock(id, request));
     }

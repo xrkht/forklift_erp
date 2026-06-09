@@ -47,9 +47,7 @@ export const endpoints = {
     part: "/api/outbound-orders/part",
     update: id => `/api/outbound-orders/${id}`,
     lock: id => `/api/outbound-orders/${id}/lock`,
-    uploadInvoice: id => `/api/outbound-orders/${id}/invoice`,
     downloadInvoice: id => `/api/outbound-orders/${id}/invoice`,
-    uploadContract: id => `/api/outbound-orders/${id}/contract`,
     downloadContract: id => `/api/outbound-orders/${id}/contract`
   },
   attachments: {

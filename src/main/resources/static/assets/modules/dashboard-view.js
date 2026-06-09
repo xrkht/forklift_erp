@@ -22,7 +22,6 @@ export function createDashboardView(deps) {
     repairStatusText,
     rentalStatusBadge,
     resourceTypeLabel,
-    renderVehicleModelMenu,
     isInvoiceUploadReady,
     isContractUploadReady,
     receivableOutstandingTotal,
@@ -107,7 +106,6 @@ export function createDashboardView(deps) {
         <section class="overview-workbench">
           ${renderSurface("优先处理", renderOverviewWorkItems(workItems))}
           <div class="overview-side">
-            ${renderSurface("快捷入口", renderOverviewShortcuts())}
             ${renderSurface("订单附件", renderOverviewAttachmentItems(missingInvoiceOrders, missingContractOrders))}
             ${renderSurface("库存预警", compactTable([
               { label: "编码", key: "partCode" },
@@ -405,7 +403,7 @@ export function createDashboardView(deps) {
     vehicleRows
       .filter(row => !row.orderId && Number(row.inventoryCount || 0) > 0)
       .slice(0, 5)
-      .forEach(row => items.push(overviewItem("在库待销售", row.vehicleProductNumber || `ID ${row.id}`, vehicleModelLabel(row), "teal", "vehicle-outbound-direct", { machineId: row.id }, row.inboundDate)));
+      .forEach(row => items.push(overviewItem("在库待销售", row.vehicleProductNumber || `ID ${row.id}`, vehicleModelLabel(row), "teal", "vehicle-outbound-order", { machineId: row.id }, row.inboundDate)));
     return items.sort((left, right) => priorityRank(left.type) - priorityRank(right.type) || String(right.sortKey || "").localeCompare(String(left.sortKey || "")));
   }
 
@@ -470,7 +468,7 @@ export function createDashboardView(deps) {
   function queueItemIcon(action) {
     if (action?.startsWith("upload")) return "upload";
     if (action === "detail-vehicle") return "eye";
-    if (action === "vehicle-outbound-direct") return "minus";
+    if (action === "vehicle-outbound-order") return "minus";
     return "edit";
   }
 
@@ -478,7 +476,7 @@ export function createDashboardView(deps) {
     if (action === "upload-invoice") return "上传发票";
     if (action === "upload-contract") return "上传合同";
     if (action === "detail-vehicle") return "查看";
-    if (action === "vehicle-outbound-direct") return "登记销售";
+    if (action === "vehicle-outbound-order") return "登记销售";
     return "处理";
   }
 
@@ -488,19 +486,6 @@ export function createDashboardView(deps) {
       .filter(([, value]) => value !== undefined && value !== null && value !== "")
       .forEach(([key, value]) => attrs.push(`data-${toDataAttrName(key)}="${escapeAttr(value)}"`));
     return attrs.join(" ");
-  }
-
-  function renderOverviewShortcuts() {
-    return `
-      <div class="overview-shortcuts">
-        ${hasPermission("stock:adjust") ? `<button class="btn" type="button" data-action="go-tab" data-tab="outboundOrders">${icon("eye")}订单列表</button>` : ""}
-        ${hasPermission("vehicle:write") ? renderVehicleModelMenu({ triggerClass: "btn hover-menu-trigger" }) : ""}
-        ${hasPermission("stock:adjust") ? `<button class="btn" type="button" data-action="create" data-kind="vehicleOutbound">${icon("minus")}登记销售跟进</button>` : ""}
-        <button class="btn" type="button" data-action="create" data-kind="part">${icon("plus")}新增配件</button>
-        ${hasPermission("replace:write") ? `<button class="btn" type="button" data-action="create" data-kind="modificationOrder">${icon("swap")}新建改装工单</button>` : ""}
-        <button class="btn btn-ghost" type="button" data-action="refresh">${icon("refresh")}刷新数据</button>
-      </div>
-    `;
   }
 
   function renderFinanceKpis(stats, lowParts) {
