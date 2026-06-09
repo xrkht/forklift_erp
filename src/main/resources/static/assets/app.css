@@ -948,6 +948,163 @@ a {
   color: var(--teal);
 }
 
+.todo-queue-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 12px;
+}
+
+.todo-queue-card {
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--panel);
+}
+
+.todo-queue-head {
+  position: relative;
+  display: grid;
+  gap: 7px;
+  width: 100%;
+  min-height: 128px;
+  padding: 14px 14px 12px 18px;
+  border: 0;
+  border-bottom: 1px solid var(--line);
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  text-align: left;
+}
+
+.todo-queue-head::before {
+  content: "";
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 4px;
+  background: var(--primary);
+}
+
+.todo-queue-card.teal .todo-queue-head::before {
+  background: var(--accent);
+}
+
+.todo-queue-card.warn .todo-queue-head::before {
+  background: var(--warn);
+}
+
+.todo-queue-card.danger .todo-queue-head::before {
+  background: var(--danger);
+}
+
+.todo-queue-head:hover,
+.todo-queue-head:focus-visible {
+  background: var(--panel-2);
+}
+
+.todo-queue-label,
+.todo-queue-desc,
+.todo-queue-amount {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.todo-queue-label {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.todo-queue-head strong {
+  font-size: 28px;
+  line-height: 1;
+}
+
+.todo-queue-card.warn .todo-queue-head strong {
+  color: var(--warn);
+}
+
+.todo-queue-card.danger .todo-queue-head strong {
+  color: var(--danger);
+}
+
+.todo-queue-card.teal .todo-queue-head strong {
+  color: var(--accent);
+}
+
+.todo-queue-desc,
+.todo-queue-amount {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.todo-queue-list {
+  display: grid;
+}
+
+.todo-queue-item,
+.todo-queue-empty,
+.todo-queue-more {
+  min-height: 46px;
+  padding: 9px 10px;
+  border: 0;
+  border-bottom: 1px solid var(--line);
+  background: transparent;
+  color: inherit;
+}
+
+.todo-queue-item {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+}
+
+.todo-queue-item.is-clickable {
+  cursor: pointer;
+}
+
+.todo-queue-item.is-clickable:hover,
+.todo-queue-more:hover {
+  background: var(--panel-2);
+}
+
+.todo-queue-item-main {
+  display: grid;
+  grid-template-columns: auto minmax(0, 0.8fr) minmax(0, 1.2fr);
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.todo-queue-item-main strong,
+.todo-queue-item-main span:last-child {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.todo-queue-item-main span:last-child,
+.todo-queue-empty,
+.todo-queue-more {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.todo-queue-more {
+  width: 100%;
+  cursor: pointer;
+  text-align: left;
+}
+
+.todo-queue-item:last-child,
+.todo-queue-empty:last-child,
+.todo-queue-more:last-child {
+  border-bottom: 0;
+}
+
 .overview-side,
 .overview-task-list,
 .overview-shortcuts,
@@ -2962,6 +3119,8 @@ body {
 
 .overview-task-row,
 .overview-attachment-row,
+.todo-queue-card,
+.todo-queue-item,
 .config-item,
 .detail-item {
   border-color: rgba(148, 163, 184, 0.24);
@@ -2970,6 +3129,8 @@ body {
 
 .overview-task-row.is-clickable:hover,
 .overview-attachment-row.is-clickable:hover,
+.todo-queue-item.is-clickable:hover,
+.todo-queue-more:hover,
 .detail-item:hover {
   background: #fff;
   box-shadow: 0 10px 24px rgba(31, 41, 55, 0.08);
@@ -3516,6 +3677,8 @@ tbody tr.table-row-checked {
   .status-toggle,
   .summary-card,
   .overview-stage,
+  .todo-queue-card,
+  .todo-queue-item,
   .vehicle-unit-card,
   .config-item,
   .detail-item,

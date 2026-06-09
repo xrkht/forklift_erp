@@ -12,6 +12,7 @@ import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
 import java.math.BigDecimal;
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 
@@ -122,6 +123,48 @@ public interface MachineInventoryRepository extends JpaRepository<MachineInvento
               and coalesce(m.inventoryCount, 0) > 0
             """)
     long countInStockVehicleTodos(@Param("includeLocked") boolean includeLocked);
+
+    @Query("""
+            select count(m) from MachineInventory m
+            where (:includeLocked = true or m.isLocked = false)
+              and coalesce(m.modelOnly, false) = false
+              and coalesce(m.inventoryCount, 0) > 0
+              and (m.stockStatus is null or m.stockStatus = :stockStatus)
+              and coalesce(m.inboundDate, m.createdAt) <= :cutoff
+              and not exists (
+                  select 1 from RentalRecord r
+                  where r.machineId = m.id
+                    and r.status = :activeRentalStatus
+              )
+            """)
+    long countLongIdleVehicleTodos(
+            @Param("cutoff") LocalDateTime cutoff,
+            @Param("stockStatus") String stockStatus,
+            @Param("activeRentalStatus") String activeRentalStatus,
+            @Param("includeLocked") boolean includeLocked
+    );
+
+    @Query("""
+            select m from MachineInventory m
+            where (:includeLocked = true or m.isLocked = false)
+              and coalesce(m.modelOnly, false) = false
+              and coalesce(m.inventoryCount, 0) > 0
+              and (m.stockStatus is null or m.stockStatus = :stockStatus)
+              and coalesce(m.inboundDate, m.createdAt) <= :cutoff
+              and not exists (
+                  select 1 from RentalRecord r
+                  where r.machineId = m.id
+                    and r.status = :activeRentalStatus
+              )
+            order by coalesce(m.inboundDate, m.createdAt) asc, m.id asc
+            """)
+    List<MachineInventory> findLongIdleVehicleTodos(
+            @Param("cutoff") LocalDateTime cutoff,
+            @Param("stockStatus") String stockStatus,
+            @Param("activeRentalStatus") String activeRentalStatus,
+            @Param("includeLocked") boolean includeLocked,
+            Pageable pageable
+    );
 
     @Query(value = """
             select

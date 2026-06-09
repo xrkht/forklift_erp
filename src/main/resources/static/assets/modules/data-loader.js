@@ -91,6 +91,7 @@ export function createDataLoaders({
 
   async function loadOverviewData() {
     await Promise.all([
+      hasPermission("log:read") ? loadStatistics(state.selectedStatsYear) : Promise.resolve(),
       hasPermission("stock:adjust") ? loadTodoCenter() : Promise.resolve(),
       loadVehicleModelData({ force: true, silent: true }),
       loadPagedTab("parts", { force: true, silent: true }),

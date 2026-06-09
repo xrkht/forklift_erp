@@ -21,6 +21,8 @@
 	<properties>
 		<java.version>21</java.version>
 		<lombok.version>1.18.46</lombok.version>
+		<frontend.skip>false</frontend.skip>
+		<node.executable>node</node.executable>
 		<test.included.groups></test.included.groups>
 		<test.excluded.groups>docker-integration</test.excluded.groups>
 	</properties>
@@ -123,6 +125,49 @@
 
 	<build>
 		<plugins>
+			<plugin>
+				<groupId>org.codehaus.mojo</groupId>
+				<artifactId>exec-maven-plugin</artifactId>
+				<version>3.5.0</version>
+				<executions>
+					<execution>
+						<id>build-frontend-assets</id>
+						<phase>generate-resources</phase>
+						<goals>
+							<goal>exec</goal>
+						</goals>
+						<configuration>
+							<skip>${frontend.skip}</skip>
+							<executable>${node.executable}</executable>
+							<arguments>
+								<argument>scripts/build-frontend.mjs</argument>
+							</arguments>
+						</configuration>
+					</execution>
+				</executions>
+			</plugin>
+			<plugin>
+				<groupId>org.apache.maven.plugins</groupId>
+				<artifactId>maven-resources-plugin</artifactId>
+				<version>3.3.1</version>
+				<executions>
+					<execution>
+						<id>copy-frontend-build-output</id>
+						<phase>process-resources</phase>
+						<goals>
+							<goal>copy-resources</goal>
+						</goals>
+						<configuration>
+							<outputDirectory>${project.build.outputDirectory}/static</outputDirectory>
+							<resources>
+								<resource>
+									<directory>${project.build.directory}/frontend-static</directory>
+								</resource>
+							</resources>
+						</configuration>
+					</execution>
+				</executions>
+			</plugin>
 			<plugin>
 				<groupId>org.apache.maven.plugins</groupId>
 				<artifactId>maven-compiler-plugin</artifactId>

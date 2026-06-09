@@ -8,6 +8,7 @@ import { createFields } from "./modules/field-config.js";
 import { dateTime, dateValue, display, emptyState, escapeAttr, escapeHtml, fileSize, filterRows, money, normalizeText, nowInputDateTime, sortById, sortLogs, todayInputDate, toInputValue } from "./modules/display-utils.js";
 import { badge, jobTagBadge, jobTagLabel, jobTagType, logCategoryBadge, modificationStatusBadge, nextJobTag, normalizeJobTag, operationActionBadge, quantityChange, rentalStatusBadge, repairStatusText, resourceTypeLabel, roleBadges, statusBadge, stockBadge, stockStatusBadge, stockStatusLabel, stockText, yesNoBadge } from "./modules/status-ui.js";
 import { createDataLoaders, referencePageUrl, rowsFromPayload } from "./modules/data-loader.js";
+import { createDashboardView } from "./modules/dashboard-view.js";
 
 const LIST_STATE_STORAGE_KEY = "forklift-erp:list-state:v1";
 const DETAIL_DRAWER_TRANSITION_MS = 240;
@@ -92,6 +93,41 @@ const fields = createFields({
   attachmentResourceTypeOptions,
   attachmentResourceOptions,
   attachmentCategoryOptions
+});
+
+const dashboardView = createDashboardView({
+  state,
+  hasPermission,
+  pageTotal,
+  vehicleFlowRows,
+  renderSurface,
+  summaryCard,
+  money,
+  badge,
+  emptyState,
+  escapeAttr,
+  escapeHtml,
+  dateValue,
+  stockText,
+  icon,
+  renderTable,
+  renderYearOptions,
+  renderFinanceTrend,
+  compactTable,
+  vehicleModelLabel,
+  repairStatusText,
+  rentalStatusBadge,
+  resourceTypeLabel,
+  renderVehicleModelMenu,
+  isInvoiceUploadReady,
+  isContractUploadReady,
+  receivableOutstandingTotal,
+  vehicleFlowMachineSummary,
+  vehicleFlowStatusSummary,
+  vehicleFlowFollowupSummary,
+  vehicleFlowActions,
+  toDataAttrName,
+  repairStatusToggle
 });
 
 let els;
@@ -2346,6 +2382,12 @@ async function goToTab(tab, data = {}) {
       stage: data.stage || ""
     };
   }
+  if (tab === "rentals") {
+    state.filters.rentals = {
+      ...(state.filters.rentals || {}),
+      status: data.status || ""
+    };
+  }
   if (tab === "repairs") {
     state.filters.repairs = {
       ...(state.filters.repairs || {}),
@@ -3366,247 +3408,7 @@ function syncShell() {
 }
 
 function renderOverview() {
-  const vehicles = state.data.vehicles.filter(item => !item.modelOnly);
-  const vehicleRows = vehicleFlowRows();
-  const parts = state.data.parts;
-  const repairs = state.data.repairs;
-  const orders = state.data.outboundOrders;
-  const todoCenter = state.data.todoCenter || {};
-  const inStockRows = vehicleRows.filter(row => !row.orderId && Number(row.inventoryCount || 0) > 0);
-  const lowStockParts = parts.filter(item => Number(item.quantity || 0) <= 0);
-  const missingInvoiceOrders = orders.filter(item => isInvoiceUploadReady(item) && !item.invoiceFileAvailable);
-  const missingContractOrders = orders.filter(item => isContractUploadReady(item) && !item.contractFileAvailable);
-  const pendingRepairs = repairs.filter(item => item.status !== "COMPLETED").length;
-  const lowParts = lowStockParts.length;
-  const unsettledOrders = todoCenter.pendingPaymentCount ?? orders.filter(item => !item.paymentSettled).length;
-  const pendingSalesReports = todoCenter.pendingSalesReportCount ?? orders.filter(item => item.paymentSettled && !item.salesReported).length;
-  const pendingInvoices = todoCenter.pendingInvoiceApplicationCount ?? orders.filter(item => item.paymentSettled && item.salesReported && !item.invoiceApplied).length;
-  const missingInvoiceFiles = todoCenter.pendingInvoiceFileCount ?? missingInvoiceOrders.length;
-  const missingContractFiles = todoCenter.pendingContractFileCount ?? missingContractOrders.length;
-  const outstandingAmount = todoCenter.outstandingAmount ?? receivableOutstandingTotal(orders);
-  const overduePaymentCount = todoCenter.overduePaymentCount ?? orders.filter(item => Number(item.overdueDays || 0) > 0).length;
-  const vehicleTotal = pageTotal("vehicles", vehicles.length);
-  const partTotal = pageTotal("parts", parts.length);
-  const orderTotal = pageTotal("outboundOrders", orders.length);
-  const workItems = (Array.isArray(todoCenter.items) && todoCenter.items.length
-    ? overviewTodoItems(todoCenter)
-    : overviewWorkItems(vehicleRows, orders, repairs, parts)).slice(0, 12);
-  const recentVehicleRows = vehicleRows
-    .filter(row => row.orderId || Number(row.inventoryCount || 0) > 0)
-    .slice(0, 8);
-
-  return `
-    <div class="page overview-page">
-      <section class="summary-grid">
-        ${summaryCard("整车档案", vehicleTotal, `${inStockRows.length} 台在库待销售`, { action: "go-tab", data: { tab: "vehicles" } })}
-        ${summaryCard("出库订单", orderTotal, `${unsettledOrders} 单待收款`, { action: "go-tab", data: { tab: "outboundOrders" } })}
-        ${summaryCard("应收账款", money(outstandingAmount), `${overduePaymentCount} 单逾期`, { action: "go-tab", data: { tab: "outboundOrders" } })}
-        ${summaryCard("销售闭环", pendingSalesReports + pendingInvoices, `${missingInvoiceFiles} 单待发票文件`, { action: "go-tab", data: { tab: "outboundOrders" } })}
-        ${summaryCard("合同文件", missingContractFiles, `${orders.filter(isContractUploadReady).length} 单标记有合同`, { action: "go-tab", data: { tab: "outboundOrders" } })}
-      </section>
-
-      <section class="overview-stage-grid">
-        ${overviewStageButton("在库待销售", inStockRows.length, "vehicles", { stock: "inStock" }, "teal")}
-        ${overviewStageButton("待收款", unsettledOrders, "outboundOrders", { stage: "payment" }, "warn")}
-        ${overviewStageButton("待报销售", pendingSalesReports, "outboundOrders", { stage: "salesReport" }, "primary")}
-        ${overviewStageButton("待申请发票", pendingInvoices, "outboundOrders", { stage: "invoiceApplication" }, "warn")}
-        ${overviewStageButton("待上传合同", missingContractFiles, "outboundOrders", { stage: "contractFile" }, "teal")}
-        ${overviewStageButton("维修跟进", pendingRepairs, "repairs", { status: "pending" }, "primary")}
-        ${overviewStageButton("配件预警", lowParts, "parts", { stock: "low" }, "danger")}
-      </section>
-
-      <section class="overview-workbench">
-        ${renderSurface("待处理事项", renderOverviewWorkItems(workItems))}
-        <div class="overview-side">
-          ${renderSurface("快捷入口", renderOverviewShortcuts())}
-          ${renderSurface("订单附件", renderOverviewAttachmentItems(missingInvoiceOrders, missingContractOrders))}
-          ${renderSurface("库存预警", compactTable([
-            { label: "编码", key: "partCode" },
-            { label: "名称", key: "partName" },
-            { label: "数量", key: "quantity", formatter: stockText }
-          ], lowStockParts.slice(0, 8)))}
-        </div>
-      </section>
-
-      <section class="grid-two">
-        ${renderSurface("整车流转", compactTable([
-          { label: "车号", html: true, render: row => vehicleFlowMachineSummary(row) },
-          { label: "车辆状态", html: true, render: row => vehicleFlowStatusSummary(row) },
-          { label: "销售跟进", html: true, render: row => vehicleFlowFollowupSummary(row) },
-          { label: "操作", html: true, render: row => vehicleFlowActions(row) }
-        ], recentVehicleRows))}
-        ${renderSurface("维修跟进", compactTable([
-          { label: "客户", key: "customerName" },
-          { label: "状态", html: true, render: row => repairStatusToggle(row) },
-          { label: "费用", key: "totalFee", formatter: money },
-          { label: "操作", html: true, render: row => hasPermission("repair:write") ? `<button class="btn btn-sm" type="button" data-action="toggle-repair-status" data-id="${escapeAttr(row.id)}">${icon("swap")}完成</button>` : "" }
-        ], repairs.filter(item => item.status !== "COMPLETED").slice(0, 8)))}
-      </section>
-    </div>
-  `;
-}
-
-function overviewStageButton(label, count, tab, data = {}, type = "primary") {
-  const attrs = Object.entries(data)
-    .filter(([, value]) => value !== undefined && value !== null && value !== "")
-    .map(([key, value]) => `data-${toDataAttrName(key)}="${escapeAttr(value)}"`)
-    .join(" ");
-  return `
-    <button class="overview-stage ${escapeAttr(type)}" type="button" data-action="go-tab" data-tab="${escapeAttr(tab)}" ${attrs}>
-      <span>${escapeHtml(label)}</span>
-      <strong>${escapeHtml(count)}</strong>
-    </button>
-  `;
-}
-
-function overviewTodoItems(todoCenter = {}) {
-  if (!Array.isArray(todoCenter.items)) return [];
-  return todoCenter.items.map(item => {
-    const action = todoItemAction(item);
-    return overviewItem(
-      item.label,
-      item.title,
-      todoItemDetail(item),
-      item.priority || "primary",
-      action.name,
-      action.data,
-      item.sortTime || item.dueDate || ""
-    );
-  });
-}
-
-function todoItemAction(item = {}) {
-  if (item.type === "ORDER_INVOICE_FILE") return { name: "upload-invoice", data: { id: item.resourceId } };
-  if (item.type === "ORDER_CONTRACT_FILE") return { name: "upload-contract", data: { id: item.resourceId } };
-  if (item.resourceType === "OUTBOUND_ORDER") return { name: "edit", data: { kind: "outboundOrder", id: item.resourceId } };
-  if (item.resourceType === "REPAIR") return { name: "toggle-repair-status", data: { id: item.resourceId } };
-  if (item.resourceType === "PART") return { name: "edit", data: { kind: "part", id: item.resourceId } };
-  if (item.resourceType === "RENTAL") return { name: "edit", data: { kind: "rental", id: item.resourceId } };
-  return { name: "go-tab", data: { tab: "overview" } };
-}
-
-function todoItemDetail(item = {}) {
-  const fragments = [];
-  if (item.detail) fragments.push(item.detail);
-  if (Number(item.amount || 0) > 0) fragments.push(money(item.amount));
-  if (item.dueDate) fragments.push(`到期 ${dateValue(item.dueDate)}`);
-  if (Number(item.overdueDays || 0) > 0) fragments.push(`逾期 ${item.overdueDays} 天`);
-  return fragments.join(" · ") || "-";
-}
-
-function overviewWorkItems(vehicleRows, orders, repairs, parts) {
-  const items = [];
-  orders.forEach(order => {
-    const resource = `${order.resourceCode || "-"} · ${order.customerName || "-"}`;
-    if (!order.paymentSettled) {
-      items.push(overviewItem("待收款", resource, order.paymentRemark || order.orderNo, "warn", "edit", { kind: "outboundOrder", id: order.id }, order.createdAt));
-    } else if (!order.salesReported) {
-      items.push(overviewItem("待报销售", resource, dateValue(order.salesDate) || order.orderNo, "primary", "edit", { kind: "outboundOrder", id: order.id }, order.updatedAt));
-    } else if (!order.invoiceApplied) {
-      items.push(overviewItem("待申请发票", resource, order.invoiceStatus || order.orderNo, "warn", "edit", { kind: "outboundOrder", id: order.id }, order.updatedAt));
-    }
-    if (isInvoiceUploadReady(order) && !order.invoiceFileAvailable) {
-      items.push(overviewItem("待上传发票", resource, order.invoiceStatus || order.orderNo, "primary", "upload-invoice", { id: order.id }, order.updatedAt));
-    }
-    if (isContractUploadReady(order) && !order.contractFileAvailable) {
-      items.push(overviewItem("待上传合同", resource, order.contractType || order.orderNo, "teal", "upload-contract", { id: order.id }, order.updatedAt));
-    }
-  });
-  repairs
-    .filter(item => item.status !== "COMPLETED")
-    .forEach(repair => items.push(overviewItem("维修跟进", repair.customerName || repair.machineInfo || "-", repairStatusText(repair.status), "primary", "toggle-repair-status", { id: repair.id }, repair.updatedAt)));
-  parts
-    .filter(part => Number(part.quantity || 0) <= 0)
-    .forEach(part => items.push(overviewItem("库存预警", part.partCode || "-", part.partName || "-", "danger", "edit", { kind: "part", id: part.id }, part.updatedAt)));
-  vehicleRows
-    .filter(row => !row.orderId && Number(row.inventoryCount || 0) > 0)
-    .slice(0, 5)
-    .forEach(row => items.push(overviewItem("在库待销售", row.vehicleProductNumber || `ID ${row.id}`, vehicleModelLabel(row), "teal", "vehicle-outbound-direct", { machineId: row.id }, row.inboundDate)));
-  return items.sort((left, right) => String(right.sortKey || "").localeCompare(String(left.sortKey || "")));
-}
-
-function overviewItem(label, title, detail, type, action, data = {}, sortKey = "") {
-  return { label, title, detail, type, action, data, sortKey };
-}
-
-function renderOverviewAttachmentItems(invoiceOrders, contractOrders) {
-  const rows = [
-    ...invoiceOrders.map(order => overviewAttachmentItem(order, "发票", "upload-invoice")),
-    ...contractOrders.map(order => overviewAttachmentItem(order, "合同", "upload-contract"))
-  ].slice(0, 8);
-  if (!rows.length) return emptyState("暂无待上传附件");
-  return `
-    <div class="overview-attachment-list">
-      ${rows.map(item => `
-        <div class="overview-attachment-row is-clickable" data-action="${escapeAttr(item.action)}" data-id="${escapeAttr(item.id)}" tabindex="0" role="button">
-          <div class="overview-task-main">
-            ${badge(item.type, item.type === "合同" ? "teal" : "primary")}
-            <strong>${escapeHtml(item.title)}</strong>
-            <span class="helper-inline">${escapeHtml(item.detail)}</span>
-          </div>
-          <button class="btn btn-sm" type="button" data-action="${escapeAttr(item.action)}" data-id="${escapeAttr(item.id)}">${icon("upload")}上传</button>
-        </div>
-      `).join("")}
-    </div>
-  `;
-}
-
-function overviewAttachmentItem(order, type, action) {
-  return {
-    id: order.id,
-    action,
-    type,
-    title: order.resourceCode || order.orderNo || `订单 ${order.id}`,
-    detail: order.customerName || (type === "合同" ? order.contractType : order.invoiceStatus) || "-"
-  };
-}
-
-function renderOverviewWorkItems(items) {
-  if (!items.length) return emptyState("暂无待处理事项");
-  return `
-    <div class="overview-task-list">
-      ${items.map(item => `
-        <div class="overview-task-row is-clickable" ${actionAttrs(item)} tabindex="0" role="button">
-          <div class="overview-task-main">
-            ${badge(item.label, item.type)}
-            <strong>${escapeHtml(item.title || "-")}</strong>
-            <span class="helper-inline">${escapeHtml(item.detail || "-")}</span>
-          </div>
-          ${overviewActionButton(item)}
-        </div>
-      `).join("")}
-    </div>
-  `;
-}
-
-function overviewActionButton(item) {
-  const label = item.action === "upload-invoice" ? "上传发票"
-    : item.action === "upload-contract" ? "上传合同"
-      : item.action === "toggle-repair-status" ? "完成"
-      : item.action === "vehicle-outbound-direct" ? "登记销售"
-        : "处理";
-  return `<button class="btn btn-sm" type="button" ${actionAttrs(item)}>${icon(item.action?.startsWith("upload") ? "upload" : item.action === "toggle-repair-status" ? "swap" : "edit")}${label}</button>`;
-}
-
-function actionAttrs(item = {}) {
-  const attrs = [`data-action="${escapeAttr(item.action || "go-tab")}"`];
-  Object.entries(item.data || {})
-    .filter(([, value]) => value !== undefined && value !== null && value !== "")
-    .forEach(([key, value]) => attrs.push(`data-${toDataAttrName(key)}="${escapeAttr(value)}"`));
-  return attrs.join(" ");
-}
-
-function renderOverviewShortcuts() {
-  return `
-    <div class="overview-shortcuts">
-      ${hasPermission("stock:adjust") ? `<button class="btn" type="button" data-action="go-tab" data-tab="outboundOrders">${icon("eye")}订单列表</button>` : ""}
-      ${hasPermission("vehicle:write") ? renderVehicleModelMenu({ triggerClass: "btn hover-menu-trigger" }) : ""}
-      ${hasPermission("stock:adjust") ? `<button class="btn" type="button" data-action="create" data-kind="vehicleOutbound">${icon("minus")}登记销售跟进</button>` : ""}
-      <button class="btn" type="button" data-action="create" data-kind="part">${icon("plus")}新增配件</button>
-      ${hasPermission("replace:write") ? `<button class="btn" type="button" data-action="create" data-kind="modificationOrder">${icon("swap")}新建改装工单</button>` : ""}
-      <button class="btn btn-ghost" type="button" data-action="refresh">${icon("refresh")}刷新数据</button>
-    </div>
-  `;
+  return dashboardView.renderOverview();
 }
 
 function renderVehicles() {
@@ -4341,9 +4143,9 @@ function importJobActions(row = {}) {
 }
 
 function renderRentals() {
-  const rows = filterRows(state.data.rentals, state.search.rentals, [
+  const rows = filterRentalRows(filterRows(state.data.rentals, state.search.rentals, [
     "rentalNo", "vehicleNumber", "machineName", "specificationModel", "customerName", "customerAddress", "destination", "status", "operator", "remark"
-  ]);
+  ]));
 
   return `
     <div class="page">
@@ -4358,7 +4160,9 @@ function renderRentals() {
           ${summaryCard("待归还", activeRows.length, activeRows.length ? "请持续跟进租赁去向" : "暂无进行中租赁")}
         </section>`;
       })}
-      ${renderToolbar("rentals", "搜索租赁单、车号、客户、去向或经办人", "rental", "新增租赁", "stock:adjust")}
+      ${renderToolbar("rentals", "搜索租赁单、车号、客户、去向或经办人", "rental", "新增租赁", "stock:adjust", {
+        main: [rentalFilterControls()]
+      })}
       ${renderExportableSurface("租赁记录", "rentals", renderTable([
         { label: "租赁单", html: true, render: row => rentalNoSummary(row) },
         { label: "车辆", html: true, render: row => rentalVehicleSummary(row) },
@@ -4830,100 +4634,7 @@ function repairStatusToggle(row = {}) {
 }
 
 function renderStatistics() {
-  const stats = state.data.statistics;
-  if (!stats) {
-    return `<div class="page">${renderSurface("统计财报", emptyState("当前账号无权查看统计数据"))}</div>`;
-  }
-  const annual = stats.annualSummary || {};
-  const monthlyRows = stats.monthlyFinance || [];
-  const yearlyRows = stats.yearlyFinance || [];
-  const resourceRows = stats.resourceFlows || [];
-  const topRows = stats.topOutbounds || [];
-  const topRentalRows = stats.topRentals || [];
-  const stockRows = stats.stockValues || [];
-  const lowRows = stats.lowStocks || [];
-
-  return `
-    <div class="page">
-      <div class="toolbar">
-        <label class="field year-filter">
-          <span>统计年份</span>
-          <select data-action="select-stats-year">
-            ${renderYearOptions(stats.selectedYear, yearlyRows)}
-          </select>
-        </label>
-        <div class="toolbar-actions">
-          <button class="btn btn-ghost" type="button" data-action="refresh">${icon("refresh")}刷新</button>
-        </div>
-      </div>
-
-      <section class="summary-grid">
-        ${summaryCard("年度总收入", money(annual.totalIncome), `出库 ${money(annual.outboundRevenue)} / 维修 ${money(annual.repairIncome)} / 租赁 ${money(annual.rentalIncome)} / 折价收入 ${money(annual.modificationIncome)}`)}
-        ${summaryCard("入库成本", money(annual.inboundCost), `${annual.inboundQuantity || 0} 件/台入库`)}
-        ${summaryCard("出库毛利", money(annual.grossProfit), `${annual.outboundQuantity || 0} 件/台出库`)}
-        ${summaryCard("租赁收入", money(annual.rentalIncome), `${annual.rentalOrders || 0} 单租赁`)}
-      </section>
-
-      ${renderSurface("月度收支走势", renderFinanceTrend(monthlyRows))}
-
-      ${renderSurface("年度对比", renderTable([
-          { label: "年份", key: "period" },
-          { label: "总收入", key: "totalIncome", formatter: money },
-          { label: "入库成本", key: "inboundCost", formatter: money },
-          { label: "出库毛利", key: "grossProfit", formatter: money },
-          { label: "维修单", key: "repairOrders" },
-          { label: "租赁单", key: "rentalOrders" },
-          { label: "折价工单", key: "modificationOrders" }
-        ], yearlyRows))}
-
-      <section class="grid-two">
-        ${renderSurface("出入库分类收支", renderTable([
-          { label: "类型", key: "label" },
-          { label: "入库数量", key: "inboundQuantity" },
-          { label: "入库成本", key: "inboundCost", formatter: money },
-          { label: "出库数量", key: "outboundQuantity" },
-          { label: "出库收入", key: "outboundRevenue", formatter: money },
-          { label: "毛利", key: "grossProfit", formatter: money }
-        ], resourceRows))}
-        ${renderSurface("当前库存价值", renderTable([
-          { label: "类型", key: "label" },
-          { label: "档案数", key: "itemCount" },
-          { label: "库存数", key: "stockQuantity" },
-          { label: "成本价值", key: "costValue", formatter: money },
-          { label: "零售价值", key: "retailValue", formatter: money }
-        ], stockRows))}
-      </section>
-
-      <section class="grid-two">
-        ${renderSurface("年度出库收益 TOP", renderTable([
-          { label: "类型", key: "resourceType", formatter: resourceTypeLabel },
-          { label: "编码", key: "resourceCode" },
-          { label: "名称", key: "resourceName" },
-          { label: "数量", key: "quantity" },
-          { label: "收入", key: "revenue", formatter: money },
-          { label: "毛利", key: "grossProfit", formatter: money }
-        ], topRows))}
-        ${renderSurface("年度租赁收入 TOP", renderTable([
-          { label: "租赁单", key: "rentalNo" },
-          { label: "车号", key: "vehicleNumber" },
-          { label: "车型", key: "machineName" },
-          { label: "去向", key: "destination" },
-          { label: "月租价", key: "rentalPrice", formatter: money },
-          { label: "状态", html: true, render: row => rentalStatusBadge(row.status) }
-        ], topRentalRows))}
-      </section>
-
-      <section class="grid-two">
-        ${renderSurface("低库存预警", renderTable([
-          { label: "类型", key: "resourceType", formatter: resourceTypeLabel },
-          { label: "编码", key: "resourceCode" },
-          { label: "名称", key: "resourceName" },
-          { label: "库存", key: "quantity", formatter: (value, row) => `${value}${row.unit || ""}` },
-          { label: "阈值", key: "threshold" }
-        ], lowRows))}
-      </section>
-    </div>
-  `;
+  return dashboardView.renderStatistics();
 }
 
 function renderOperationLogs() {
@@ -5446,6 +5157,20 @@ function outboundOrderFilterControls() {
         { value: "invoiceFile", label: "待上传发票" },
         { value: "contractFile", label: "待上传合同" },
         { value: "closed", label: "闭环完成" }
+      ])}
+    </div>
+  `;
+}
+
+function rentalFilterControls() {
+  const filters = state.filters.rentals || {};
+  return `
+    <div class="filter-row">
+      ${filterButtonGroup("rentals", "status", filters.status || "", "状态", "全部状态", [
+        { value: "active", label: "租赁中" },
+        { value: "dueSoon", label: "7天内到期" },
+        { value: "overdue", label: "已逾期" },
+        { value: "returned", label: "已归还" }
       ])}
     </div>
   `;
@@ -7970,6 +7695,20 @@ function filterOutboundOrderRows(rows = []) {
   });
 }
 
+function filterRentalRows(rows = []) {
+  const status = state.filters.rentals?.status || "";
+  if (!status) return rows;
+  return rows.filter(row => {
+    const active = row.status === "ACTIVE";
+    const daysUntilEnd = rentalDaysUntilEnd(row.endDate);
+    if (status === "active") return active;
+    if (status === "returned") return row.status === "RETURNED";
+    if (status === "dueSoon") return active && daysUntilEnd !== null && daysUntilEnd <= 7;
+    if (status === "overdue") return active && daysUntilEnd !== null && daysUntilEnd < 0;
+    return true;
+  });
+}
+
 function filterRepairRows(rows = []) {
   const status = state.filters.repairs?.status || "";
   if (!status) return rows;
@@ -7979,6 +7718,21 @@ function filterRepairRows(rows = []) {
     if (status === "pending") return !completed;
     return true;
   });
+}
+
+function rentalDaysUntilEnd(value) {
+  const end = dateOnlyTime(value);
+  if (end === null) return null;
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  return Math.floor((end - today.getTime()) / 86400000);
+}
+
+function dateOnlyTime(value) {
+  if (!value) return null;
+  const [year, month, day] = String(value).split("-").map(part => Number(part));
+  if (!year || !month || !day) return null;
+  return new Date(year, month - 1, day).getTime();
 }
 
 function vehicleCategoryOptions() {

@@ -15,6 +15,7 @@ const requiredFiles = [
   "assets/app.js",
   "assets/modules/app-state.js",
   "assets/modules/data-loader.js",
+  "assets/modules/dashboard-view.js",
   "assets/modules/display-utils.js",
   "assets/modules/field-config.js",
   "assets/modules/list-config.js",

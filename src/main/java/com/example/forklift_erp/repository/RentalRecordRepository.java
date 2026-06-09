@@ -79,6 +79,30 @@ public interface RentalRecordRepository extends JpaRepository<RentalRecord, Long
 
     List<RentalRecord> findByStatusOrderByUpdatedAtDescIdDesc(String status, Pageable pageable);
 
+    @Query("""
+            select count(r) from RentalRecord r
+            where r.status = :status
+              and r.endDate is not null
+              and r.endDate <= :cutoffDate
+            """)
+    long countDueSoonTodos(
+            @Param("status") String status,
+            @Param("cutoffDate") LocalDate cutoffDate
+    );
+
+    @Query("""
+            select r from RentalRecord r
+            where r.status = :status
+              and r.endDate is not null
+              and r.endDate <= :cutoffDate
+            order by r.endDate asc, r.updatedAt desc, r.id desc
+            """)
+    List<RentalRecord> findDueSoonTodos(
+            @Param("status") String status,
+            @Param("cutoffDate") LocalDate cutoffDate,
+            Pageable pageable
+    );
+
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("select r from RentalRecord r where r.id = :id")
     Optional<RentalRecord> findByIdForUpdate(@Param("id") Long id);

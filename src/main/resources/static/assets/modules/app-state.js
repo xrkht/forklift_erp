@@ -41,6 +41,9 @@ export function createInitialState({ token = "", user = null } = {}) {
       outboundOrders: {
         stage: ""
       },
+      rentals: {
+        status: ""
+      },
       repairs: {
         status: ""
       },
