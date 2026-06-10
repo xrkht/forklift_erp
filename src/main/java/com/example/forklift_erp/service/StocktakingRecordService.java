@@ -2,7 +2,7 @@ package com.example.forklift_erp.service;
 
 import com.example.forklift_erp.common.PageResult;
 import com.example.forklift_erp.common.ResultCode;
-import com.example.forklift_erp.constant.MachineStockStatuses;
+import com.example.forklift_erp.constant.MachineStockStatus;
 import com.example.forklift_erp.dto.StocktakingRecordDTO;
 import com.example.forklift_erp.dto.StocktakingRecordVO;
 import com.example.forklift_erp.entity.MachineInventory;
@@ -167,7 +167,7 @@ public class StocktakingRecordService {
             MachineInventory machine = machineRepository.findByIdForUpdate(record.getResourceId())
                     .orElseThrow(() -> new BusinessException(ResultCode.VEHICLE_NOT_FOUND, "Vehicle not found"));
             machine.setInventoryCount(record.getActualQuantity());
-            machine.setStockStatus(record.getActualQuantity() > 0 ? MachineStockStatuses.IN_STOCK : MachineStockStatuses.OUTBOUND);
+            machine.setStockStatus(record.getActualQuantity() > 0 ? MachineStockStatus.IN_STOCK.code() : MachineStockStatus.OUTBOUND.code());
             collaborationService.stampWrite(machine);
             machineRepository.saveAndFlush(machine);
             return;

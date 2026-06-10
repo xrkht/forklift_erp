@@ -2,7 +2,7 @@ package com.example.forklift_erp.controller;
 
 import com.example.forklift_erp.common.Result;
 import com.example.forklift_erp.common.ResultCode;
-import com.example.forklift_erp.constant.JobTags;
+import com.example.forklift_erp.constant.JobTag;
 import com.example.forklift_erp.constant.RoleNames;
 import com.example.forklift_erp.entity.Role;
 import com.example.forklift_erp.entity.User;
@@ -238,7 +238,7 @@ public class AuthController {
     public Result<List<UserSummaryResponse>> listRepairUsers() {
         List<UserSummaryResponse> users = userRepository.findAll().stream()
                 .filter(User::isEnabled)
-                .filter(user -> JobTags.REPAIR.equals(normalizeJobTag(user)))
+                .filter(user -> JobTag.REPAIR.code().equals(normalizeJobTag(user)))
                 .sorted(Comparator.comparing(User::getId).reversed())
                 .map(user -> UserSummaryResponse.fromEntity(user, permissionService.findPermissionCodes(user)))
                 .toList();
@@ -457,12 +457,12 @@ public class AuthController {
 
     private static String normalizeJobTag(String value, Collection<Role> roles) {
         String normalized = value == null ? "" : value.trim().toUpperCase();
-        if (JobTags.MANAGEMENT.equals(normalized) || JobTags.CLERK.equals(normalized) || JobTags.REPAIR.equals(normalized)) {
+        if (JobTag.MANAGEMENT.code().equals(normalized) || JobTag.CLERK.code().equals(normalized) || JobTag.REPAIR.code().equals(normalized)) {
             return normalized;
         }
         return roles.stream().anyMatch(role -> RoleNames.isPrivileged(role.getName()))
-                ? JobTags.MANAGEMENT
-                : JobTags.CLERK;
+                ? JobTag.MANAGEMENT.code()
+                : JobTag.CLERK.code();
     }
 
     private String normalizeKeyword(String keyword) {

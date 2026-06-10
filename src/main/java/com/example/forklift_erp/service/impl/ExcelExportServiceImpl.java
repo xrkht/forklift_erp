@@ -355,7 +355,7 @@ public class ExcelExportServiceImpl implements ExcelExportService {
 
     private String exportPurchaseOrders(XSSFWorkbook workbook, Styles styles) {
         List<PurchaseOrderVO> rows = purchaseOrderService.findPage(null, 0, EXPORT_PAGE_SIZE).getContent();
-        writeSheet(workbook, styles, "采购订单", List.of(
+        writeSheet(workbook, styles, "入库订单", List.of(
                 "ID", "采购单号", "供应商", "配件编码/物料号", "配件名称", "规格型号", "数量", "单位",
                 "单价", "总金额", "运费", "采购日期", "预计到货", "状态", "经办人", "备注"
         ), rows.stream().map(row -> List.of(
@@ -364,7 +364,7 @@ public class ExcelExportServiceImpl implements ExcelExportService {
                 value(row.getUnit()), value(row.getUnitPrice()), value(row.getTotalAmount()), value(row.getFreightAmount()), value(row.getOrderDate()),
                 value(row.getExpectedArrivalDate()), value(row.getStatus()), value(row.getOperator()), value(row.getRemark())
         )).toList());
-        return "采购订单";
+        return "入库订单";
     }
 
     private String exportStocktakingRecords(XSSFWorkbook workbook, Styles styles) {

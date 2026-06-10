@@ -1,6 +1,6 @@
 package com.example.forklift_erp.dto;
 
-import com.example.forklift_erp.constant.PartChangeActions;
+import com.example.forklift_erp.constant.PartChangeAction;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotNull;
 import lombok.Data;
@@ -23,7 +23,7 @@ public class PartReplaceRequestDTO {
     @Min(value = 1, message = "数量必须大于0")
     private Integer quantity = 1;
 
-    private String oldPartAction = PartChangeActions.STOCK_IN;
+    private String oldPartAction = PartChangeAction.STOCK_IN.code();
     private String stockMovementSourceType;
     private Long stockMovementSourceId;
     private String operator;

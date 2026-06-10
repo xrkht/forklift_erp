@@ -2,8 +2,8 @@ package com.example.forklift_erp.service.impl;
 
 import com.example.forklift_erp.common.PageResult;
 import com.example.forklift_erp.common.ResultCode;
-import com.example.forklift_erp.constant.MachineStockStatuses;
-import com.example.forklift_erp.constant.RentalStatuses;
+import com.example.forklift_erp.constant.MachineStockStatus;
+import com.example.forklift_erp.constant.RentalStatus;
 import com.example.forklift_erp.dto.OutboundInvoiceDownload;
 import com.example.forklift_erp.dto.OutboundOrderUpdateDTO;
 import com.example.forklift_erp.dto.OutboundOrderVO;
@@ -142,7 +142,7 @@ public class OutboundOrderServiceImpl implements OutboundOrderService {
         if (before < 1) {
             throw new BusinessException(ResultCode.INSUFFICIENT_STOCK, "Vehicle stock is insufficient");
         }
-        if (rentalRecordRepository.existsByMachineIdAndStatus(machine.getId(), RentalStatuses.ACTIVE)) {
+        if (rentalRecordRepository.existsByMachineIdAndStatus(machine.getId(), RentalStatus.ACTIVE.code())) {
             throw new BusinessException(ResultCode.CONFLICT, "车辆正在租赁中，不能创建销售出库订单");
         }
 
@@ -188,7 +188,7 @@ public class OutboundOrderServiceImpl implements OutboundOrderService {
 
         int after = before - 1;
         machine.setInventoryCount(after);
-        machine.setStockStatus(after > 0 ? MachineStockStatuses.IN_STOCK : MachineStockStatuses.OUTBOUND);
+        machine.setStockStatus(after > 0 ? MachineStockStatus.IN_STOCK.code() : MachineStockStatus.OUTBOUND.code());
         machine.setSettlementPrice(request.getSettlementPrice());
         machine.setSalePrice(firstPrice(request.getSalePrice(), machine.getSalePrice()));
         machine.setSalesDate(toMachineSalesDate(request.getSalesDate()));

@@ -27,6 +27,7 @@ const {
   ensureConfigData,
   loadAllData,
   loadConfigValues,
+  loadVehicleConfigValues,
   loadCurrentTab,
   loadPagedTab,
   loadStatistics,
@@ -46,7 +47,8 @@ const {
   loadVehicleDetail,
   loadVehicleModelDetail,
   renderCurrentTab,
-  restoreConfigItemScroll
+  restoreConfigItemScroll,
+  restoreVehicleConfigItemScroll
 });
 
 const fields = createFields({
@@ -83,6 +85,7 @@ const fields = createFields({
   jobTagOptions,
   rentalStatusOptions,
   purchaseConfigValueOptions,
+  purchaseSpecificationModelOptions,
   purchaseStatusOptions,
   stocktakingResourceTypeOptions,
   stocktakingResourceOptions,
@@ -94,7 +97,9 @@ const fields = createFields({
   attachmentResourceOptions,
   attachmentCategoryOptions,
   attachmentUploadCategoryOptions,
-  vehicleConfigChangeModeOptions
+  vehicleConfigChangeModeOptions,
+  vehicleConfigItemOptions,
+  vehicleConfigValueOptions
 });
 
 const dashboardView = createDashboardView({
@@ -177,6 +182,7 @@ document.addEventListener("DOMContentLoaded", () => {
   els.modalCard.addEventListener("click", handleModalClick);
   els.modalCard.addEventListener("input", handleModalInput);
   els.modalCard.addEventListener("focusin", handleModalFocusIn);
+  els.modalCard.addEventListener("focusout", handleModalFocusOut);
   els.modalCard.addEventListener("change", handleModalChange);
   els.modalCard.addEventListener("submit", handleModalSubmit);
   els.detailDrawerOverlay.addEventListener("pointerdown", handleDetailDrawerOverlayPointerDown);
@@ -352,6 +358,13 @@ function restoreConfigItemScroll() {
   requestAnimationFrame(() => {
     const list = els.content.querySelector(".config-items-pane .config-list");
     if (list) list.scrollTop = state.configItemScrollTop || 0;
+  });
+}
+
+function restoreVehicleConfigItemScroll() {
+  requestAnimationFrame(() => {
+    const list = els.content.querySelector(".vehicle-config-items-pane .config-list");
+    if (list) list.scrollTop = state.vehicleConfigItemScrollTop || 0;
   });
 }
 
@@ -765,10 +778,22 @@ async function handleContentClick(event) {
       scrollToVehicleDetail();
       return;
     }
+    if (action === "set-config-module") {
+      state.activeConfigModule = control.dataset.module === "vehicles" ? "vehicles" : "parts";
+      await ensureConfigData();
+      renderCurrentTab();
+      return;
+    }
     if (action === "select-config-item") {
       const configList = control.closest(".config-list");
       state.configItemScrollTop = configList ? configList.scrollTop : 0;
       await loadConfigValues(id, { restoreConfigScroll: true });
+      return;
+    }
+    if (action === "select-vehicle-config-item") {
+      const configList = control.closest(".config-list");
+      state.vehicleConfigItemScrollTop = configList ? configList.scrollTop : 0;
+      await loadVehicleConfigValues(id, { restoreConfigScroll: true });
       return;
     }
     if (["vehicle-config-change", "part-replace", "create-modification-order", "create-vehicle-part"].includes(action)) {
@@ -1094,8 +1119,29 @@ function handleModalFocusIn(event) {
   scheduleRemoteComboSearch(combo, input.value.trim(), { immediate: combo.dataset.remoteLoaded !== "true" });
 }
 
+function handleModalFocusOut(event) {
+  const input = event.target.closest("[data-combo-input]");
+  if (!input) return;
+  const combo = input.closest("[data-combo]");
+  if (!combo || combo.dataset.name !== "specificationModel" || combo.dataset.allowCustom !== "true") return;
+  if (event.relatedTarget && combo.contains(event.relatedTarget)) return;
+  if (event.relatedTarget?.closest?.("button")) return;
+  const hidden = combo.querySelector("input[type='hidden']");
+  if (!hidden) return;
+  const query = input.value.trim();
+  const exact = findComboOption(combo, query);
+  if (exact) {
+    setComboValue(combo, exact.dataset.value, exact.dataset.label, exact.dataset.meta, true);
+    return;
+  }
+  hidden.value = query;
+  hidden.dataset.selectedLabel = query;
+  hidden.dataset.selectedMeta = "";
+  hidden.dispatchEvent(new Event("change", { bubbles: true }));
+}
+
 function updateConfigSelectionRows(button) {
-  if (state.modal?.kind !== "vehicleInbound") return;
+  if (!usesVehicleInboundConfigEditor(state.modal?.kind, state.modal?.item)) return;
   const rows = ensureConfigSelections(state.modal.item);
   if (button.dataset.configAction === "add") {
     rows.push({ configItemId: "", configValueId: "" });
@@ -1112,7 +1158,7 @@ async function handleModalChange(event) {
   const form = event.target.closest("form");
   if (!form) return;
   const kind = form.dataset.kind;
-  if (kind === "vehicleInbound" && event.target.dataset.configField) {
+  if (usesVehicleInboundConfigEditor(kind, state.modal?.item) && event.target.dataset.configField) {
     const rows = ensureConfigSelections(state.modal.item);
     const index = Number(event.target.dataset.configIndex);
     const fieldName = event.target.dataset.configField;
@@ -1120,8 +1166,12 @@ async function handleModalChange(event) {
       ...(rows[index] || {}),
       [fieldName]: event.target.value
     };
+    if (event.target.value) {
+      clearConfigSelectionPrefill(rows[index], fieldName);
+    }
     if (fieldName === "configItemId") {
       rows[index].configValueId = "";
+      clearConfigSelectionPrefill(rows[index], "configValueId");
       renderModal();
     }
     return;
@@ -1136,6 +1186,12 @@ async function handleModalChange(event) {
     return;
   }
 
+  if (usesVehicleInboundConfigEditor(kind, state.modal?.item) && event.target.name === "specificationModel") {
+    await prepareVehicleInboundTemplate(state.modal.item);
+    renderModal();
+    return;
+  }
+
   if (kind === "attachmentUpload" && event.target.name === "resourceType") {
     state.modal.item.resourceId = null;
     state.modal.item.attachmentCategory = attachmentDefaultCategoryForResourceType(event.target.value);
@@ -1145,6 +1201,12 @@ async function handleModalChange(event) {
 
   if (kind === "configItem") {
     syncConfigItemFields(form, event.target.name);
+  }
+
+  if (kind === "vehicleConfigValue" && event.target.name === "configItemId") {
+    state.modal.item.configValueId = null;
+    renderModal();
+    return;
   }
 
   if (kind === "part") {
@@ -1201,6 +1263,16 @@ async function handleModalChange(event) {
     syncPurchaseAmount(form, event.target.name);
   }
 
+  if (kind === "purchaseOrder" && event.target.name === "resourceType") {
+    applyPurchaseOrderResourceMode(form, event.target.value);
+    if (purchaseOrderResourceType(state.modal.item) === "MACHINE") {
+      ensureConfigSelections(state.modal.item);
+      await prepareVehicleInboundTemplate(state.modal.item);
+    }
+    renderModal();
+    return;
+  }
+
   if (kind === "purchaseOrder" && event.target.name === "configItemId") {
     state.modal.item.configValueId = null;
     renderModal();
@@ -1211,7 +1283,7 @@ async function handleModalChange(event) {
     syncPurchaseResourceDefaults(form);
   }
 
-  if (kind === "vehicleInbound" && event.target.name === "machineType") {
+  if (usesVehicleInboundConfigEditor(kind, state.modal?.item) && event.target.name === "machineType") {
     renderModal();
     return;
   }
@@ -1397,7 +1469,9 @@ async function handleModalSubmit(event) {
       });
       showContextSuccess("车型已新增", entityDisplayName("vehicle", payload), "可继续入库具体车号");
     } else if (kind === "vehicleInbound") {
-      const configs = buildInboundConfigs(item);
+      item.specificationModel = payload.specificationModel;
+      await prepareVehicleInboundTemplate(item);
+      const configs = buildInboundConfigs(item, payload.specificationModel);
       const savedVehicle = await api("/api/inventory/inbound", {
         method: "POST",
         body: {
@@ -1409,6 +1483,30 @@ async function handleModalSubmit(event) {
         state.selectedVehicleId = Number(savedVehicle.id);
       }
       showContextSuccess("车型入库成功", entityDisplayName("vehicle", { ...payload, id: savedVehicle?.id }), "车辆详情已更新");
+    } else if (kind === "purchaseOrder" && payload.resourceType === "MACHINE") {
+      let savedVehicle = null;
+      if (!item.id) {
+        item.specificationModel = payload.specificationModel;
+        await prepareVehicleInboundTemplate(item);
+        const configs = buildInboundConfigs(item, payload.specificationModel);
+        savedVehicle = await api("/api/inventory/inbound", {
+          method: "POST",
+          body: {
+            machineInventory: buildVehicleInboundPayload(payload, item),
+            configs
+          }
+        });
+        if (savedVehicle?.id) {
+          state.selectedVehicleId = Number(savedVehicle.id);
+        }
+      }
+      if (item.id) {
+        await api(endpoints.purchaseOrder.update(item.id), { method: "PUT", body: payload });
+        showContextSuccess("整车入库订单已更新", payload.resourceCode || payload.vehicleProductNumber || payload.resourceName, "入库订单已刷新");
+      } else {
+        await api(endpoints.purchaseOrder.create, { method: "POST", body: payload });
+        showContextSuccess("整车入库成功", entityDisplayName("vehicle", { ...payload, id: savedVehicle?.id }), "车辆库存和入库订单已刷新");
+      }
     } else if (kind === "vehicleOutbound") {
       const machine = findEntity("vehicle", Number(payload.machineId || 0));
       const customerResult = await ensureVehicleOutboundCustomer(payload);
@@ -1577,6 +1675,14 @@ async function deleteEntity(kind, id) {
   markReferenceDataStale(referenceKindsForMutation(kind));
   if (kind === "configValue") {
     await loadConfigValues(state.selectedConfigItemId);
+  } else if (kind === "vehicleConfigValue") {
+    await loadVehicleConfigValues(state.selectedVehicleConfigItemId);
+  } else if (kind === "vehicleConfigItem") {
+    if (Number(state.selectedVehicleConfigItemId) === Number(id)) {
+      state.selectedVehicleConfigItemId = null;
+    }
+    await ensureConfigData(true);
+    renderCurrentTab();
   } else {
     resetPageAfterMutation(kind);
     await refreshAfterMutation(kind, {
@@ -1640,7 +1746,7 @@ async function completeStocktakingDirect(record) {
 async function togglePurchaseReceived(id) {
   const order = findEntity("purchaseOrder", id);
   if (!order.id) {
-    showToast("采购订单已刷新，请再试一次", "info");
+    showToast("入库订单已刷新，请再试一次", "info");
     await loadAllData();
     renderCurrentTab();
     return;
@@ -1648,7 +1754,7 @@ async function togglePurchaseReceived(id) {
   const nextReceived = order.status !== "RECEIVED";
   const url = withVersion(`${endpoints.purchaseOrder.received(id)}?received=${nextReceived ? "true" : "false"}`, order);
   await api(url, { method: "PUT" });
-  showToast(nextReceived ? "采购订单已收货；再次点击可撤回" : "采购订单已改为待收货", "success");
+  showToast(nextReceived ? "入库订单已收货；再次点击可撤回" : "入库订单已改为待收货", "success");
   resetPageAfterMutation("purchaseOrder");
   await refreshAfterMutation("purchaseOrder", { refreshDetail: false });
   renderCurrentTab();
@@ -1764,22 +1870,29 @@ function buildModificationOrderPayload(payload) {
   };
 }
 
-function buildInboundConfigs(item) {
-  return ensureConfigSelections(item)
-    .filter(row => row.configItemId && row.configValueId)
-    .map(row => {
-      const configItem = state.data.configItems.find(item => String(item.id) === String(row.configItemId));
-      const configValue = (state.data.configValueMap[row.configItemId] || [])
-        .find(value => String(value.id) === String(row.configValueId));
-      return {
-        configItemId: Number(row.configItemId),
-        configValueId: Number(row.configValueId),
-        itemName: configItem?.itemName || "",
-        selectedValue: configValue?.valueLabel || "",
-        isStandard: true,
-        configSource: "FACTORY_STANDARD"
-      };
+function buildInboundConfigs(item, specificationModel = effectiveFieldValue(item, "specificationModel")) {
+  const matchedTemplate = vehicleConfigItemBySpecificationModel(specificationModel);
+  const canUseTemplateRows = matchedTemplate
+    && normalizeText(item.__vehicleConfigTemplateSpec) === normalizeText(matchedTemplate.specificationModel);
+  const byConfigItem = new Map();
+  for (const row of ensureConfigSelections(item)) {
+    if (row.__fromVehicleTemplate && !canUseTemplateRows) continue;
+    const configItemId = effectiveConfigSelectionValue(row, "configItemId");
+    const configValueId = effectiveConfigSelectionValue(row, "configValueId");
+    if (!configItemId || !configValueId) continue;
+    const configItem = state.data.configItems.find(item => String(item.id) === String(configItemId));
+    const configValue = (state.data.configValueMap[configItemId] || [])
+      .find(value => String(value.id) === String(configValueId));
+    byConfigItem.set(String(configItemId), {
+      configItemId: Number(configItemId),
+      configValueId: Number(configValueId),
+      itemName: configItem?.itemName || "",
+      selectedValue: configValue?.valueLabel || "",
+      isStandard: true,
+      configSource: row.__fromVehicleTemplate ? "VEHICLE_TEMPLATE" : "FACTORY_STANDARD"
     });
+  }
+  return [...byConfigItem.values()];
 }
 
 function buildVehicleInboundPayload(payload, item = {}) {
@@ -2222,16 +2335,16 @@ async function batchCompleteRepairs() {
 async function batchReceivePurchases() {
   const rows = selectedRows("purchaseOrder").filter(row => row.status !== "RECEIVED" && row.status !== "CANCELED");
   if (!rows.length) {
-    showToast("没有可收货的采购订单", "info");
+    showToast("没有可收货的入库订单", "info");
     return;
   }
   if (!(await confirmDanger({
     title: "批量收货",
-    target: `${rows.length} 条采购订单`,
+    target: `${rows.length} 条入库订单`,
     impact: "所选订单会统一标记为已收货，运费默认为 0。"
   }))) return;
   await Promise.all(rows.map(row => setPurchaseReceivedDirect(row, true)));
-  showContextSuccess("采购订单已批量收货", `${rows.length} 条`, "采购列表已刷新");
+  showContextSuccess("入库订单已批量收货", `${rows.length} 条`, "入库列表已刷新");
   clearBatchSelection("purchaseOrder");
   resetPageAfterMutation("purchaseOrder");
   await refreshAfterMutation("purchaseOrder", { refreshDetail: false });
@@ -2372,6 +2485,12 @@ async function goToTab(tab, data = {}) {
       status: data.status || ""
     };
   }
+  if (tab === "purchases") {
+    state.filters.purchases = {
+      ...(state.filters.purchases || {}),
+      resourceType: data.resourceType || ""
+    };
+  }
   if (tab === "attachments") {
     state.filters.attachments = {
       ...(state.filters.attachments || {}),
@@ -2448,19 +2567,23 @@ function buildOutboundOrderStatusPayload(order, overrides) {
 
 async function openEntityModal(kind, item = {}) {
   await ensureModalDependencies(kind);
-  if ((kind === "configValue" || kind === "vehiclePartInstall" || kind === "modificationOrder" || kind === "vehicleConfigChange") && !state.data.configItems.length) {
+  if ((kind === "configValue" || kind === "vehiclePartInstall" || kind === "modificationOrder" || kind === "vehicleConfigChange" || kind === "vehicleInbound" || kind === "vehicleConfigValue" || kind === "purchaseOrder") && (!state.data.configItems.length || !state.data.vehicleConfigItems.length)) {
     await ensureConfigData();
   }
 
   state.modal = { kind, item: { ...item }, context: {} };
+  if (kind === "purchaseOrder") {
+    preparePurchaseOrderModalItem(state.modal.item);
+  }
   if (kind === "repair") {
     prepareRepairModalItem(state.modal.item);
   }
   if (kind === "rental" && (state.modal.item.monthlyRentalPrice === undefined || state.modal.item.monthlyRentalPrice === null)) {
     state.modal.item.monthlyRentalPrice = state.modal.item.rentalPrice || "";
   }
-  if (kind === "vehicleInbound") {
+  if (usesVehicleInboundConfigEditor(kind, state.modal.item)) {
     ensureConfigSelections(state.modal.item);
+    await prepareVehicleInboundTemplate(state.modal.item);
   }
   if (kind === "partReplace" || kind === "modificationOrder") {
     await preparePartReplaceContext(
@@ -2488,6 +2611,7 @@ async function ensureModalDependencies(kind) {
   const needsWarehouses = ["warehouse", "stockTransfer"].includes(kind);
   const needsRepairs = kind === "attachmentUpload";
   const needsOutboundOrders = kind === "attachmentUpload";
+  const needsConfigItems = ["configValue", "vehicleInbound", "vehicleConfigValue", "vehicleConfigItem", "purchaseOrder"].includes(kind);
   const requests = [];
   if (needsVehicles && !state.reference.vehiclesLoaded) {
     requests.push(api(referencePageUrl(endpoints.vehicle.list)).then(payload => {
@@ -2542,6 +2666,9 @@ async function ensureModalDependencies(kind) {
       state.reference.outboundOrdersLoaded = true;
     }));
   }
+  if (needsConfigItems && (!state.data.configItems.length || !state.data.vehicleConfigItems.length)) {
+    requests.push(ensureConfigData());
+  }
   await Promise.all(requests);
 }
 
@@ -2575,8 +2702,10 @@ function referenceKindsForMutation(kind) {
     supplier: ["supplier"],
     warehouse: ["warehouse"],
     stockTransfer: ["vehicle", "part", "warehouse"],
-    purchaseOrder: ["supplier"],
+    purchaseOrder: ["supplier", "vehicle"],
     purchaseFreight: [],
+    vehicleConfigItem: [],
+    vehicleConfigValue: [],
     stocktaking: ["vehicle", "part"],
     invoiceUpload: ["outboundOrder"],
     contractUpload: ["outboundOrder"],
@@ -2606,8 +2735,10 @@ function tabsForMutation(kind) {
     supplier: ["suppliers"],
     warehouse: ["warehouses"],
     stockTransfer: ["warehouses", "stockMovements", "vehicles", "parts"],
-    purchaseOrder: ["purchases"],
+    purchaseOrder: ["purchases", "vehicles"],
     purchaseFreight: ["purchases"],
+    vehicleConfigItem: ["configs"],
+    vehicleConfigValue: ["configs"],
     stocktaking: ["stocktakes", "vehicles", "parts"],
     user: ["users"],
     userUsername: ["users"],
@@ -2648,7 +2779,7 @@ async function refreshAfterMutation(kind, options = {}) {
     requests.push(loadPagedTab(activePageKey, { force: true }));
   } else if (activeTab === "stats" && mutationTouchesFinance(kind) && hasPermission("log:read")) {
     requests.push(loadStatistics(state.selectedStatsYear));
-  } else if (activeTab === "configs" && (kind === "configItem" || kind === "configValue")) {
+  } else if (activeTab === "configs" && ["configItem", "configValue", "vehicleConfigItem", "vehicleConfigValue"].includes(kind)) {
     requests.push(ensureConfigData(true));
   }
 
@@ -2691,7 +2822,8 @@ function mutationTouchesTodoCenter(kind) {
     "rental",
     "repair",
     "stockTransfer",
-    "stocktaking"
+    "stocktaking",
+    "purchaseOrder"
   ].includes(kind);
 }
 
@@ -2707,7 +2839,8 @@ function mutationTouchesVehicleDetail(kind) {
     "rental",
     "repair",
     "stockTransfer",
-    "stocktaking"
+    "stocktaking",
+    "purchaseOrder"
   ].includes(kind);
 }
 
@@ -2827,7 +2960,7 @@ function renderModal() {
         <div class="modal-grid">
           ${renderModalFields(modalFields, item)}
         </div>
-        ${kind === "vehicleInbound" ? renderConfigSelectionEditor(item) : ""}
+        ${usesVehicleInboundConfigEditor(kind, item) ? renderConfigSelectionEditor(item) : ""}
       </div>
       <div class="modal-actions">
         <button class="btn btn-ghost" type="button" data-close-modal>取消</button>
@@ -2857,7 +2990,7 @@ function nextEntityAfterContinue(kind, item = {}, payload = {}) {
       supplier: payload.supplier,
       warehouseName: payload.warehouseName,
       purchasePrice: payload.purchasePrice,
-      salePrice: payload.salePrice
+      settlementPrice: payload.settlementPrice
     });
   }
   if (kind === "partStock") {
@@ -2866,12 +2999,23 @@ function nextEntityAfterContinue(kind, item = {}, payload = {}) {
     return next;
   }
   if (kind === "purchaseOrder") {
+    const resourceType = String(payload.resourceType || "PART").toUpperCase() === "MACHINE" ? "MACHINE" : "PART";
     const next = purchaseOrderDefaults({
       supplierId: payload.supplierId,
-      configItemId: payload.configItemId
+      configItemId: payload.configItemId,
+      configValueId: payload.configValueId,
+      resourceType,
+      name: payload.name || payload.resourceName,
+      specificationModel: payload.specificationModel,
+      configuration: payload.configuration,
+      machineType: payload.machineType,
+      supplier: payload.supplier || payload.supplierName,
+      warehouseName: payload.warehouseName,
+      purchasePrice: payload.purchasePrice || payload.unitPrice,
+      settlementPrice: payload.settlementPrice || payload.unitPrice
     });
     next.operator = payload.operator || "";
-    next.unit = payload.unit || "件";
+    next.unit = payload.unit || (resourceType === "MACHINE" ? "台" : "件");
     return next;
   }
   if (kind === "stocktaking") {
@@ -2955,7 +3099,7 @@ function renderCurrentTab() {
       els.content.innerHTML = renderOperationLogs();
       break;
     case "configs":
-      els.content.innerHTML = renderConfigs();
+      els.content.innerHTML = renderConfigsV2();
       break;
     case "users":
       els.content.innerHTML = renderUsers();
@@ -3837,6 +3981,9 @@ function renderImportValidationPanel() {
 }
 
 function renderImports() {
+  if (!hasRole("SUPER_ADMIN")) {
+    return `<div class="page">${renderSurface("导入中心", emptyState("当前账号无权访问导入中心"))}</div>`;
+  }
   const filters = state.filters.imports || {};
   const rows = filterRows(state.data.importJobs || [], state.search.imports, [
     "importType", "templateName", "originalFileName", "status", "summary", "createdBy", "importedBy"
@@ -4384,7 +4531,7 @@ function renderSuppliers() {
         const typed = rows.filter(item => item.supplierType).length;
         return `<section class="summary-grid">
           ${summaryCard("供应商总数", pageTotal("suppliers", rows.length), `${typed} 家已标记类型`)}
-          ${summaryCard("采购订单供应商", uniqueSupplierCount(), "已被采购订单引用")}
+          ${summaryCard("入库订单供应商", uniqueSupplierCount(), "已被入库订单引用")}
           ${summaryCard("联系人", rows.filter(item => item.contactName || item.contactPhone).length, "可直接联系")}
         </section>`;
       })}
@@ -4416,16 +4563,18 @@ function renderPurchaseOrders() {
         const pending = rows.filter(row => row.status !== "RECEIVED" && row.status !== "CANCELED").length;
         const freightTotal = rows.reduce((sum, row) => sum + Number(row.freightAmount || 0), 0);
         return `<section class="summary-grid">
-          ${summaryCard("采购订单", pageTotal("purchases", rows.length), `${pending} 单待跟进`)}
-          ${summaryCard("采购金额", money(totalAmount), "当前筛选合计")}
+          ${summaryCard("入库订单", pageTotal("purchases", rows.length), `${pending} 单待跟进`)}
+          ${summaryCard("入库金额", money(totalAmount), "当前筛选合计")}
           ${summaryCard("已收货", received, `运费 ${money(freightTotal)}`)}
         </section>`;
       })}
-      ${renderToolbar("purchases", "搜索采购单号、供应商、配件、配置项或经办人", "purchaseOrder", "新增配件采购", "stock:adjust")}
-      ${renderExportableSurface("采购订单", "purchases", renderTable([
-        { label: "采购单", html: true, render: row => purchaseOrderSummary(row) },
+      ${renderToolbar("purchases", "搜索入库单号、供应商、配件、整车、规格型号或经办人", "purchaseOrder", "新增入库订单", "stock:adjust", {
+        main: [purchaseOrderFilterControls()]
+      })}
+      ${renderExportableSurface("入库订单", "purchases", renderTable([
+        { label: "入库单", html: true, render: row => purchaseOrderSummary(row) },
         { label: "供应商", key: "supplierName" },
-        { label: "配件入库内容", html: true, render: row => purchaseResourceSummary(row) },
+        { label: "入库内容", html: true, render: row => purchaseResourceSummary(row) },
         { label: "数量", html: true, render: row => `${escapeHtml(row.quantity || 0)} <span class="helper-inline">${escapeHtml(row.unit || "")}</span>` },
         { label: "金额", key: "totalAmount", formatter: money },
         { label: "状态", html: true, render: row => purchaseStatusControl(row) },
@@ -4508,10 +4657,10 @@ function renderWarehouses() {
 }
 
 function renderMaintenance() {
-  if (!hasAnyRole("ADMIN", "SUPER_ADMIN")) {
+  if (!hasRole("SUPER_ADMIN")) {
     return `<div class="page">${renderSurface("数据维护", emptyState("当前账号无权访问数据维护"))}</div>`;
   }
-  const canImport = hasAnyRole("ADMIN", "SUPER_ADMIN");
+  const canImport = hasRole("SUPER_ADMIN");
   const canBackup = hasRole("SUPER_ADMIN");
   return `
     <div class="page">
@@ -4739,7 +4888,121 @@ function renderConfigs() {
   `;
 }
 
+function renderConfigsV2() {
+  return `
+    <div class="page">
+      ${renderConfigModuleTabs()}
+      ${state.activeConfigModule === "vehicles" ? renderVehicleConfigModule() : renderPartConfigModule()}
+    </div>
+  `;
+}
+
+function renderConfigModuleTabs() {
+  const active = state.activeConfigModule === "vehicles" ? "vehicles" : "parts";
+  return `
+    <div class="toolbar">
+      <div class="status-toggle-group">
+        <button class="status-toggle ${active === "parts" ? "teal" : "primary"}" type="button" data-action="set-config-module" data-module="parts" aria-pressed="${active === "parts" ? "true" : "false"}">配件配置</button>
+        <button class="status-toggle ${active === "vehicles" ? "teal" : "primary"}" type="button" data-action="set-config-module" data-module="vehicles" aria-pressed="${active === "vehicles" ? "true" : "false"}">整车配置</button>
+      </div>
+    </div>
+  `;
+}
+
+function renderPartConfigModule() {
+  const items = filterRows(state.data.configItems, state.search.configItems, [
+    "category", "subCategory", "itemName", "itemCode", "inputType"
+  ]);
+  const values = filterRows(state.data.configValues, state.search.configValues, [
+    "valueLabel", "valueCode", "remark"
+  ]);
+  const selectedItem = state.data.configItems.find(item => item.id === state.selectedConfigItemId);
+
+  return `
+    ${renderToolbar(null, "", null, "", null, {
+      searches: [
+        { key: "configItems", placeholder: "搜索配件配置项" },
+        { key: "configValues", placeholder: "搜索配件配置值" }
+      ],
+      exportType: false,
+      actions: [
+        hasPermission("config:write") ? `<button class="btn btn-primary" type="button" data-action="create" data-kind="configItem">${icon("plus")}新增配置项</button>` : "",
+        hasPermission("config:write") ? `<button class="btn" type="button" data-action="create" data-kind="configValue">${icon("plus")}新增配置值</button>` : ""
+      ]
+    })}
+    <section class="config-layout">
+      <div class="config-pane config-items-pane">
+        ${renderSurface("配件配置项", `
+          <div class="config-list">
+            ${items.length ? items.map(renderConfigItemCard).join("") : emptyState("暂无配件配置项")}
+          </div>
+        `)}
+      </div>
+      <div class="config-pane config-values-pane">
+        ${renderSurface(selectedItem ? `配件配置值 · ${escapeHtml(selectedItem.itemName || "")}` : "配件配置值", `
+          ${selectedItem ? `<div class="helper">当前配置项：${escapeHtml(selectedItem.category || "-")} / ${escapeHtml(selectedItem.subCategory || "-")}</div>` : ""}
+          ${renderTable([
+            { label: "显示值", key: "valueLabel" },
+            { label: "编码", key: "valueCode" },
+            { label: "默认", html: true, render: row => row.isDefault ? badge("默认", "teal") : badge("普通", "primary") },
+            { label: "排序", key: "sortOrder" },
+            { label: "操作", html: true, render: row => rowActions("configValue", row, ["delete"]) }
+          ], values)}
+        `)}
+      </div>
+    </section>
+  `;
+}
+
+function renderVehicleConfigModule() {
+  const items = filterRows(state.data.vehicleConfigItems, state.search.vehicleConfigItems, [
+    "specificationModel", "remark"
+  ]);
+  const values = filterRows(state.data.vehicleConfigValues, state.search.vehicleConfigValues, [
+    "configItemName", "configItemLabel", "configValueLabel", "configValueCode", "remark"
+  ]);
+  const selectedItem = state.data.vehicleConfigItems.find(item => item.id === state.selectedVehicleConfigItemId);
+
+  return `
+    ${renderToolbar(null, "", null, "", null, {
+      searches: [
+        { key: "vehicleConfigItems", placeholder: "搜索规格型号" },
+        { key: "vehicleConfigValues", placeholder: "搜索整车配置值" }
+      ],
+      exportType: false,
+      actions: [
+        hasPermission("config:write") ? `<button class="btn btn-primary" type="button" data-action="create" data-kind="vehicleConfigItem">${icon("plus")}新增规格型号</button>` : "",
+        hasPermission("config:write") ? `<button class="btn" type="button" data-action="create" data-kind="vehicleConfigValue">${icon("plus")}新增整车配置值</button>` : ""
+      ]
+    })}
+    <section class="config-layout">
+      <div class="config-pane config-items-pane vehicle-config-items-pane">
+        ${renderSurface("整车配置项", `
+          <div class="config-list">
+            ${items.length ? items.map(renderVehicleConfigItemCard).join("") : emptyState("暂无整车规格型号")}
+          </div>
+        `)}
+      </div>
+      <div class="config-pane config-values-pane vehicle-config-values-pane">
+        ${renderSurface(selectedItem ? `整车配置值 · ${escapeHtml(selectedItem.specificationModel || "")}` : "整车配置值", `
+          ${selectedItem ? `<div class="helper">当前规格型号：${escapeHtml(selectedItem.specificationModel || "-")}</div>` : ""}
+          ${renderTable([
+            { label: "车辆部位配置项", html: true, render: row => escapeHtml(row.configItemLabel || row.configItemName || "-") },
+            { label: "默认配置值", key: "configValueLabel" },
+            { label: "编码", key: "configValueCode" },
+            { label: "排序", key: "sortOrder" },
+            { label: "操作", html: true, render: row => rowActions("vehicleConfigValue", row, ["edit", "delete"]) }
+          ], values)}
+        `)}
+      </div>
+    </section>
+  `;
+}
+
 function renderUsers() {
+  if (!hasRole("SUPER_ADMIN")) {
+    return `<div class="page">${renderSurface("用户管理", emptyState("当前账号无权访问用户管理"))}</div>`;
+  }
   const rows = filterRows(state.data.users, state.search.users, [
     "username", "roles", "jobTag"
   ]);
@@ -5203,6 +5466,15 @@ function repairFilterControls() {
   `;
 }
 
+function purchaseOrderFilterControls() {
+  const filters = state.filters.purchases || {};
+  return `
+    <div class="filter-row">
+      ${filterButtonGroup("purchases", "resourceType", filters.resourceType || "", "入库类型", "全部订单", purchaseResourceTypeOptions())}
+    </div>
+  `;
+}
+
 function filterButtonGroup(key, name, value, label, placeholder, options) {
   const normalizedOptions = [{ value: "", label: placeholder }, ...(options || [])];
   return `
@@ -5516,10 +5788,10 @@ function listEmptyStateMeta(kind) {
       permission: "stock:adjust"
     },
     purchaseOrder: {
-      title: "暂无采购订单",
+      title: "暂无入库订单",
       message: "新增采购后，可以同步跟踪收货状态和采购成本。",
       actionKind: "purchaseOrder",
-      actionLabel: "新增配件采购",
+      actionLabel: "新增入库订单",
       permission: "stock:adjust"
     },
     stocktaking: {
@@ -5802,6 +6074,31 @@ function renderConfigItemCard(item) {
         <button class="btn btn-sm" type="button" data-action="select-config-item" data-id="${escapeAttr(item.id)}">${icon("eye")}值列表</button>
         ${hasPermission("config:write") ? `<button class="btn btn-sm" type="button" data-action="edit" data-kind="configItem" data-id="${escapeAttr(item.id)}">${icon("edit")}编辑</button>` : ""}
         ${hasPermission("config:write") ? `<button class="btn btn-sm btn-danger" type="button" data-action="delete" data-kind="configItem" data-id="${escapeAttr(item.id)}">${icon("trash")}删除</button>` : ""}
+      </div>
+    </article>
+  `;
+}
+
+function renderVehicleConfigItemCard(item) {
+  const active = item.id === state.selectedVehicleConfigItemId;
+  return `
+    <article class="config-item is-selectable${active ? " is-active" : ""}"${renderSelectableAttrs({
+      action: "select-vehicle-config-item",
+      data: { id: item.id },
+      active,
+      label: `查看规格型号 ${item.specificationModel || item.id} 的默认配置`
+    })}>
+      <div class="config-item-head">
+        <div>
+          <div class="config-item-title">${escapeHtml(item.specificationModel || "-")}</div>
+          <div class="helper">${escapeHtml(item.remark || "整车默认配置模板")}</div>
+        </div>
+        ${badge("规格型号", "teal")}
+      </div>
+      <div class="toolbar-actions">
+        <button class="btn btn-sm" type="button" data-action="select-vehicle-config-item" data-id="${escapeAttr(item.id)}">${icon("eye")}值列表</button>
+        ${hasPermission("config:write") ? `<button class="btn btn-sm" type="button" data-action="edit" data-kind="vehicleConfigItem" data-id="${escapeAttr(item.id)}">${icon("edit")}编辑</button>` : ""}
+        ${hasPermission("config:write") ? `<button class="btn btn-sm btn-danger" type="button" data-action="delete" data-kind="vehicleConfigItem" data-id="${escapeAttr(item.id)}">${icon("trash")}删除</button>` : ""}
       </div>
     </article>
   `;
@@ -6207,33 +6504,44 @@ function renderConfigSelectionEditor(item) {
 
 function renderConfigSelectionRow(row, index) {
   const itemOptions = configItemOptions();
-  const valueOptions = row.configItemId ? configValueOptionsForItem(row.configItemId) : [];
+  const effectiveConfigItemId = effectiveConfigSelectionValue(row, "configItemId");
+  const valueOptions = effectiveConfigItemId ? configValueOptionsForItem(effectiveConfigItemId) : [];
   return `
     <div class="config-selection-row" data-config-index="${index}">
-      ${renderConfigCombo("配置类型", `configItemId-${index}`, itemOptions, row.configItemId, "configItemId", index)}
-      ${renderConfigCombo("具体配置", `configValueId-${index}`, valueOptions, row.configValueId, "configValueId", index)}
+      ${renderConfigCombo("配置类型", `configItemId-${index}`, itemOptions, row.configItemId, "configItemId", index, row)}
+      ${renderConfigCombo("具体配置", `configValueId-${index}`, valueOptions, row.configValueId, "configValueId", index, row)}
       <button class="btn btn-sm btn-danger" type="button" data-config-action="remove" data-config-index="${index}">${icon("trash")}移除</button>
     </div>
   `;
 }
 
-function renderConfigCombo(label, name, options, selectedValue, fieldName, index) {
+function renderConfigCombo(label, name, options, selectedValue, fieldName, index, row = {}) {
   const selected = findOptionByValue(options, selectedValue);
   const displayValue = selected?.label || "";
   const hiddenValue = selected?.value || "";
+  const prefillValue = row.__prefillValues?.[fieldName];
+  const prefillAttrs = renderConfigSelectionPrefillAttrs(prefillValue, options);
+  const placeholder = row.__placeholders?.[fieldName] || (options.length ? "请选择或输入筛选" : "请先选择配置类型");
   return `
     <label class="field">
       <span>${escapeHtml(label)}</span>
       <div class="combo${options.length ? "" : " is-empty"}" data-combo data-name="${escapeAttr(name)}" data-required="false">
-        <input class="combo-input" data-combo-input type="text" value="${escapeAttr(displayValue)}" placeholder="${escapeAttr(options.length ? "请选择或输入筛选" : "请先选择配置类型")}" autocomplete="off">
+        <input class="combo-input" data-combo-input type="text" value="${escapeAttr(displayValue)}" placeholder="${escapeAttr(placeholder)}" autocomplete="off">
         <button class="combo-toggle" type="button" data-combo-toggle aria-label="展开选项"></button>
-        <input name="${escapeAttr(name)}" type="hidden" data-config-field="${escapeAttr(fieldName)}" data-config-index="${index}" value="${escapeAttr(hiddenValue)}" data-selected-label="${escapeAttr(displayValue)}">
+        <input name="${escapeAttr(name)}" type="hidden" data-config-field="${escapeAttr(fieldName)}" data-config-index="${index}" value="${escapeAttr(hiddenValue)}" data-selected-label="${escapeAttr(displayValue)}"${prefillAttrs}>
         <div class="combo-menu" data-combo-menu>
           ${renderComboOptions(options, hiddenValue)}
         </div>
       </div>
     </label>
   `;
+}
+
+function renderConfigSelectionPrefillAttrs(value, options = []) {
+  if (value === undefined || value === null || value === "") return "";
+  const option = findOptionByValue(options, value);
+  const label = option?.label ?? value;
+  return ` data-prefill-value="${escapeAttr(value)}" data-prefill-label="${escapeAttr(label)}"`;
 }
 
 function renderOptions(options, selectedValue) {
@@ -6634,18 +6942,56 @@ function defaultEntity(kind, context = {}) {
     const selectedItem = state.data.configItems.find(item => Number(item.id) === Number(state.selectedConfigItemId));
     setPrefill(entity, "configItemId", state.selectedConfigItemId, selectedItem ? `预填：${configItemLabel(selectedItem)}` : undefined);
   }
+  if (kind === "vehicleConfigValue" && state.selectedVehicleConfigItemId) {
+    const selectedItem = state.data.vehicleConfigItems.find(item => Number(item.id) === Number(state.selectedVehicleConfigItemId));
+    setPrefill(entity, "vehicleConfigItemId", state.selectedVehicleConfigItemId, selectedItem ? `预填：${selectedItem.specificationModel || ""}` : undefined);
+  }
   return entity;
 }
 
 function purchaseOrderDefaults(context = {}) {
-  const entity = { resourceType: "PART", quantity: 1, unit: "件", status: "ORDERED", orderDate: todayInputDate() };
+  const resourceType = String(context.resourceType || "PART").toUpperCase() === "MACHINE" ? "MACHINE" : "PART";
+  const entity = resourceType === "MACHINE"
+    ? vehicleInboundDefaultsForModel(context)
+    : { quantity: 1, unit: "件", status: "ORDERED", orderDate: todayInputDate() };
+  setPrefill(entity, "resourceType", resourceType, `默认：${resourceType === "MACHINE" ? "整车入库" : "配件入库"}`);
   if (context.supplierId) {
     const supplier = findEntity("supplier", Number(context.supplierId || 0));
     setPrefill(entity, "supplierId", context.supplierId, supplier?.id ? `预填：${entityDisplayName("supplier", supplier)}` : undefined);
   }
-  if (context.configItemId) setPrefill(entity, "configItemId", context.configItemId);
-  if (context.configValueId) setPrefill(entity, "configValueId", context.configValueId);
+  if (resourceType === "PART") {
+    if (context.configItemId) setPrefill(entity, "configItemId", context.configItemId);
+    if (context.configValueId) setPrefill(entity, "configValueId", context.configValueId);
+  }
   return entity;
+}
+
+function preparePurchaseOrderModalItem(item = {}) {
+  if (!item.resourceType && !Object.prototype.hasOwnProperty.call(item.__prefillValues || {}, "resourceType")) {
+    setPrefill(item, "resourceType", "PART", "默认：配件入库");
+  }
+  if (purchaseOrderResourceType(item) !== "MACHINE") return item;
+  item.vehicleProductNumber ??= item.resourceCode || "";
+  item.name ??= item.resourceName || "";
+  item.supplier ??= item.supplierName || "";
+  item.inventoryCount ??= item.quantity || 1;
+  item.remarks ??= item.remark || "";
+  if (!item.inboundDate && item.orderDate) {
+    item.inboundDate = `${item.orderDate}T00:00`;
+  }
+  clearPrefill(item, "salePrice");
+  clearPrefill(item, "purchasePrice");
+  const existingSettlement = item.settlementPrice ?? item.unitPrice ?? (item.totalAmount && item.quantity ? Number(item.totalAmount) / Number(item.quantity) : "");
+  setPrefill(item, "settlementPrice", existingSettlement, existingSettlement !== "" ? `预填：${money(existingSettlement)}` : undefined);
+  if (item.purchasePrice) {
+    setPrefill(item, "purchasePrice", item.purchasePrice, `预填：${money(item.purchasePrice)}`);
+  }
+  item.__placeholders = {
+    ...vehicleInboundDefaultsForModel(item).__placeholders,
+    ...(item.__placeholders || {})
+  };
+  ensureConfigSelections(item);
+  return item;
 }
 
 function setPrefill(entity, name, value, placeholder) {
@@ -6681,6 +7027,88 @@ function ensureConfigSelections(item = state.modal?.item || {}) {
   return item.configSelections;
 }
 
+function effectiveConfigSelectionValue(row = {}, name) {
+  const value = row?.[name];
+  if (value !== undefined && value !== null && value !== "") return value;
+  if (Object.prototype.hasOwnProperty.call(row?.__prefillValues || {}, name)) {
+    return row.__prefillValues[name];
+  }
+  return value;
+}
+
+function clearConfigSelectionPrefill(row = {}, name) {
+  if (row.__prefillValues) {
+    delete row.__prefillValues[name];
+  }
+  if (row.__placeholders) {
+    delete row.__placeholders[name];
+  }
+  row.__fromVehicleTemplate = false;
+  return row;
+}
+
+async function prepareVehicleInboundTemplate(item = state.modal?.item || {}) {
+  const specificationModel = String(effectiveFieldValue(item, "specificationModel") || "").trim();
+  if (!specificationModel) {
+    clearVehicleTemplateSelections(item);
+    return;
+  }
+  const matchedTemplate = vehicleConfigItemBySpecificationModel(specificationModel);
+  if (!matchedTemplate) {
+    clearVehicleTemplateSelections(item);
+    return;
+  }
+  const canonicalSpecificationModel = String(matchedTemplate.specificationModel || specificationModel).trim();
+  const normalized = normalizeText(canonicalSpecificationModel);
+  if (item.__vehicleConfigTemplateSpec === normalized) return;
+  const params = new URLSearchParams({ specificationModel: canonicalSpecificationModel });
+  const template = await api(`${endpoints.vehicleConfigItem.templateBySpecification}?${params.toString()}`);
+  item.__vehicleConfigTemplateSpec = normalized;
+  item.__vehicleConfigTemplate = template;
+  applyVehicleConfigTemplateSelections(item, template?.values || []);
+}
+
+function vehicleConfigItemBySpecificationModel(specificationModel) {
+  const normalized = normalizeText(specificationModel);
+  if (!normalized) return null;
+  return state.data.vehicleConfigItems.find(item => normalizeText(item.specificationModel) === normalized) || null;
+}
+
+function clearVehicleTemplateSelections(item = {}) {
+  if (!item.__vehicleConfigTemplateSpec && !Array.isArray(item.configSelections)) return;
+  item.configSelections = (item.configSelections || []).filter(row => !row.__fromVehicleTemplate);
+  item.__vehicleConfigTemplateSpec = "";
+  item.__vehicleConfigTemplate = null;
+  if (!item.configSelections.length) {
+    item.configSelections = [{ configItemId: "", configValueId: "" }];
+  }
+}
+
+function applyVehicleConfigTemplateSelections(item = {}, values = []) {
+  const existing = Array.isArray(item.configSelections) ? item.configSelections : [];
+  const manualRows = existing.filter(row => {
+    if (row.__fromVehicleTemplate) return false;
+    return Boolean(row.configItemId || row.configValueId);
+  });
+  const templateRows = values.map(value => ({
+    configItemId: "",
+    configValueId: "",
+    __fromVehicleTemplate: true,
+    __prefillValues: {
+      configItemId: value.configItemId,
+      configValueId: value.configValueId
+    },
+    __placeholders: {
+      configItemId: `默认：${value.configItemLabel || value.configItemName || value.configItemId}`,
+      configValueId: `默认：${value.configValueLabel || value.configValueId}`
+    }
+  }));
+  item.configSelections = [...templateRows, ...manualRows];
+  if (!item.configSelections.length) {
+    item.configSelections = [{ configItemId: "", configValueId: "" }];
+  }
+}
+
 function vehicleModelDefaults(powerType) {
   const entity = {};
   setPrefill(entity, "machineType", normalizePowerType(powerType), `预填：${normalizePowerType(powerType)}`);
@@ -6703,7 +7131,6 @@ function vehicleInboundDefaultsForModel(group = {}) {
       warrantyCardNumber: "请输入保修卡号",
       applicationNumber: "可填写样机申请单号",
       materialNumber: "可填写物料号",
-      settlementPrice: "请输入此辆整车结算价",
       remarks: "可记录仓储车季返、特殊说明或原表备注"
     }
   };
@@ -6714,12 +7141,13 @@ function vehicleInboundDefaultsForModel(group = {}) {
   setPrefill(entity, "supplier", group.supplier || "", group.supplier ? `预填：${group.supplier}` : undefined);
   setPrefill(entity, "warehouseName", group.warehouseName || "", group.warehouseName ? `预填：${group.warehouseName}` : undefined);
   setPrefill(entity, "purchasePrice", group.purchasePrice || "", group.purchasePrice ? `预填：${money(group.purchasePrice)}` : undefined);
-  setPrefill(entity, "salePrice", group.salePrice || "", group.salePrice ? `预填：${money(group.salePrice)}` : undefined);
+  setPrefill(entity, "settlementPrice", group.settlementPrice || "", group.settlementPrice ? `预填：${money(group.settlementPrice)}` : undefined);
   if (isManualForklift(group.machineType)) {
     entity.__placeholders = {
       ...entity.__placeholders,
       name: group.name ? `预填：${group.name}` : "请输入车型名称",
-      specificationModel: group.specificationModel ? `预填：${group.specificationModel}` : "请输入规格型号"
+      specificationModel: group.specificationModel ? `预填：${group.specificationModel}` : "请输入规格型号",
+      settlementPrice: "请输入此辆整车结算价"
     };
   }
   return entity;
@@ -7027,10 +7455,38 @@ function syncStockTransferResource(form, resourceId) {
 }
 
 function syncPurchaseResourceDefaults(form) {
+  if (purchaseOrderResourceType() !== "PART") return;
   const meta = selectedComboMeta(form, "configValueId");
   if (!meta) return;
   if (meta.unit && !String(form.elements.unit?.value || "").trim()) {
     setFormFieldValue(form, "unit", meta.unit, false);
+  }
+}
+
+function applyPurchaseOrderResourceMode(form, value) {
+  const type = String(value || "PART").toUpperCase() === "MACHINE" ? "MACHINE" : "PART";
+  state.modal.item.resourceType = type;
+  clearPrefill(state.modal.item, "resourceType");
+  if (type === "MACHINE") {
+    state.modal.item.configItemId = null;
+    state.modal.item.configValueId = null;
+    state.modal.item.purchasePrice = null;
+    state.modal.item.salePrice = null;
+    state.modal.item.settlementPrice = null;
+    state.modal.item.unitPrice = null;
+    state.modal.item.totalAmount = null;
+    state.modal.item.__placeholders = {
+      ...vehicleInboundDefaultsForModel(state.modal.item).__placeholders,
+      ...(state.modal.item.__placeholders || {})
+    };
+    ensureConfigSelections(state.modal.item);
+    return;
+  }
+  state.modal.item.resourceCode = null;
+  state.modal.item.resourceName = null;
+  state.modal.item.specificationModel = null;
+  if (!state.modal.item.unit || state.modal.item.unit === "台") {
+    state.modal.item.unit = "件";
   }
 }
 
@@ -7095,17 +7551,41 @@ function formatDecimal(value) {
   return amount ? amount.toFixed(2) : "0.00";
 }
 
+function datePart(value) {
+  const text = String(value || "").trim();
+  return text.length >= 10 ? text.slice(0, 10) : null;
+}
+
 function enrichPurchaseOrderPayload(payload, form) {
-  payload.resourceType = "PART";
-  const meta = selectedComboMeta(form, "configValueId");
-  if (meta) {
-    payload.resourceCode = meta.valueCode || null;
-    payload.resourceName = meta.valueLabel || null;
-    payload.specificationModel = meta.itemLabel || null;
-    if (!payload.unit && meta.unit) {
-      payload.unit = meta.unit;
+  const type = String(payload.resourceType || "PART").toUpperCase() === "MACHINE" ? "MACHINE" : "PART";
+  payload.resourceType = type;
+  if (type === "PART") {
+    const meta = selectedComboMeta(form, "configValueId");
+    if (meta) {
+      payload.resourceCode = meta.valueCode || null;
+      payload.resourceName = meta.valueLabel || null;
+      payload.specificationModel = meta.itemLabel || null;
+      if (!payload.unit && meta.unit) {
+        payload.unit = meta.unit;
+      }
     }
+    return;
   }
+  payload.configItemId = null;
+  payload.configValueId = null;
+  payload.resourceCode = payload.vehicleProductNumber || payload.resourceCode || null;
+  payload.resourceName = payload.name || payload.resourceName || null;
+  payload.supplierName = payload.supplier || payload.supplierName || null;
+  payload.quantity = Number(payload.inventoryCount || payload.quantity || 1);
+  payload.unit = "台";
+  const machineSettlementPrice = payload.settlementPrice || payload.purchasePrice || payload.unitPrice || null;
+  payload.unitPrice = machineSettlementPrice;
+  if (!payload.totalAmount && machineSettlementPrice) {
+    payload.totalAmount = formatDecimal(amountValue(machineSettlementPrice) * Math.max(1, Number(payload.quantity || 1)));
+  }
+  payload.orderDate = payload.orderDate || datePart(payload.inboundDate) || todayInputDate();
+  payload.status = payload.status || "RECEIVED";
+  payload.remark = payload.remarks || payload.remark || null;
 }
 
 function selectedComboMeta(form, name) {
@@ -7200,13 +7680,49 @@ function vehicleConfigChangeModeLabel(mode) {
   }[normalizeVehicleConfigChangeMode(mode)] || "车辆配置变更";
 }
 
+function purchaseOrderResourceType(item = state.modal?.item || {}) {
+  const normalized = String(fieldOrPrefillValue(item, "resourceType") || "PART").toUpperCase();
+  return normalized === "MACHINE" ? "MACHINE" : "PART";
+}
+
+function usesVehicleInboundConfigEditor(kind, item = state.modal?.item || {}) {
+  return kind === "vehicleInbound" || (kind === "purchaseOrder" && purchaseOrderResourceType(item) === "MACHINE");
+}
+
+function vehicleInboundFormFields(item = state.modal?.item || {}) {
+  const baseFields = fields.vehicleInbound.filter(field => field.name !== "salePrice");
+  if (!isManualForklift(fieldOrPrefillValue(item, "machineType"))) {
+    return baseFields;
+  }
+  const hiddenNames = new Set(["vehicleProductNumber", "engineNumber", "frameNumber", "warrantyCardNumber", "machineType"]);
+  return [
+    ...baseFields.filter(field => !hiddenNames.has(field.name)),
+    { name: "machineType", type: "hidden" }
+  ];
+}
+
 function getFields(kind, item = state.modal?.item || {}) {
-  if (kind === "vehicleInbound" && isManualForklift(fieldOrPrefillValue(item, "machineType"))) {
-    const hiddenNames = new Set(["vehicleProductNumber", "engineNumber", "frameNumber", "warrantyCardNumber", "machineType"]);
-    return [
-      ...fields.vehicleInbound.filter(field => !hiddenNames.has(field.name)),
-      { name: "machineType", type: "hidden" }
-    ];
+  if (kind === "purchaseOrder") {
+    const type = purchaseOrderResourceType(item);
+    if (type === "MACHINE") {
+      const resourceTypeField = fields.purchaseOrder.find(field => field.name === "resourceType");
+      const specificationField = fields.purchaseOrder.find(field => field.name === "specificationModel");
+      return [
+        ...(resourceTypeField ? [resourceTypeField] : []),
+        ...(specificationField ? [specificationField] : []),
+        ...vehicleInboundFormFields(item).filter(field => field.name !== "specificationModel")
+      ];
+    }
+    const partFields = new Set(["configItemId", "configValueId"]);
+    const machineFields = new Set(["resourceCode", "resourceName", "specificationModel"]);
+    return fields.purchaseOrder.filter(field => {
+      if (partFields.has(field.name)) return type === "PART";
+      if (machineFields.has(field.name)) return type === "MACHINE";
+      return true;
+    });
+  }
+  if (kind === "vehicleInbound") {
+    return vehicleInboundFormFields(item);
   }
   if (kind === "vehicleOutbound") {
     const customerMode = fieldOrPrefillValue(item, "customerMode") === "quickCreate" ? "quickCreate" : "existing";
@@ -7306,6 +7822,8 @@ function entityRows(kind) {
     repair: "repairs",
     configItem: "configItems",
     configValue: "configValues",
+    vehicleConfigItem: "vehicleConfigItems",
+    vehicleConfigValue: "vehicleConfigValues",
     attachment: "attachments",
     importJob: "importJobs",
     user: "users"
@@ -7324,7 +7842,7 @@ function entityLabel(kind) {
     rental: "租赁记录",
     customer: "客户",
     supplier: "供应商",
-    purchaseOrder: "采购订单",
+    purchaseOrder: "入库订单",
     stocktaking: "盘点记录",
     warehouse: "仓库",
     stockTransfer: "库存调拨",
@@ -7332,6 +7850,8 @@ function entityLabel(kind) {
     repair: "维修记录",
     configItem: "配置项",
     configValue: "配置值",
+    vehicleConfigItem: "整车配置项",
+    vehicleConfigValue: "整车配置值",
     user: "用户"
   }[kind] || "数据";
 }
@@ -7354,6 +7874,8 @@ function entityDisplayName(kind, item = {}) {
     repair: item.vehicleNumber || item.customerName || item.id,
     configItem: item.itemName || item.itemCode || item.id,
     configValue: item.valueLabel || item.valueCode || item.id,
+    vehicleConfigItem: item.specificationModel || item.id,
+    vehicleConfigValue: item.configValueLabel || item.configItemLabel || item.id,
     user: item.username || item.id
   }[kind];
   return display(value || item.id || "-");
@@ -7386,7 +7908,7 @@ function modalTitle(kind, item) {
     rental: "租赁记录",
     outboundOrder: "出库订单",
     supplier: "采购供应商",
-    purchaseOrder: "采购订单",
+    purchaseOrder: "入库订单",
     purchaseFreight: "修改运费",
     stocktaking: "库存盘点",
     warehouse: "仓库",
@@ -7398,6 +7920,8 @@ function modalTitle(kind, item) {
     repair: "维修记录",
     configItem: "配置项",
     configValue: "配置值",
+    vehicleConfigItem: "整车配置项",
+    vehicleConfigValue: "整车配置值",
     vehicleStock: item?.direction === "outbound" ? "整车出库" : "整车入库",
     partStock: item?.direction === "outbound" ? "配件出库" : "配件入库",
     partReplace: "配件替换",
@@ -7432,7 +7956,7 @@ function modalSubtitle(kind) {
     rental: "选择具体在库车号，记录租赁去向、租赁价格和归还状态。",
     outboundOrder: "维护车款结清、报销售、发票申请和订单备注。",
     supplier: "维护采购供应商、联系人、税号、账号和备注。",
-    purchaseOrder: "从配置字典选择配置项和配置值，自动带入配件名称、编码与规格信息。",
+    purchaseOrder: "配件入库可从配置字典带入名称、编码与规格；整车入库会创建库存车辆并按规格型号带入结构化配置。",
     purchaseFreight: "运费默认为 0；只在实际产生运费时修改。",
     stocktaking: "先创建盘点草稿；确认入账后才会同步库存数量。",
     warehouse: "维护仓库编码、名称、类型和默认仓设置。",
@@ -7444,6 +7968,8 @@ function modalSubtitle(kind) {
     repair: "记录维修过程、费用与处理状态。",
     configItem: "定义可维护的车辆配置项。",
     configValue: "为当前配置项添加可选值。",
+    vehicleConfigItem: "维护整车规格型号，用于整车采购和车型入库时拉取默认配置。",
+    vehicleConfigValue: "从配件配置项和值中选择车辆各部分默认配置。",
     vehicleStock: "调整已有整车的库存数量。",
     partStock: "入库只调整库存；出库会选择客户并生成出库订单。",
     partReplace: "选择车辆上的旧配件，并用同类型库存配件替换；拆下件会自动入库。",
@@ -7464,6 +7990,24 @@ function configItemOptions() {
     value: item.id,
     label: configItemLabel(item)
   }));
+}
+
+function vehicleConfigItemOptions() {
+  return [...state.data.vehicleConfigItems]
+    .sort((a, b) => [
+      Number(a.sortOrder || 0) - Number(b.sortOrder || 0),
+      String(a.specificationModel || "").localeCompare(String(b.specificationModel || ""), "zh-CN")
+    ].find(result => result !== 0) || 0)
+    .map(item => ({
+      value: item.id,
+      label: item.specificationModel || "-"
+    }));
+}
+
+function vehicleConfigValueOptions() {
+  const configItemId = effectiveFieldValue(state.modal?.item || {}, "configItemId");
+  if (!configItemId) return [];
+  return configValueOptionsForItem(configItemId);
 }
 
 function compareConfigItems(a, b) {
@@ -7903,6 +8447,13 @@ function supplierOptions() {
   }));
 }
 
+function purchaseResourceTypeOptions() {
+  return [
+    { value: "PART", label: "配件订单" },
+    { value: "MACHINE", label: "整车订单" }
+  ];
+}
+
 function purchaseStatusOptions() {
   return [
     { value: "ORDERED", label: "已下单" },
@@ -7916,6 +8467,19 @@ function purchaseConfigValueOptions() {
   const configItemId = effectiveFieldValue(state.modal?.item || {}, "configItemId");
   if (!configItemId) return [];
   return configValueOptionsForItem(configItemId);
+}
+
+function purchaseSpecificationModelOptions() {
+  return [...state.data.vehicleConfigItems]
+    .sort((left, right) => [
+      Number(left.sortOrder || 0) - Number(right.sortOrder || 0),
+      String(left.specificationModel || "").localeCompare(String(right.specificationModel || ""), "zh-CN")
+    ].find(result => result !== 0) || 0)
+    .map(item => ({
+      value: item.specificationModel || "",
+      label: item.specificationModel || "-"
+    }))
+    .filter(option => option.value);
 }
 
 function stocktakingResourceTypeOptions() {
@@ -8196,9 +8760,7 @@ function defaultPermissionsForRoles(roles = []) {
       "config:write",
       "replace:write",
       "stock:adjust",
-      "log:read",
-      "user:read",
-      "user:write"
+      "log:read"
     ],
     USER: [
       "vehicle:write",
@@ -8215,8 +8777,9 @@ function defaultPermissionsForRoles(roles = []) {
 function canAccessTab(tab) {
   if (tab === "stockMovements") return false;
   const rolesByTab = {
-    imports: ["ADMIN", "SUPER_ADMIN"],
-    maintenance: ["ADMIN", "SUPER_ADMIN"]
+    imports: ["SUPER_ADMIN"],
+    maintenance: ["SUPER_ADMIN"],
+    users: ["SUPER_ADMIN"]
   };
   const permissionsByTab = {
     modifications: "replace:write",
@@ -8233,7 +8796,6 @@ function canAccessTab(tab) {
     users: "user:read",
   };
   if (rolesByTab[tab] && !hasAnyRole(...rolesByTab[tab])) return false;
-  if (tab === "maintenance" && !hasAnyRole("ADMIN", "SUPER_ADMIN")) return false;
   return !permissionsByTab[tab] || hasPermission(permissionsByTab[tab]);
 }
 
@@ -8249,6 +8811,8 @@ function canWriteEntity(kind) {
     stocktaking: "stock:adjust",
     configItem: "config:write",
     configValue: "config:write",
+    vehicleConfigItem: "config:write",
+    vehicleConfigValue: "config:write",
     customer: "vehicle:write"
   };
   return !permissionsByKind[kind] || hasPermission(permissionsByKind[kind]);

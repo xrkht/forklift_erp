@@ -75,7 +75,7 @@
           <button class="nav-item" data-tab="vehicles">车辆库存</button>
           <button class="nav-item" data-tab="parts">配件库存</button>
           <button class="nav-item" data-tab="modifications" data-permissions="replace:write">改装工单</button>
-          <button class="nav-item" data-tab="outboundOrders" data-permissions="stock:adjust">订单列表</button>
+          <button class="nav-item" data-tab="outboundOrders" data-permissions="stock:adjust">出库订单</button>
           <button class="nav-item" data-tab="rentals" data-permissions="stock:adjust">租赁管理</button>
           <button class="nav-item" data-tab="warehouses" data-permissions="stock:adjust">仓库管理</button>
           <button class="nav-item" data-tab="repairs">维修记录</button>
@@ -85,7 +85,7 @@
           <div class="nav-group-title">客户与采购</div>
           <button class="nav-item" data-tab="customers" data-permissions="vehicle:write">客户列表</button>
           <button class="nav-item" data-tab="suppliers" data-permissions="stock:adjust">采购供应商</button>
-          <button class="nav-item" data-tab="purchases" data-permissions="stock:adjust">采购订单</button>
+          <button class="nav-item" data-tab="purchases" data-permissions="stock:adjust">入库订单</button>
           <button class="nav-item" data-tab="stocktakes" data-permissions="stock:adjust">库存盘点</button>
         </section>
 
@@ -103,8 +103,8 @@
         <section class="nav-group" data-nav-group>
           <div class="nav-group-title">系统设置</div>
           <button class="nav-item" data-tab="configs">配置字典</button>
-          <button class="nav-item" data-tab="users" data-permissions="user:read">用户管理</button>
-          <button class="nav-item" data-tab="maintenance" data-roles="ADMIN,SUPER_ADMIN">数据维护</button>
+          <button class="nav-item" data-tab="users" data-roles="SUPER_ADMIN">用户管理</button>
+          <button class="nav-item" data-tab="maintenance" data-roles="SUPER_ADMIN">数据维护</button>
         </section>
       </nav>
     </aside>

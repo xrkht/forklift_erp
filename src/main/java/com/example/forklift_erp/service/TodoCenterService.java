@@ -1,7 +1,7 @@
 package com.example.forklift_erp.service;
 
-import com.example.forklift_erp.constant.MachineStockStatuses;
-import com.example.forklift_erp.constant.RentalStatuses;
+import com.example.forklift_erp.constant.MachineStockStatus;
+import com.example.forklift_erp.constant.RentalStatus;
 import com.example.forklift_erp.dto.TodoCenterVO;
 import com.example.forklift_erp.entity.MachineInventory;
 import com.example.forklift_erp.entity.OutboundOrder;
@@ -81,9 +81,9 @@ public class TodoCenterService {
         dashboard.setPendingRepairCount(toSafeInt(repairRepository.countPendingTodos(includeLocked)));
         List<RepairRecord> pendingRepairs = repairRepository.findPendingTodos(includeLocked, queuePage());
 
-        dashboard.setActiveRentalCount(toSafeInt(rentalRepository.countByStatus(RentalStatuses.ACTIVE)));
-        dashboard.setRentalDueCount(toSafeInt(rentalRepository.countDueSoonTodos(RentalStatuses.ACTIVE, rentalDueCutoff)));
-        List<RentalRecord> dueRentals = rentalRepository.findDueSoonTodos(RentalStatuses.ACTIVE, rentalDueCutoff, queuePage());
+        dashboard.setActiveRentalCount(toSafeInt(rentalRepository.countByStatus(RentalStatus.ACTIVE.code())));
+        dashboard.setRentalDueCount(toSafeInt(rentalRepository.countDueSoonTodos(RentalStatus.ACTIVE.code(), rentalDueCutoff)));
+        List<RentalRecord> dueRentals = rentalRepository.findDueSoonTodos(RentalStatus.ACTIVE.code(), rentalDueCutoff, queuePage());
 
         dashboard.setLowStockCount(toSafeInt(partRepository.countLowStockTodos(LOW_PART_THRESHOLD, includeLocked)));
         List<PartInventory> lowStockParts = partRepository.findLowStockTodos(LOW_PART_THRESHOLD, includeLocked, queuePage());
@@ -91,14 +91,14 @@ public class TodoCenterService {
         dashboard.setInStockVehicleCount(toSafeInt(machineRepository.countInStockVehicleTodos(includeLocked)));
         dashboard.setLongIdleVehicleCount(toSafeInt(machineRepository.countLongIdleVehicleTodos(
                 idleCutoff,
-                MachineStockStatuses.IN_STOCK,
-                RentalStatuses.ACTIVE,
+                MachineStockStatus.IN_STOCK.code(),
+                RentalStatus.ACTIVE.code(),
                 includeLocked
         )));
         List<MachineInventory> longIdleVehicles = machineRepository.findLongIdleVehicleTodos(
                 idleCutoff,
-                MachineStockStatuses.IN_STOCK,
-                RentalStatuses.ACTIVE,
+                MachineStockStatus.IN_STOCK.code(),
+                RentalStatus.ACTIVE.code(),
                 includeLocked,
                 queuePage()
         );
@@ -302,7 +302,7 @@ public class TodoCenterService {
                 "warn",
                 "MACHINE",
                 machine.getId(),
-                amount(firstAmount(machine.getPurchasePrice(), machine.getSettlementPrice())),
+                amount(firstAmount(machine.getSettlementPrice(), machine.getPurchasePrice())),
                 null,
                 stockSince
         );

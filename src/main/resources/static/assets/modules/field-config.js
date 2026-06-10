@@ -33,6 +33,7 @@ export function createFields(deps) {
     jobTagOptions,
     rentalStatusOptions,
     purchaseConfigValueOptions,
+    purchaseSpecificationModelOptions,
     purchaseStatusOptions,
     stocktakingResourceTypeOptions,
     stocktakingResourceOptions,
@@ -44,7 +45,9 @@ export function createFields(deps) {
     attachmentResourceOptions,
     attachmentCategoryOptions,
     attachmentUploadCategoryOptions,
-    vehicleConfigChangeModeOptions
+    vehicleConfigChangeModeOptions,
+    vehicleConfigItemOptions,
+    vehicleConfigValueOptions
   } = deps;
 
   return {
@@ -56,7 +59,7 @@ export function createFields(deps) {
     { name: "applicationNumber", label: "样机申请单号", section: "入库信息" },
     { name: "materialNumber", label: "物料号", section: "入库信息" },
     { name: "name", label: "名称", required: true, section: "整机识别" },
-    { name: "specificationModel", label: "规格型号", required: true, section: "整机识别" },
+    { name: "specificationModel", label: "规格型号", type: "select", options: purchaseSpecificationModelOptions, allowCustom: true, required: true, section: "整机识别" },
     { name: "configuration", label: "配置", type: "textarea", span: 2, section: "整机识别" },
     { name: "machineType", label: "动力", type: "select", options: powerTypeOptions, allowCustom: true, section: "整机识别" },
     { name: "engineNumber", label: "发动机号", section: "整机识别" },
@@ -107,7 +110,6 @@ export function createFields(deps) {
     { name: "stockStatus", label: "库存状态", type: "select", options: stockStatusOptions(), defaultValue: "IN_STOCK", section: "价格库存" },
     { name: "purchasePrice", label: "采购价", type: "number", coerce: "decimal", step: "0.01", section: "价格库存" },
     { name: "settlementPrice", label: "结算价", type: "number", coerce: "decimal", step: "0.01", section: "价格库存" },
-    { name: "salePrice", label: "销售单价", type: "number", coerce: "decimal", step: "0.01", section: "价格库存" },
     { name: "inventoryCount", label: "库存数", type: "number", coerce: "int", step: "1", defaultValue: 1, section: "价格库存" },
     { name: "remarks", label: "备注", type: "textarea", span: 2, section: "销售与去向" }
   ],
@@ -158,6 +160,18 @@ export function createFields(deps) {
     { name: "valueLabel", label: "显示值", required: true },
     { name: "valueCode", label: "值编码" },
     { name: "isDefault", label: "默认值", type: "checkbox", coerce: "boolean" },
+    { name: "sortOrder", label: "排序", type: "number", coerce: "int", step: "1", defaultValue: 0 },
+    { name: "remark", label: "备注", type: "textarea", span: 2 }
+  ],
+  vehicleConfigItem: [
+    { name: "specificationModel", label: "规格型号", required: true },
+    { name: "sortOrder", label: "排序", type: "number", coerce: "int", step: "1", defaultValue: 0 },
+    { name: "remark", label: "备注", type: "textarea", span: 2 }
+  ],
+  vehicleConfigValue: [
+    { name: "vehicleConfigItemId", label: "所属规格型号", type: "select", coerce: "int", required: true, options: vehicleConfigItemOptions },
+    { name: "configItemId", label: "配置项", type: "select", coerce: "int", required: true, options: configItemOptions },
+    { name: "configValueId", label: "配置值", type: "select", coerce: "int", required: true, options: vehicleConfigValueOptions },
     { name: "sortOrder", label: "排序", type: "number", coerce: "int", step: "1", defaultValue: 0 },
     { name: "remark", label: "备注", type: "textarea", span: 2 }
   ],
@@ -249,10 +263,13 @@ export function createFields(deps) {
     { name: "remarks", label: "备注", type: "textarea", span: 2 }
   ],
   purchaseOrder: [
+    { name: "resourceType", label: "入库类型", type: "select", options: [{ value: "PART", label: "配件入库" }, { value: "MACHINE", label: "整车入库" }], defaultValue: "PART", section: "入库类型" },
+    { name: "specificationModel", label: "规格型号", type: "select", options: purchaseSpecificationModelOptions, allowCustom: true, required: true, section: "入库类型" },
     { name: "supplierId", label: "供应商", type: "select", coerce: "int", required: true, options: supplierOptions, section: "采购来源" },
-    { name: "resourceType", type: "hidden", defaultValue: "PART" },
     { name: "configItemId", label: "配置项", type: "select", coerce: "int", required: true, options: configItemOptions, section: "配件入库" },
     { name: "configValueId", label: "配置值/配件名称", type: "select", coerce: "int", required: true, options: purchaseConfigValueOptions, section: "配件入库" },
+    { name: "resourceCode", label: "整车编码", section: "整车入库" },
+    { name: "resourceName", label: "整车名称", section: "整车入库" },
     { name: "quantity", label: "采购数量", type: "number", coerce: "int", step: "1", required: true, defaultValue: 1, section: "金额数量" },
     { name: "unit", label: "单位", defaultValue: "件", section: "金额数量" },
     { name: "unitPrice", label: "单价", type: "number", coerce: "decimal", step: "0.01", section: "金额数量" },

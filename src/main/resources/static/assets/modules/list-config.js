@@ -37,7 +37,19 @@ export const pagedTabs = {
   rentals: { endpoint: endpoints.rental.list, dataKey: "rentals", searchKey: "rentals", permission: "stock:adjust", sortDesc: true },
   customers: { endpoint: endpoints.customer.list, dataKey: "customers", searchKey: "customers", permission: null, sortDesc: false },
   suppliers: { endpoint: endpoints.supplier.list, dataKey: "suppliers", searchKey: "suppliers", permission: "stock:adjust", sortDesc: false },
-  purchases: { endpoint: endpoints.purchaseOrder.list, dataKey: "purchaseOrders", searchKey: "purchases", permission: "stock:adjust", sortDesc: true },
+  purchases: {
+    endpoint: endpoints.purchaseOrder.list,
+    dataKey: "purchaseOrders",
+    searchKey: "purchases",
+    permission: "stock:adjust",
+    sortDesc: true,
+    buildParams: state => {
+      const filters = state.filters.purchases || {};
+      return {
+        resourceType: filters.resourceType || ""
+      };
+    }
+  },
   stocktakes: { endpoint: endpoints.stocktaking.list, dataKey: "stocktakingRecords", searchKey: "stocktakes", permission: "stock:adjust", sortDesc: true },
   warehouses: { endpoint: endpoints.warehouse.list, dataKey: "warehouses", searchKey: "warehouses", permission: "stock:adjust", sortDesc: false },
   stockMovements: { endpoint: endpoints.stockMovement.list, dataKey: "stockMovements", searchKey: "stockMovements", permission: "log:read", sortDesc: true },

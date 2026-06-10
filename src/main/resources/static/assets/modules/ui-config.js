@@ -3,11 +3,11 @@ export const tabs = {
   vehicles: { title: "车辆库存", subtitle: "车型库存、整机档案与库存状态" },
   parts: { title: "配件库存", subtitle: "配件档案、库存数量与价格信息" },
   modifications: { title: "改装工单", subtitle: "客户出库前改装、配件替换与拆下件回库" },
-  outboundOrders: { title: "订单列表", subtitle: "记录整机与配件出库、车款结清、报销和发票申请" },
+  outboundOrders: { title: "出库订单", subtitle: "记录整机与配件出库、车款结清、报销和发票申请" },
   rentals: { title: "租赁管理", subtitle: "记录租赁车辆、去向、租赁价格和归还状态" },
   customers: { title: "客户列表", subtitle: "维护公司抬头、地址、联系人和税号信息" },
   suppliers: { title: "采购供应商", subtitle: "维护供应商资料、联系人、税号与采购合作信息" },
-  purchases: { title: "采购订单", subtitle: "统计配件采购入库、预计到货、金额与状态" },
+  purchases: { title: "入库订单", subtitle: "统计配件入库和整车入库、预计到货、金额与状态" },
   stocktakes: { title: "库存盘点", subtitle: "创建盘点草稿，确认后同步整机或配件库存数量" },
   warehouses: { title: "仓库管理", subtitle: "维护仓库档案，执行整机、配件调拨并查看库存分布" },
   repairs: { title: "维修记录", subtitle: "维修工单、费用与状态追踪" },
@@ -15,7 +15,7 @@ export const tabs = {
   stats: { title: "统计财报", subtitle: "按月度和年度汇总库存收支、维修收入与库存价值" },
   attachments: { title: "附件中心", subtitle: "统一管理车辆、维修、订单和配件的多文件附件" },
   imports: { title: "导入中心", subtitle: "模板下载、预校验、错误提示和导入记录" },
-  configs: { title: "配置字典", subtitle: "车辆配置项与可选值维护" },
+  configs: { title: "配置字典", subtitle: "配件配置与整车配置维护" },
   users: { title: "用户管理", subtitle: "账号、角色与客户端登录切换" },
   maintenance: { title: "数据维护", subtitle: "导入中心、数据库备份与恢复" }
 };

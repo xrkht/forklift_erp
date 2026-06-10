@@ -31,7 +31,8 @@ export function createDataLoaders({
   loadVehicleDetail,
   loadVehicleModelDetail,
   renderCurrentTab,
-  restoreConfigItemScroll
+  restoreConfigItemScroll,
+  restoreVehicleConfigItemScroll
 }) {
   async function loadAllData(options = {}) {
     const activeModelKey = state.vehicleDetail?.modelKey;
@@ -68,6 +69,13 @@ export function createDataLoaders({
       await loadVehicleModelData(options);
       return;
     }
+    if (tab === "logs") {
+      await Promise.all([
+        loadPagedTab("logs", options),
+        loadPagedTab("stockMovements", { ...options, keyword: state.search.logs || "", silent: true })
+      ]);
+      return;
+    }
     const pagedTab = activePagedTab();
     if (pagedTab) {
       await loadPagedTab(pagedTab, options);
@@ -75,8 +83,9 @@ export function createDataLoaders({
   }
 
   async function ensureConfigData(force = false) {
-    if (!force && state.data.configItems.length) return;
+    if (!force && state.data.configItems.length && state.data.vehicleConfigItems.length) return;
     state.data.configItems = sortById(await api(endpoints.configItem.list), false);
+    state.data.vehicleConfigItems = sortById(await api(endpoints.vehicleConfigItem.list), false);
     await loadConfigValueCache(state.data.configItems);
     if (!state.selectedConfigItemId && state.data.configItems.length) {
       state.selectedConfigItemId = state.data.configItems[0].id;
@@ -84,6 +93,15 @@ export function createDataLoaders({
     if (state.selectedConfigItemId) {
       state.data.configValues = sortById(
         state.data.configValueMap[state.selectedConfigItemId] || await fetchConfigValues(state.selectedConfigItemId),
+        false
+      );
+    }
+    if (!state.selectedVehicleConfigItemId && state.data.vehicleConfigItems.length) {
+      state.selectedVehicleConfigItemId = state.data.vehicleConfigItems[0].id;
+    }
+    if (state.selectedVehicleConfigItemId) {
+      state.data.vehicleConfigValues = sortById(
+        await fetchVehicleConfigValues(state.selectedVehicleConfigItemId),
         false
       );
     }
@@ -133,7 +151,7 @@ export function createDataLoaders({
 
     const pageState = state.pages[tab];
     pageState.loading = true;
-    const keyword = state.search[config.searchKey] || "";
+    const keyword = options.keyword ?? state.search[config.searchKey] ?? "";
     const extraParams = typeof config.buildParams === "function" ? config.buildParams(state, options) || {} : {};
     const baseUrl = pageUrl(config.endpoint, pageState, keyword);
     const url = Object.keys(extraParams).length
@@ -141,7 +159,7 @@ export function createDataLoaders({
       : baseUrl;
     const [payload, summary] = await Promise.all([
       api(url),
-      loadListSummary(tab, keyword)
+      loadListSummary(tab, keyword, extraParams)
     ]);
     const rows = pageContent(payload);
     state.data[config.dataKey] = config.dataKey === "operationLogs"
@@ -163,12 +181,17 @@ export function createDataLoaders({
     }
   }
 
-  async function loadListSummary(tab, keyword = "") {
+  async function loadListSummary(tab, keyword = "", extraParams = {}) {
     if (!summaryTabs.has(tab) || !endpoints.listSummary) return null;
     const params = new URLSearchParams({ type: tab });
     if (keyword && keyword.trim()) {
       params.set("keyword", keyword.trim());
     }
+    Object.entries(extraParams || {}).forEach(([key, value]) => {
+      if (value !== null && value !== undefined && String(value).trim() !== "") {
+        params.set(key, String(value).trim());
+      }
+    });
     try {
       return await api(`${endpoints.listSummary}?${params.toString()}`);
     } catch (error) {
@@ -208,6 +231,11 @@ export function createDataLoaders({
     return api(`/api/config/items/${itemId}/values`);
   }
 
+  async function fetchVehicleConfigValues(itemId) {
+    if (!itemId) return [];
+    return api(endpoints.vehicleConfigValue.listByItem(itemId));
+  }
+
   async function fetchConfigValueMap(itemIds = []) {
     const ids = [...new Set((itemIds || [])
       .map(id => Number(id))
@@ -240,13 +268,27 @@ export function createDataLoaders({
     }
   }
 
+  async function loadVehicleConfigValues(itemId, options = {}) {
+    state.selectedVehicleConfigItemId = Number(itemId);
+    const values = sortById(await fetchVehicleConfigValues(itemId), false);
+    state.data.vehicleConfigValues = values;
+    if (options.render !== false) {
+      renderCurrentTab();
+    }
+    if (options.restoreConfigScroll) {
+      restoreVehicleConfigItemScroll();
+    }
+  }
+
   return {
     ensureConfigData,
     fetchConfigValues,
+    fetchVehicleConfigValues,
     fetchConfigValueMap,
     loadAllData,
     loadConfigValueCache,
     loadConfigValues,
+    loadVehicleConfigValues,
     loadCurrentTab,
     loadListSummary,
     loadPagedTab,

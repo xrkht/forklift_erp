@@ -31,6 +31,19 @@ export const endpoints = {
     create: "/api/config/values",
     delete: id => `/api/config/values/${id}`
   },
+  vehicleConfigItem: {
+    list: "/api/config/vehicle-items",
+    create: "/api/config/vehicle-items",
+    update: id => `/api/config/vehicle-items/${id}`,
+    delete: id => `/api/config/vehicle-items/${id}`,
+    templateBySpecification: "/api/config/vehicle-items/by-specification"
+  },
+  vehicleConfigValue: {
+    listByItem: id => `/api/config/vehicle-items/${id}/values`,
+    create: "/api/config/vehicle-values",
+    update: id => `/api/config/vehicle-values/${id}`,
+    delete: id => `/api/config/vehicle-values/${id}`
+  },
   partReplace: {
     create: "/api/replace/part",
     install: "/api/replace/install-part"

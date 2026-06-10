@@ -1,6 +1,6 @@
 package com.example.forklift_erp.config;
 
-import com.example.forklift_erp.constant.JobTags;
+import com.example.forklift_erp.constant.JobTag;
 import com.example.forklift_erp.constant.RoleNames;
 import com.example.forklift_erp.entity.Permission;
 import com.example.forklift_erp.entity.Role;
@@ -50,9 +50,7 @@ public class DataInitializer implements CommandLineRunner {
                     PermissionCodes.CONFIG_WRITE,
                     PermissionCodes.REPLACE_WRITE,
                     PermissionCodes.STOCK_ADJUST,
-                    PermissionCodes.LOG_READ,
-                    PermissionCodes.USER_READ,
-                    PermissionCodes.USER_WRITE
+                    PermissionCodes.LOG_READ
             ),
             RoleNames.USER, Set.of(
                     PermissionCodes.VEHICLE_WRITE,
@@ -149,7 +147,7 @@ public class DataInitializer implements CommandLineRunner {
             superAdmin.setUsername("admin");
             superAdmin.setPassword(passwordEncoder.encode("admin123"));
             superAdmin.setRoles(Set.of(superAdminRole));
-            superAdmin.setJobTag(JobTags.MANAGEMENT);
+            superAdmin.setJobTag(JobTag.MANAGEMENT.code());
             userRepository.save(superAdmin);
         }
     }

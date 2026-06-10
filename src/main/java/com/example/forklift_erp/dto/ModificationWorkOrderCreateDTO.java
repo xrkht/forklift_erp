@@ -1,6 +1,6 @@
 package com.example.forklift_erp.dto;
 
-import com.example.forklift_erp.constant.PartChangeActions;
+import com.example.forklift_erp.constant.PartChangeAction;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotEmpty;
@@ -41,7 +41,7 @@ public class ModificationWorkOrderCreateDTO {
         @Min(value = 1, message = "数量必须大于0")
         private Integer quantity = 1;
 
-        private String oldPartAction = PartChangeActions.STOCK_IN;
+        private String oldPartAction = PartChangeAction.STOCK_IN.code();
         private BigDecimal priceDifference = BigDecimal.ZERO;
         private String remark;
     }

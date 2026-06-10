@@ -23,7 +23,8 @@ public interface PurchaseOrderRepository extends JpaRepository<PurchaseOrder, Lo
 
     @Query("""
             select p from PurchaseOrder p
-            where (:keyword is null or :keyword = ''
+            where (:resourceType is null or :resourceType = '' or p.resourceType = :resourceType)
+              and (:keyword is null or :keyword = ''
                    or lower(coalesce(p.purchaseNo, '')) like lower(concat('%', :keyword, '%'))
                    or lower(coalesce(p.supplierName, '')) like lower(concat('%', :keyword, '%'))
                    or lower(coalesce(p.resourceType, '')) like lower(concat('%', :keyword, '%'))
@@ -34,7 +35,9 @@ public interface PurchaseOrderRepository extends JpaRepository<PurchaseOrder, Lo
                    or lower(coalesce(p.operator, '')) like lower(concat('%', :keyword, '%'))
                    or lower(coalesce(p.remark, '')) like lower(concat('%', :keyword, '%')))
             """)
-    Page<PurchaseOrder> searchPage(@Param("keyword") String keyword, Pageable pageable);
+    Page<PurchaseOrder> searchPage(@Param("keyword") String keyword,
+                                   @Param("resourceType") String resourceType,
+                                   Pageable pageable);
 
     @Query("""
             select
@@ -44,7 +47,8 @@ public interface PurchaseOrderRepository extends JpaRepository<PurchaseOrder, Lo
               sum(case when p.status = 'RECEIVED' then 1 else 0 end) as received,
               sum(case when p.status <> 'RECEIVED' and p.status <> 'CANCELED' then 1 else 0 end) as pending
             from PurchaseOrder p
-            where (:keyword is null or :keyword = ''
+            where (:resourceType is null or :resourceType = '' or p.resourceType = :resourceType)
+              and (:keyword is null or :keyword = ''
                    or lower(coalesce(p.purchaseNo, '')) like lower(concat('%', :keyword, '%'))
                    or lower(coalesce(p.supplierName, '')) like lower(concat('%', :keyword, '%'))
                    or lower(coalesce(p.resourceType, '')) like lower(concat('%', :keyword, '%'))
@@ -55,7 +59,8 @@ public interface PurchaseOrderRepository extends JpaRepository<PurchaseOrder, Lo
                    or lower(coalesce(p.operator, '')) like lower(concat('%', :keyword, '%'))
                    or lower(coalesce(p.remark, '')) like lower(concat('%', :keyword, '%')))
             """)
-    PurchaseSummaryProjection summarize(@Param("keyword") String keyword);
+    PurchaseSummaryProjection summarize(@Param("keyword") String keyword,
+                                        @Param("resourceType") String resourceType);
 
     @Query("select count(distinct p.supplierName) from PurchaseOrder p where p.supplierName is not null and p.supplierName <> ''")
     long countDistinctSupplierNames();

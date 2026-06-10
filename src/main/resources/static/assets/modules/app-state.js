@@ -27,6 +27,8 @@ export function createInitialState({ token = "", user = null } = {}) {
       logs: "",
       configItems: "",
       configValues: "",
+      vehicleConfigItems: "",
+      vehicleConfigValues: "",
       users: ""
     },
     filters: {
@@ -46,6 +48,9 @@ export function createInitialState({ token = "", user = null } = {}) {
       },
       repairs: {
         status: ""
+      },
+      purchases: {
+        resourceType: ""
       },
       attachments: {
         resourceType: "",
@@ -80,6 +85,8 @@ export function createInitialState({ token = "", user = null } = {}) {
       configItems: [],
       configValues: [],
       configValueMap: {},
+      vehicleConfigItems: [],
+      vehicleConfigValues: [],
       repairUsers: [],
       users: []
     },
@@ -114,16 +121,16 @@ export function createInitialState({ token = "", user = null } = {}) {
     selectedVehicleId: null,
     vehicleDetail: null,
     selectedConfigItemId: null,
+    selectedVehicleConfigItemId: null,
     configItemScrollTop: 0,
+    vehicleConfigItemScrollTop: 0,
+    activeConfigModule: "parts",
     selectedStatsYear: new Date().getFullYear(),
     visibleLogRows: LOG_PAGE_SIZE,
     detailDrawer: null,
     batchSelections: {},
     importValidation: null,
     importSelectedType: "vehicle-workbook",
-    tableDensity: "comfortable",
-    tableColumns: {},
-    filterViews: {},
     vehicleDetailTab: "archive",
     modal: null
   };

@@ -1107,15 +1107,9 @@ a {
 
 .overview-side,
 .overview-task-list,
-.overview-shortcuts,
 .overview-attachment-list {
   display: grid;
   gap: 10px;
-}
-
-.overview-shortcuts .hover-menu,
-.overview-shortcuts .hover-menu-trigger {
-  width: 100%;
 }
 
 .overview-task-row,
@@ -3809,71 +3803,6 @@ body,
   background: var(--primary-weak);
 }
 
-.table-control-bar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-  margin: 0 0 10px;
-  padding: 8px 10px;
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  background: var(--panel-2);
-}
-
-.table-control-group {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex-wrap: wrap;
-}
-
-.column-menu {
-  position: relative;
-}
-
-.column-menu > summary {
-  list-style: none;
-  cursor: pointer;
-}
-
-.column-menu > summary::-webkit-details-marker {
-  display: none;
-}
-
-.column-menu-panel {
-  position: absolute;
-  top: calc(100% + 6px);
-  left: 0;
-  z-index: 18;
-  display: grid;
-  gap: 6px;
-  width: max-content;
-  min-width: 180px;
-  max-width: min(280px, calc(100vw - 32px));
-  padding: 10px;
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  background: var(--panel);
-  box-shadow: var(--shadow);
-}
-
-.column-option {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  min-height: 28px;
-  color: var(--text);
-  font-size: 13px;
-  white-space: nowrap;
-}
-
-.column-option input {
-  width: 16px;
-  height: 16px;
-  accent-color: var(--primary);
-}
-
 .batch-toolbar {
   position: sticky;
   top: 8px;
@@ -3886,17 +3815,6 @@ body,
 .table-wrap {
   border: 1px solid var(--line);
   background: var(--panel);
-}
-
-.table-wrap.is-compact th,
-.table-wrap.is-compact td {
-  padding-top: 7px;
-  padding-bottom: 7px;
-}
-
-.table-wrap.is-compact .cell-stack,
-.table-wrap.is-compact .action-row {
-  gap: 5px;
 }
 
 @media (min-width: 761px) {
@@ -3975,23 +3893,6 @@ body,
 @media (max-width: 760px) {
   .nav-quick-actions {
     position: static;
-  }
-
-  .table-control-bar {
-    align-items: stretch;
-    flex-direction: column;
-  }
-
-  .table-control-group {
-    justify-content: flex-start;
-  }
-
-  .column-menu-panel {
-    position: fixed;
-    top: auto;
-    right: 12px;
-    left: 12px;
-    width: auto;
   }
 
   .batch-toolbar {

@@ -2,7 +2,7 @@ package com.example.forklift_erp.service.impl;
 
 import com.example.forklift_erp.common.PageResult;
 import com.example.forklift_erp.common.ResultCode;
-import com.example.forklift_erp.constant.MachineStockStatuses;
+import com.example.forklift_erp.constant.MachineStockStatus;
 import com.example.forklift_erp.constant.RentalStatus;
 import com.example.forklift_erp.dto.RentalRecordCreateDTO;
 import com.example.forklift_erp.dto.RentalRecordUpdateDTO;
@@ -99,7 +99,7 @@ public class RentalRecordServiceImpl implements RentalRecordService {
             throw new BusinessException(ResultCode.VEHICLE_NOT_FOUND, "租赁车辆不存在或已锁定");
         }
         int inventoryCount = machine.getInventoryCount() == null ? 0 : machine.getInventoryCount();
-        if (inventoryCount < 1 || MachineStockStatuses.OUTBOUND.equals(machine.getStockStatus())) {
+        if (inventoryCount < 1 || MachineStockStatus.OUTBOUND.code().equals(machine.getStockStatus())) {
             throw new BusinessException(ResultCode.INSUFFICIENT_STOCK, "车辆不在库，不能登记租赁");
         }
         if (rentalRecordRepository.existsByMachineIdAndStatus(machine.getId(), RentalRecord.STATUS_ACTIVE)) {

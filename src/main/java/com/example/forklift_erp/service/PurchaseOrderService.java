@@ -60,10 +60,16 @@ public class PurchaseOrderService {
 
     @Transactional(readOnly = true)
     public PageResult<PurchaseOrderVO> findPage(String keyword, Integer page, Integer size) {
+        return findPage(keyword, null, page, size);
+    }
+
+    @Transactional(readOnly = true)
+    public PageResult<PurchaseOrderVO> findPage(String keyword, String resourceType, Integer page, Integer size) {
         int normalizedPage = ListPageSupport.page(page);
         int normalizedSize = ListPageSupport.size(size);
         Page<PurchaseOrder> result = purchaseOrderRepository.searchPage(
                 normalizeKeyword(keyword),
+                normalizeResourceTypeFilter(resourceType),
                 PageRequest.of(normalizedPage, normalizedSize, Sort.by(Sort.Direction.DESC, "createdAt"))
         );
         return PageResult.of(
@@ -76,11 +82,9 @@ public class PurchaseOrderService {
 
     @Transactional
     public PurchaseOrderVO create(PurchaseOrderDTO request) {
-        Supplier supplier = supplierRepository.findById(request.getSupplierId())
-                .orElseThrow(() -> new BusinessException(ResultCode.NOT_FOUND, "Supplier not found"));
         PurchaseOrder order = new PurchaseOrder();
         order.setPurchaseNo(nextPurchaseNo());
-        copy(request, supplier, order);
+        copy(request, order);
         collaborationService.stampWrite(order);
         PurchaseOrder saved = purchaseOrderRepository.saveAndFlush(order);
         operationAuditService.record("Purchase order", "CREATE", "PURCHASE_ORDER", saved.getId(),
@@ -93,9 +97,7 @@ public class PurchaseOrderService {
         PurchaseOrder order = purchaseOrderRepository.findByIdForUpdate(id)
                 .orElseThrow(() -> new BusinessException(ResultCode.NOT_FOUND, "Purchase order not found"));
         collaborationService.validateWrite(order, request.getVersion());
-        Supplier supplier = supplierRepository.findById(request.getSupplierId())
-                .orElseThrow(() -> new BusinessException(ResultCode.NOT_FOUND, "Supplier not found"));
-        copy(request, supplier, order);
+        copy(request, order);
         collaborationService.stampWrite(order);
         PurchaseOrder saved = purchaseOrderRepository.saveAndFlush(order);
         operationAuditService.record("Purchase order", "UPDATE", "PURCHASE_ORDER", saved.getId(),
@@ -144,29 +146,45 @@ public class PurchaseOrderService {
         return PurchaseOrderVO.fromEntity(saved);
     }
 
-    private void copy(PurchaseOrderDTO request, Supplier supplier, PurchaseOrder order) {
-        ConfigItem configItem = request.getConfigItemId() == null ? null : configItemRepository.findById(request.getConfigItemId())
-                .orElseThrow(() -> new BusinessException(ResultCode.NOT_FOUND, "Config item not found"));
-        ConfigValue configValue = request.getConfigValueId() == null ? null : configValueRepository.findById(request.getConfigValueId())
-                .orElseThrow(() -> new BusinessException(ResultCode.NOT_FOUND, "Config value not found"));
-        if (configValue != null && configItem != null && !configValue.getConfigItemId().equals(configItem.getId())) {
-            throw new BusinessException(ResultCode.PARAM_ERROR, "Config value does not belong to selected config item");
-        }
-        if (configValue != null && configItem == null) {
-            configItem = configItemRepository.findById(configValue.getConfigItemId())
+    private void copy(PurchaseOrderDTO request, PurchaseOrder order) {
+        String resourceType = normalizeResourceType(request.getResourceType());
+        Supplier supplier = resolveSupplier(request, resourceType);
+        ConfigItem configItem = null;
+        ConfigValue configValue = null;
+        if (PurchaseOrder.RESOURCE_PART.equals(resourceType)) {
+            configItem = request.getConfigItemId() == null ? null : configItemRepository.findById(request.getConfigItemId())
                     .orElseThrow(() -> new BusinessException(ResultCode.NOT_FOUND, "Config item not found"));
+            configValue = request.getConfigValueId() == null ? null : configValueRepository.findById(request.getConfigValueId())
+                    .orElseThrow(() -> new BusinessException(ResultCode.NOT_FOUND, "Config value not found"));
+            if (configValue != null && configItem != null && !configValue.getConfigItemId().equals(configItem.getId())) {
+                throw new BusinessException(ResultCode.PARAM_ERROR, "Config value does not belong to selected config item");
+            }
+            if (configValue != null && configItem == null) {
+                configItem = configItemRepository.findById(configValue.getConfigItemId())
+                        .orElseThrow(() -> new BusinessException(ResultCode.NOT_FOUND, "Config item not found"));
+            }
+        }
+        if (PurchaseOrder.RESOURCE_MACHINE.equals(resourceType) && blankToNull(request.getSpecificationModel()) == null) {
+            throw new BusinessException(ResultCode.PARAM_ERROR, "Specification model is required for machine inbound orders");
         }
 
-        order.setSupplierId(supplier.getId());
-        order.setSupplierName(supplier.getSupplierName());
-        order.setConfigItemId(configItem == null ? null : configItem.getId());
-        order.setConfigValueId(configValue == null ? null : configValue.getId());
-        order.setResourceType(normalizeResourceType(request.getResourceType()));
-        order.setResourceCode(configValue != null ? blankToNull(configValue.getValueCode()) : blankToNull(request.getResourceCode()));
-        order.setResourceName(configValue != null ? configValue.getValueLabel() : blankToNull(request.getResourceName()));
-        order.setSpecificationModel(configItem != null ? configItemLabel(configItem) : blankToNull(request.getSpecificationModel()));
+        order.setSupplierId(supplier == null ? null : supplier.getId());
+        order.setSupplierName(supplier == null ? supplierName(request) : supplier.getSupplierName());
+        order.setConfigItemId(PurchaseOrder.RESOURCE_PART.equals(resourceType) && configItem != null ? configItem.getId() : null);
+        order.setConfigValueId(PurchaseOrder.RESOURCE_PART.equals(resourceType) && configValue != null ? configValue.getId() : null);
+        order.setResourceType(resourceType);
+        order.setResourceCode(PurchaseOrder.RESOURCE_PART.equals(resourceType) && configValue != null ? blankToNull(configValue.getValueCode()) : blankToNull(request.getResourceCode()));
+        order.setResourceName(PurchaseOrder.RESOURCE_PART.equals(resourceType) && configValue != null ? configValue.getValueLabel() : blankToNull(request.getResourceName()));
+        order.setSpecificationModel(PurchaseOrder.RESOURCE_PART.equals(resourceType) && configItem != null ? configItemLabel(configItem) : blankToNull(request.getSpecificationModel()));
         order.setQuantity(request.getQuantity() == null ? 1 : request.getQuantity());
-        order.setUnit(blankToNull(request.getUnit()) == null && configItem != null ? blankToNull(configItem.getUnit()) : blankToNull(request.getUnit()));
+        String requestUnit = blankToNull(request.getUnit());
+        if (requestUnit == null && configItem != null) {
+            requestUnit = blankToNull(configItem.getUnit());
+        }
+        if (requestUnit == null && PurchaseOrder.RESOURCE_MACHINE.equals(resourceType)) {
+            requestUnit = "台";
+        }
+        order.setUnit(requestUnit);
         order.setUnitPrice(nonNegative(request.getUnitPrice()));
         order.setTotalAmount(totalAmount(order.getQuantity(), order.getUnitPrice(), request.getTotalAmount()));
         if (request.getFreightAmount() != null) {
@@ -196,14 +214,42 @@ public class PurchaseOrderService {
         return value.signum() < 0 ? BigDecimal.ZERO : value;
     }
 
+    private Supplier resolveSupplier(PurchaseOrderDTO request, String resourceType) {
+        if (request.getSupplierId() != null) {
+            return supplierRepository.findById(request.getSupplierId())
+                    .orElseThrow(() -> new BusinessException(ResultCode.NOT_FOUND, "Supplier not found"));
+        }
+        if (PurchaseOrder.RESOURCE_PART.equals(resourceType)) {
+            throw new BusinessException(ResultCode.PARAM_ERROR, "Supplier is required for part inbound orders");
+        }
+        return null;
+    }
+
+    private String supplierName(PurchaseOrderDTO request) {
+        String name = blankToNull(request.getSupplierName());
+        return name == null ? blankToNull(request.getSupplier()) : name;
+    }
+
     private String normalizeResourceType(String value) {
         String normalized = blankToNull(value);
         if (normalized == null) {
             return PurchaseOrder.RESOURCE_PART;
         }
         normalized = normalized.toUpperCase(Locale.ROOT);
-        if (!PurchaseOrder.RESOURCE_PART.equals(normalized)) {
-            throw new BusinessException(ResultCode.PARAM_ERROR, "Purchase orders only support part inbound records");
+        if (!PurchaseOrder.RESOURCE_PART.equals(normalized) && !PurchaseOrder.RESOURCE_MACHINE.equals(normalized)) {
+            throw new BusinessException(ResultCode.PARAM_ERROR, "Unsupported inbound resource type: " + normalized);
+        }
+        return normalized;
+    }
+
+    private String normalizeResourceTypeFilter(String value) {
+        String normalized = blankToNull(value);
+        if (normalized == null) {
+            return null;
+        }
+        normalized = normalized.toUpperCase(Locale.ROOT);
+        if (!PurchaseOrder.RESOURCE_PART.equals(normalized) && !PurchaseOrder.RESOURCE_MACHINE.equals(normalized)) {
+            throw new BusinessException(ResultCode.PARAM_ERROR, "Unsupported inbound resource type: " + normalized);
         }
         return normalized;
     }

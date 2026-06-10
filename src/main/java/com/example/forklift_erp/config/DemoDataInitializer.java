@@ -1,10 +1,10 @@
 package com.example.forklift_erp.config;
 
-import com.example.forklift_erp.constant.MachineStockStatuses;
-import com.example.forklift_erp.constant.ModificationWorkOrderStatuses;
-import com.example.forklift_erp.constant.PartChangeActions;
-import com.example.forklift_erp.constant.RentalStatuses;
-import com.example.forklift_erp.constant.RepairStatuses;
+import com.example.forklift_erp.constant.MachineStockStatus;
+import com.example.forklift_erp.constant.ModificationWorkOrderStatus;
+import com.example.forklift_erp.constant.PartChangeAction;
+import com.example.forklift_erp.constant.RentalStatus;
+import com.example.forklift_erp.constant.RepairStatus;
 import com.example.forklift_erp.entity.ConfigItem;
 import com.example.forklift_erp.entity.ConfigValue;
 import com.example.forklift_erp.entity.Customer;
@@ -320,59 +320,59 @@ public class DemoDataInitializer implements CommandLineRunner {
     private Map<String, MachineInventory> ensureMachines(Map<String, Warehouse> warehouses) {
         Map<String, MachineInventory> result = new LinkedHashMap<>();
         List<MachineSpec> specs = List.of(
-                machine("TEST-MODEL-FD30", "3T diesel forklift model", "CPCD30", "Diesel Forklift", "standard template", "DEFAULT", 0, true, MachineStockStatuses.PENDING_INBOUND, false, "OEM-A", "68000", "86000", "82000"),
-                machine("TEST-FD30-001", "3T diesel forklift", "CPCD30", "Diesel Forklift", "standard stock", "DEFAULT", 1, false, MachineStockStatuses.IN_STOCK, false, "OEM-A", "68000", "86000", "82000"),
-                machine("TEST-FD30-002", "3T diesel forklift", "CPCD30", "Diesel Forklift", "locked high-value unit", "WH-SH", 1, false, MachineStockStatuses.IN_STOCK, true, "OEM-A", "69000", "88000", "83500"),
-                machine("TEST-FD35-001", "3.5T diesel forklift", "CPCD35", "Diesel Forklift", "pending modification", "WH-SH", 1, false, MachineStockStatuses.PENDING_MODIFICATION, false, "OEM-A", "78000", "98000", "93000"),
-                machine("TEST-FD35-002", "3.5T diesel forklift", "CPCD35", "Diesel Forklift", "modifying with work order", "WH-QC", 1, false, MachineStockStatuses.MODIFYING, false, "OEM-A", "78500", "99500", "94000"),
-                machine("TEST-CPD20-001", "2T electric forklift", "CPD20", "Electric Forklift", "lithium standard", "WH-SH", 1, false, MachineStockStatuses.IN_STOCK, false, "OEM-E", "62000", "83000", "79000"),
-                machine("TEST-CPD25-001", "2.5T electric forklift", "CPD25", "Electric Forklift", "pending outbound", "DEFAULT", 1, false, MachineStockStatuses.PENDING_OUTBOUND, false, "OEM-E", "72000", "96000", "91000"),
-                machine("TEST-CPD30-001", "3T electric forklift", "CPD30", "Electric Forklift", "rental active unit", "WH-CD", 1, false, MachineStockStatuses.IN_STOCK, false, "OEM-E", "82000", "109000", "102000"),
-                machine("TEST-CPD30-002", "3T electric forklift", "CPD30", "Electric Forklift", "repair pending unit", "WH-CD", 1, false, MachineStockStatuses.IN_STOCK, false, "OEM-E", "83000", "111000", "104000"),
-                machine("TEST-PALLET-001", "Electric pallet truck", "CBD20", "Pallet Truck", "compact warehouse unit", "WH-SZ", 1, false, MachineStockStatuses.IN_STOCK, false, "OEM-P", "12000", "18000", "16000"),
-                machine("TEST-PALLET-001-B", "Electric pallet truck", "CBD20", "Pallet Truck", "compact warehouse spare unit", "WH-SZ", 1, false, MachineStockStatuses.IN_STOCK, false, "OEM-P", "12000", "18000", "16000"),
-                machine("TEST-STACKER-001", "Electric stacker", "CDD15", "Stacker", "high-rack sample", "WH-SZ", 1, false, MachineStockStatuses.IN_STOCK, false, "OEM-P", "18000", "26000", "23000"),
-                machine("TEST-MAN-001", "Manual pallet truck", "CBY2.0", "Manual Pallet Truck", "manual low-price sample", "WH-SZ", 1, false, MachineStockStatuses.IN_STOCK, false, "OEM-M", "1100", "1800", "1500"),
-                machine("TEST-MAN-001-B", "Manual pallet truck", "CBY2.0", "Manual Pallet Truck", "manual low-price spare unit", "WH-SZ", 1, false, MachineStockStatuses.IN_STOCK, false, "OEM-M", "1100", "1800", "1500"),
-                machine("TEST-MAN-001-C", "Manual pallet truck", "CBY2.0", "Manual Pallet Truck", "manual low-price spare unit", "WH-SZ", 1, false, MachineStockStatuses.IN_STOCK, false, "OEM-M", "1100", "1800", "1500"),
-                machine("TEST-MAN-001-D", "Manual pallet truck", "CBY2.0", "Manual Pallet Truck", "manual low-price spare unit", "WH-SZ", 1, false, MachineStockStatuses.IN_STOCK, false, "OEM-M", "1100", "1800", "1500"),
-                machine("TEST-FD25-OUT", "2.5T diesel forklift", "CPCD25", "Diesel Forklift", "sold outbound history", "DEFAULT", 0, false, MachineStockStatuses.OUTBOUND, false, "OEM-A", "61000", "79000", "76000"),
-                machine("TEST-FD25-PEND", "2.5T diesel forklift", "CPCD25", "Diesel Forklift", "pending inbound without stock", "WH-QC", 0, false, MachineStockStatuses.PENDING_INBOUND, false, "OEM-A", "60000", "78000", "74000"),
-                machine("TEST-FD20-LOW", "2T diesel forklift", "CPCD20", "Diesel Forklift", "low-price small site stock", "WH-XA", 1, false, MachineStockStatuses.IN_STOCK, false, "OEM-A", "52000", "69000", "65000"),
-                machine("TEST-FD50-HEAVY", "5T diesel forklift", "CPCD50", "Diesel Forklift", "heavy yard high margin unit", "WH-WH", 1, false, MachineStockStatuses.IN_STOCK, false, "OEM-A", "118000", "156000", "148000"),
-                machine("TEST-FD70-PORT", "7T diesel forklift", "CPCD70", "Diesel Forklift", "port yard oversized unit", "WH-WH", 1, false, MachineStockStatuses.PENDING_OUTBOUND, true, "OEM-A", "168000", "225000", "210000"),
-                machine("TEST-CPD15-COLD", "1.5T electric forklift", "CPD15", "Electric Forklift", "cold storage non-marking setup", "WH-SH", 1, false, MachineStockStatuses.IN_STOCK, false, "OEM-E", "54000", "72000", "68000"),
-                machine("TEST-CPD15-COLD-002", "1.5T electric forklift", "CPD15", "Electric Forklift", "cold storage non-marking spare unit", "WH-SH", 1, false, MachineStockStatuses.IN_STOCK, false, "OEM-E", "54000", "72000", "68000"),
-                machine("TEST-CPD35-LITH", "3.5T electric forklift", "CPD35", "Electric Forklift", "large lithium battery stock", "WH-BJ", 1, false, MachineStockStatuses.IN_STOCK, false, "OEM-E", "98000", "132000", "124000"),
-                machine("TEST-CPD35-MOD", "3.5T electric forklift", "CPD35", "Electric Forklift", "fork positioner retrofit planned", "WH-QC", 1, false, MachineStockStatuses.PENDING_MODIFICATION, false, "OEM-E", "98500", "135000", "126000"),
-                machine("TEST-CPD45-RENT", "4.5T electric forklift", "CPD45", "Electric Forklift", "long-term rental reserve", "WH-CD", 1, false, MachineStockStatuses.IN_STOCK, false, "OEM-E", "132000", "178000", "166000"),
-                machine("TEST-STACKER-002", "Electric stacker", "CDD20", "Stacker", "returned rental inspection", "WH-CD", 1, false, MachineStockStatuses.IN_STOCK, false, "OEM-P", "22000", "32000", "28600"),
-                machine("TEST-STACKER-003", "Electric reach stacker", "CQD16", "Reach Stacker", "narrow aisle warehouse sample", "WH-BJ", 1, false, MachineStockStatuses.IN_STOCK, false, "OEM-P", "46000", "64000", "58500"),
-                machine("TEST-PALLET-002", "Electric pallet truck", "CBD15", "Pallet Truck", "zero-stock outbound history", "WH-SZ", 0, false, MachineStockStatuses.OUTBOUND, false, "OEM-P", "9800", "15000", "13600"),
-                machine("TEST-PALLET-003", "Electric pallet truck", "CBD25", "Pallet Truck", "bulk stock unit 01", "DEFAULT", 1, false, MachineStockStatuses.IN_STOCK, false, "OEM-P", "14800", "21800", "19800"),
-                machine("TEST-PALLET-004", "Electric pallet truck", "CBD25", "Pallet Truck", "bulk stock unit 02", "DEFAULT", 1, false, MachineStockStatuses.IN_STOCK, false, "OEM-P", "14800", "21800", "19800"),
-                machine("TEST-PALLET-005", "Electric pallet truck", "CBD25", "Pallet Truck", "bulk stock unit 03", "DEFAULT", 1, false, MachineStockStatuses.IN_STOCK, false, "OEM-P", "14800", "21800", "19800"),
-                machine("TEST-PALLET-006", "Electric pallet truck", "CBD25", "Pallet Truck", "bulk stock unit 04", "DEFAULT", 1, false, MachineStockStatuses.IN_STOCK, false, "OEM-P", "14800", "21800", "19800"),
-                machine("TEST-PALLET-007", "Electric pallet truck", "CBD25", "Pallet Truck", "bulk stock unit 05", "DEFAULT", 1, false, MachineStockStatuses.IN_STOCK, false, "OEM-P", "14800", "21800", "19800"),
-                machine("TEST-PALLET-008", "Electric pallet truck", "CBD25", "Pallet Truck", "bulk stock unit 06", "DEFAULT", 1, false, MachineStockStatuses.IN_STOCK, false, "OEM-P", "14800", "21800", "19800"),
-                machine("TEST-PALLET-009", "Electric pallet truck", "CBD25", "Pallet Truck", "bulk stock unit 07", "DEFAULT", 1, false, MachineStockStatuses.IN_STOCK, false, "OEM-P", "14800", "21800", "19800"),
-                machine("TEST-PALLET-010", "Electric pallet truck", "CBD25", "Pallet Truck", "bulk stock unit 08", "DEFAULT", 1, false, MachineStockStatuses.IN_STOCK, false, "OEM-P", "14800", "21800", "19800"),
-                machine("TEST-MAN-002", "Manual pallet truck", "CBY3.0", "Manual Pallet Truck", "manual project unit 01", "WH-XA", 1, false, MachineStockStatuses.IN_STOCK, false, "OEM-M", "1300", "2100", "1750"),
-                machine("TEST-MAN-003", "Manual pallet truck", "CBY3.0", "Manual Pallet Truck", "manual project unit 02", "WH-XA", 1, false, MachineStockStatuses.IN_STOCK, false, "OEM-M", "1300", "2100", "1750"),
-                machine("TEST-MAN-004", "Manual pallet truck", "CBY3.0", "Manual Pallet Truck", "manual project unit 03", "WH-XA", 1, false, MachineStockStatuses.IN_STOCK, false, "OEM-M", "1300", "2100", "1750"),
-                machine("TEST-MAN-005", "Manual pallet truck", "CBY3.0", "Manual Pallet Truck", "manual project unit 04", "WH-XA", 1, false, MachineStockStatuses.IN_STOCK, false, "OEM-M", "1300", "2100", "1750"),
-                machine("TEST-MAN-006", "Manual pallet truck", "CBY3.0", "Manual Pallet Truck", "manual project unit 05", "WH-XA", 1, false, MachineStockStatuses.IN_STOCK, false, "OEM-M", "1300", "2100", "1750"),
-                machine("TEST-MAN-007", "Manual pallet truck", "CBY3.0", "Manual Pallet Truck", "manual project unit 06", "WH-XA", 1, false, MachineStockStatuses.IN_STOCK, false, "OEM-M", "1300", "2100", "1750"),
-                machine("TEST-MAN-008", "Manual pallet truck", "CBY3.0", "Manual Pallet Truck", "manual project unit 07", "WH-XA", 1, false, MachineStockStatuses.IN_STOCK, false, "OEM-M", "1300", "2100", "1750"),
-                machine("TEST-MAN-009", "Manual pallet truck", "CBY3.0", "Manual Pallet Truck", "manual project unit 08", "WH-XA", 1, false, MachineStockStatuses.IN_STOCK, false, "OEM-M", "1300", "2100", "1750"),
-                machine("TEST-MAN-010", "Manual pallet truck", "CBY3.0", "Manual Pallet Truck", "manual project unit 09", "WH-XA", 1, false, MachineStockStatuses.IN_STOCK, false, "OEM-M", "1300", "2100", "1750"),
-                machine("TEST-MAN-011", "Manual pallet truck", "CBY3.0", "Manual Pallet Truck", "manual project unit 10", "WH-XA", 1, false, MachineStockStatuses.IN_STOCK, false, "OEM-M", "1300", "2100", "1750"),
-                machine("TEST-MAN-012", "Manual pallet truck", "CBY3.0", "Manual Pallet Truck", "manual project unit 11", "WH-XA", 1, false, MachineStockStatuses.IN_STOCK, false, "OEM-M", "1300", "2100", "1750"),
-                machine("TEST-MAN-013", "Manual pallet truck", "CBY3.0", "Manual Pallet Truck", "manual project unit 12", "WH-XA", 1, false, MachineStockStatuses.IN_STOCK, false, "OEM-M", "1300", "2100", "1750"),
-                machine("TEST-USED-FD30", "Used 3T diesel forklift", "CPCD30-USED", "Used Forklift", "trade-in refurbishment stock", "WH-QC", 1, false, MachineStockStatuses.IN_STOCK, false, "Used Broker", "32000", "52000", "45000"),
-                machine("TEST-USED-CPD25", "Used 2.5T electric forklift", "CPD25-USED", "Used Forklift", "battery health pending inbound", "WH-QC", 0, false, MachineStockStatuses.PENDING_INBOUND, false, "Used Broker", "28000", "46000", "39000"),
-                machine("TEST-DEMO-LOCKED", "Demo showroom forklift", "CPCD30-SHOW", "Diesel Forklift", "locked showroom loaner", "DEFAULT", 1, false, MachineStockStatuses.IN_STOCK, true, "OEM-A", "70000", "92000", "86000"),
-                machine("TEST-MODEL-CPD25", "2.5T electric forklift model", "CPD25", "Electric Forklift", "electric template without stock", "DEFAULT", 0, true, MachineStockStatuses.PENDING_INBOUND, false, "OEM-E", "72000", "96000", "91000")
+                machine("TEST-MODEL-FD30", "3T diesel forklift model", "CPCD30", "Diesel Forklift", "standard template", "DEFAULT", 0, true, MachineStockStatus.PENDING_INBOUND.code(), false, "OEM-A", "68000", "86000", "82000"),
+                machine("TEST-FD30-001", "3T diesel forklift", "CPCD30", "Diesel Forklift", "standard stock", "DEFAULT", 1, false, MachineStockStatus.IN_STOCK.code(), false, "OEM-A", "68000", "86000", "82000"),
+                machine("TEST-FD30-002", "3T diesel forklift", "CPCD30", "Diesel Forklift", "locked high-value unit", "WH-SH", 1, false, MachineStockStatus.IN_STOCK.code(), true, "OEM-A", "69000", "88000", "83500"),
+                machine("TEST-FD35-001", "3.5T diesel forklift", "CPCD35", "Diesel Forklift", "pending modification", "WH-SH", 1, false, MachineStockStatus.PENDING_MODIFICATION.code(), false, "OEM-A", "78000", "98000", "93000"),
+                machine("TEST-FD35-002", "3.5T diesel forklift", "CPCD35", "Diesel Forklift", "modifying with work order", "WH-QC", 1, false, MachineStockStatus.MODIFYING.code(), false, "OEM-A", "78500", "99500", "94000"),
+                machine("TEST-CPD20-001", "2T electric forklift", "CPD20", "Electric Forklift", "lithium standard", "WH-SH", 1, false, MachineStockStatus.IN_STOCK.code(), false, "OEM-E", "62000", "83000", "79000"),
+                machine("TEST-CPD25-001", "2.5T electric forklift", "CPD25", "Electric Forklift", "pending outbound", "DEFAULT", 1, false, MachineStockStatus.PENDING_OUTBOUND.code(), false, "OEM-E", "72000", "96000", "91000"),
+                machine("TEST-CPD30-001", "3T electric forklift", "CPD30", "Electric Forklift", "rental active unit", "WH-CD", 1, false, MachineStockStatus.IN_STOCK.code(), false, "OEM-E", "82000", "109000", "102000"),
+                machine("TEST-CPD30-002", "3T electric forklift", "CPD30", "Electric Forklift", "repair pending unit", "WH-CD", 1, false, MachineStockStatus.IN_STOCK.code(), false, "OEM-E", "83000", "111000", "104000"),
+                machine("TEST-PALLET-001", "Electric pallet truck", "CBD20", "Pallet Truck", "compact warehouse unit", "WH-SZ", 1, false, MachineStockStatus.IN_STOCK.code(), false, "OEM-P", "12000", "18000", "16000"),
+                machine("TEST-PALLET-001-B", "Electric pallet truck", "CBD20", "Pallet Truck", "compact warehouse spare unit", "WH-SZ", 1, false, MachineStockStatus.IN_STOCK.code(), false, "OEM-P", "12000", "18000", "16000"),
+                machine("TEST-STACKER-001", "Electric stacker", "CDD15", "Stacker", "high-rack sample", "WH-SZ", 1, false, MachineStockStatus.IN_STOCK.code(), false, "OEM-P", "18000", "26000", "23000"),
+                machine("TEST-MAN-001", "Manual pallet truck", "CBY2.0", "Manual Pallet Truck", "manual low-price sample", "WH-SZ", 1, false, MachineStockStatus.IN_STOCK.code(), false, "OEM-M", "1100", "1800", "1500"),
+                machine("TEST-MAN-001-B", "Manual pallet truck", "CBY2.0", "Manual Pallet Truck", "manual low-price spare unit", "WH-SZ", 1, false, MachineStockStatus.IN_STOCK.code(), false, "OEM-M", "1100", "1800", "1500"),
+                machine("TEST-MAN-001-C", "Manual pallet truck", "CBY2.0", "Manual Pallet Truck", "manual low-price spare unit", "WH-SZ", 1, false, MachineStockStatus.IN_STOCK.code(), false, "OEM-M", "1100", "1800", "1500"),
+                machine("TEST-MAN-001-D", "Manual pallet truck", "CBY2.0", "Manual Pallet Truck", "manual low-price spare unit", "WH-SZ", 1, false, MachineStockStatus.IN_STOCK.code(), false, "OEM-M", "1100", "1800", "1500"),
+                machine("TEST-FD25-OUT", "2.5T diesel forklift", "CPCD25", "Diesel Forklift", "sold outbound history", "DEFAULT", 0, false, MachineStockStatus.OUTBOUND.code(), false, "OEM-A", "61000", "79000", "76000"),
+                machine("TEST-FD25-PEND", "2.5T diesel forklift", "CPCD25", "Diesel Forklift", "pending inbound without stock", "WH-QC", 0, false, MachineStockStatus.PENDING_INBOUND.code(), false, "OEM-A", "60000", "78000", "74000"),
+                machine("TEST-FD20-LOW", "2T diesel forklift", "CPCD20", "Diesel Forklift", "low-price small site stock", "WH-XA", 1, false, MachineStockStatus.IN_STOCK.code(), false, "OEM-A", "52000", "69000", "65000"),
+                machine("TEST-FD50-HEAVY", "5T diesel forklift", "CPCD50", "Diesel Forklift", "heavy yard high margin unit", "WH-WH", 1, false, MachineStockStatus.IN_STOCK.code(), false, "OEM-A", "118000", "156000", "148000"),
+                machine("TEST-FD70-PORT", "7T diesel forklift", "CPCD70", "Diesel Forklift", "port yard oversized unit", "WH-WH", 1, false, MachineStockStatus.PENDING_OUTBOUND.code(), true, "OEM-A", "168000", "225000", "210000"),
+                machine("TEST-CPD15-COLD", "1.5T electric forklift", "CPD15", "Electric Forklift", "cold storage non-marking setup", "WH-SH", 1, false, MachineStockStatus.IN_STOCK.code(), false, "OEM-E", "54000", "72000", "68000"),
+                machine("TEST-CPD15-COLD-002", "1.5T electric forklift", "CPD15", "Electric Forklift", "cold storage non-marking spare unit", "WH-SH", 1, false, MachineStockStatus.IN_STOCK.code(), false, "OEM-E", "54000", "72000", "68000"),
+                machine("TEST-CPD35-LITH", "3.5T electric forklift", "CPD35", "Electric Forklift", "large lithium battery stock", "WH-BJ", 1, false, MachineStockStatus.IN_STOCK.code(), false, "OEM-E", "98000", "132000", "124000"),
+                machine("TEST-CPD35-MOD", "3.5T electric forklift", "CPD35", "Electric Forklift", "fork positioner retrofit planned", "WH-QC", 1, false, MachineStockStatus.PENDING_MODIFICATION.code(), false, "OEM-E", "98500", "135000", "126000"),
+                machine("TEST-CPD45-RENT", "4.5T electric forklift", "CPD45", "Electric Forklift", "long-term rental reserve", "WH-CD", 1, false, MachineStockStatus.IN_STOCK.code(), false, "OEM-E", "132000", "178000", "166000"),
+                machine("TEST-STACKER-002", "Electric stacker", "CDD20", "Stacker", "returned rental inspection", "WH-CD", 1, false, MachineStockStatus.IN_STOCK.code(), false, "OEM-P", "22000", "32000", "28600"),
+                machine("TEST-STACKER-003", "Electric reach stacker", "CQD16", "Reach Stacker", "narrow aisle warehouse sample", "WH-BJ", 1, false, MachineStockStatus.IN_STOCK.code(), false, "OEM-P", "46000", "64000", "58500"),
+                machine("TEST-PALLET-002", "Electric pallet truck", "CBD15", "Pallet Truck", "zero-stock outbound history", "WH-SZ", 0, false, MachineStockStatus.OUTBOUND.code(), false, "OEM-P", "9800", "15000", "13600"),
+                machine("TEST-PALLET-003", "Electric pallet truck", "CBD25", "Pallet Truck", "bulk stock unit 01", "DEFAULT", 1, false, MachineStockStatus.IN_STOCK.code(), false, "OEM-P", "14800", "21800", "19800"),
+                machine("TEST-PALLET-004", "Electric pallet truck", "CBD25", "Pallet Truck", "bulk stock unit 02", "DEFAULT", 1, false, MachineStockStatus.IN_STOCK.code(), false, "OEM-P", "14800", "21800", "19800"),
+                machine("TEST-PALLET-005", "Electric pallet truck", "CBD25", "Pallet Truck", "bulk stock unit 03", "DEFAULT", 1, false, MachineStockStatus.IN_STOCK.code(), false, "OEM-P", "14800", "21800", "19800"),
+                machine("TEST-PALLET-006", "Electric pallet truck", "CBD25", "Pallet Truck", "bulk stock unit 04", "DEFAULT", 1, false, MachineStockStatus.IN_STOCK.code(), false, "OEM-P", "14800", "21800", "19800"),
+                machine("TEST-PALLET-007", "Electric pallet truck", "CBD25", "Pallet Truck", "bulk stock unit 05", "DEFAULT", 1, false, MachineStockStatus.IN_STOCK.code(), false, "OEM-P", "14800", "21800", "19800"),
+                machine("TEST-PALLET-008", "Electric pallet truck", "CBD25", "Pallet Truck", "bulk stock unit 06", "DEFAULT", 1, false, MachineStockStatus.IN_STOCK.code(), false, "OEM-P", "14800", "21800", "19800"),
+                machine("TEST-PALLET-009", "Electric pallet truck", "CBD25", "Pallet Truck", "bulk stock unit 07", "DEFAULT", 1, false, MachineStockStatus.IN_STOCK.code(), false, "OEM-P", "14800", "21800", "19800"),
+                machine("TEST-PALLET-010", "Electric pallet truck", "CBD25", "Pallet Truck", "bulk stock unit 08", "DEFAULT", 1, false, MachineStockStatus.IN_STOCK.code(), false, "OEM-P", "14800", "21800", "19800"),
+                machine("TEST-MAN-002", "Manual pallet truck", "CBY3.0", "Manual Pallet Truck", "manual project unit 01", "WH-XA", 1, false, MachineStockStatus.IN_STOCK.code(), false, "OEM-M", "1300", "2100", "1750"),
+                machine("TEST-MAN-003", "Manual pallet truck", "CBY3.0", "Manual Pallet Truck", "manual project unit 02", "WH-XA", 1, false, MachineStockStatus.IN_STOCK.code(), false, "OEM-M", "1300", "2100", "1750"),
+                machine("TEST-MAN-004", "Manual pallet truck", "CBY3.0", "Manual Pallet Truck", "manual project unit 03", "WH-XA", 1, false, MachineStockStatus.IN_STOCK.code(), false, "OEM-M", "1300", "2100", "1750"),
+                machine("TEST-MAN-005", "Manual pallet truck", "CBY3.0", "Manual Pallet Truck", "manual project unit 04", "WH-XA", 1, false, MachineStockStatus.IN_STOCK.code(), false, "OEM-M", "1300", "2100", "1750"),
+                machine("TEST-MAN-006", "Manual pallet truck", "CBY3.0", "Manual Pallet Truck", "manual project unit 05", "WH-XA", 1, false, MachineStockStatus.IN_STOCK.code(), false, "OEM-M", "1300", "2100", "1750"),
+                machine("TEST-MAN-007", "Manual pallet truck", "CBY3.0", "Manual Pallet Truck", "manual project unit 06", "WH-XA", 1, false, MachineStockStatus.IN_STOCK.code(), false, "OEM-M", "1300", "2100", "1750"),
+                machine("TEST-MAN-008", "Manual pallet truck", "CBY3.0", "Manual Pallet Truck", "manual project unit 07", "WH-XA", 1, false, MachineStockStatus.IN_STOCK.code(), false, "OEM-M", "1300", "2100", "1750"),
+                machine("TEST-MAN-009", "Manual pallet truck", "CBY3.0", "Manual Pallet Truck", "manual project unit 08", "WH-XA", 1, false, MachineStockStatus.IN_STOCK.code(), false, "OEM-M", "1300", "2100", "1750"),
+                machine("TEST-MAN-010", "Manual pallet truck", "CBY3.0", "Manual Pallet Truck", "manual project unit 09", "WH-XA", 1, false, MachineStockStatus.IN_STOCK.code(), false, "OEM-M", "1300", "2100", "1750"),
+                machine("TEST-MAN-011", "Manual pallet truck", "CBY3.0", "Manual Pallet Truck", "manual project unit 10", "WH-XA", 1, false, MachineStockStatus.IN_STOCK.code(), false, "OEM-M", "1300", "2100", "1750"),
+                machine("TEST-MAN-012", "Manual pallet truck", "CBY3.0", "Manual Pallet Truck", "manual project unit 11", "WH-XA", 1, false, MachineStockStatus.IN_STOCK.code(), false, "OEM-M", "1300", "2100", "1750"),
+                machine("TEST-MAN-013", "Manual pallet truck", "CBY3.0", "Manual Pallet Truck", "manual project unit 12", "WH-XA", 1, false, MachineStockStatus.IN_STOCK.code(), false, "OEM-M", "1300", "2100", "1750"),
+                machine("TEST-USED-FD30", "Used 3T diesel forklift", "CPCD30-USED", "Used Forklift", "trade-in refurbishment stock", "WH-QC", 1, false, MachineStockStatus.IN_STOCK.code(), false, "Used Broker", "32000", "52000", "45000"),
+                machine("TEST-USED-CPD25", "Used 2.5T electric forklift", "CPD25-USED", "Used Forklift", "battery health pending inbound", "WH-QC", 0, false, MachineStockStatus.PENDING_INBOUND.code(), false, "Used Broker", "28000", "46000", "39000"),
+                machine("TEST-DEMO-LOCKED", "Demo showroom forklift", "CPCD30-SHOW", "Diesel Forklift", "locked showroom loaner", "DEFAULT", 1, false, MachineStockStatus.IN_STOCK.code(), true, "OEM-A", "70000", "92000", "86000"),
+                machine("TEST-MODEL-CPD25", "2.5T electric forklift model", "CPD25", "Electric Forklift", "electric template without stock", "DEFAULT", 0, true, MachineStockStatus.PENDING_INBOUND.code(), false, "OEM-E", "72000", "96000", "91000")
         );
         for (MachineSpec spec : specs) {
             Warehouse warehouse = warehouses.get(spec.warehouseCode());
@@ -668,15 +668,15 @@ public class DemoDataInitializer implements CommandLineRunner {
 
     private void ensureRentalRecords(Map<String, Customer> customers, Map<String, MachineInventory> machines) {
         ensureRentalRecord("TEST-RT-ACTIVE", customers.get("TEST-CUST-ZETA"), machines.get("TEST-CPD30-001"),
-                RentalStatuses.ACTIVE, LocalDate.now().minusDays(18), LocalDate.now().plusMonths(2), "5600", "Active rental with future end date");
+                RentalStatus.ACTIVE.code(), LocalDate.now().minusDays(18), LocalDate.now().plusMonths(2), "5600", "Active rental with future end date");
         ensureRentalRecord("TEST-RT-RETURNED", customers.get("TEST-CUST-BETA"), machines.get("TEST-PALLET-001"),
-                RentalStatuses.RETURNED, LocalDate.now().minusMonths(4), LocalDate.now().minusDays(15), "1200", "Returned rental history");
+                RentalStatus.RETURNED.code(), LocalDate.now().minusMonths(4), LocalDate.now().minusDays(15), "1200", "Returned rental history");
         ensureRentalRecord("TEST-RT-ACTIVE-OVERDUE", customers.get("TEST-CUST-MU"), machines.get("TEST-STACKER-002"),
-                RentalStatuses.ACTIVE, LocalDate.now().minusMonths(3), LocalDate.now().minusDays(5), "2600", "Active rental with overdue planned return");
+                RentalStatus.ACTIVE.code(), LocalDate.now().minusMonths(3), LocalDate.now().minusDays(5), "2600", "Active rental with overdue planned return");
         ensureRentalRecord("TEST-RT-ACTIVE-OPEN", customers.get("TEST-CUST-IOTA"), machines.get("TEST-CPD45-RENT"),
-                RentalStatuses.ACTIVE, LocalDate.now().minusDays(7), null, "9800", "Open-ended rental without end date");
+                RentalStatus.ACTIVE.code(), LocalDate.now().minusDays(7), null, "9800", "Open-ended rental without end date");
         ensureRentalRecord("TEST-RT-RETURNED-LONG", customers.get("TEST-CUST-KAPPA"), machines.get("TEST-MAN-002"),
-                RentalStatuses.RETURNED, LocalDate.now().minusMonths(8), LocalDate.now().minusMonths(1), "360", "Long historical low-value rental");
+                RentalStatus.RETURNED.code(), LocalDate.now().minusMonths(8), LocalDate.now().minusMonths(1), "360", "Long historical low-value rental");
     }
 
     private void ensureRentalRecord(String rentalNo, Customer customer, MachineInventory machine, String status,
@@ -706,19 +706,19 @@ public class DemoDataInitializer implements CommandLineRunner {
 
     private void ensureRepairRecords(Map<String, Customer> customers, Map<String, MachineInventory> machines, Map<String, PartInventory> parts) {
         ensureRepairRecord("TEST-REPAIR-PENDING", customers.get("TEST-CUST-ETA"), machines.get("TEST-CPD30-002"),
-                RepairStatuses.PENDING, "Abnormal lift noise", "Diagnose mast chain and hydraulic hose", "Mia", "TEST-PART-MAST-CHAIN,TEST-PART-HYD-HOSE", "2.5", "350", "260");
+                RepairStatus.PENDING.code(), "Abnormal lift noise", "Diagnose mast chain and hydraulic hose", "Mia", "TEST-PART-MAST-CHAIN,TEST-PART-HYD-HOSE", "2.5", "350", "260");
         ensureRepairRecord("TEST-REPAIR-COMPLETED", customers.get("TEST-CUST-ALPHA"), machines.get("TEST-FD30-001"),
-                RepairStatuses.COMPLETED, "Regular maintenance", "Changed diesel and hydraulic filters", "Noah", "TEST-PART-FILTER-DIESEL,TEST-PART-FILTER-HYD", "3.0", "420", "125");
+                RepairStatus.COMPLETED.code(), "Regular maintenance", "Changed diesel and hydraulic filters", "Noah", "TEST-PART-FILTER-DIESEL,TEST-PART-FILTER-HYD", "3.0", "420", "125");
         ensureRepairRecord("TEST-REPAIR-EXTERNAL", customers.get("TEST-CUST-GAMMA"), machines.get("TEST-FD35-001"),
-                RepairStatuses.PENDING, "Onsite brake issue", "External onsite service scheduled", "Olivia", "TEST-PART-BRAKE-SHOE", "4.0", "680", "250");
+                RepairStatus.PENDING.code(), "Onsite brake issue", "External onsite service scheduled", "Olivia", "TEST-PART-BRAKE-SHOE", "4.0", "680", "250");
         ensureRepairRecord("TEST-REPAIR-NOPART", customers.get("TEST-CUST-DELTA"), machines.get("TEST-STACKER-001"),
-                RepairStatuses.COMPLETED, "Software parameter reset", "Controller parameter recalibrated", "Peter", null, "1.0", "180", "0");
+                RepairStatus.COMPLETED.code(), "Software parameter reset", "Controller parameter recalibrated", "Peter", null, "1.0", "180", "0");
         ensureRepairRecord("TEST-REPAIR-LOCKED-UNIT", customers.get("TEST-CUST-THETA"), machines.get("TEST-DEMO-LOCKED"),
-                RepairStatuses.PENDING, "Showroom loaner pre-delivery check", "Locked unit requires admin follow-up", "Quinn", "TEST-PART-MIRROR", "1.5", "260", "82");
+                RepairStatus.PENDING.code(), "Showroom loaner pre-delivery check", "Locked unit requires admin follow-up", "Quinn", "TEST-PART-MIRROR", "1.5", "260", "82");
         ensureRepairRecord("TEST-REPAIR-COLD", customers.get("TEST-CUST-LAMBDA"), machines.get("TEST-CPD15-COLD"),
-                RepairStatuses.COMPLETED, "Cold-room seal hardening", "Installed low-temperature seal kit and tested lift cycle", "Rita", "TEST-PART-COLD-SEAL", "2.0", "360", "420");
+                RepairStatus.COMPLETED.code(), "Cold-room seal hardening", "Installed low-temperature seal kit and tested lift cycle", "Rita", "TEST-PART-COLD-SEAL", "2.0", "360", "420");
         ensureRepairRecord("TEST-REPAIR-PARTONLY", customers.get("TEST-CUST-IOTA"), null,
-                RepairStatuses.PENDING, "Returned charger needs bench diagnosis", "Part-only repair record without vehicle reference", "Sam", "TEST-PART-RETURN-CHARGER", "0.5", "80", "0");
+                RepairStatus.PENDING.code(), "Returned charger needs bench diagnosis", "Part-only repair record without vehicle reference", "Sam", "TEST-PART-RETURN-CHARGER", "0.5", "80", "0");
     }
 
     private void ensureRepairRecord(String marker, Customer customer, MachineInventory machine, String status,
@@ -728,7 +728,7 @@ public class DemoDataInitializer implements CommandLineRunner {
             return;
         }
         RepairRecord record = new RepairRecord();
-        record.setRepairDate(LocalDateTime.now().minusDays(status.equals(RepairStatuses.COMPLETED) ? 30 : 3));
+        record.setRepairDate(LocalDateTime.now().minusDays(status.equals(RepairStatus.COMPLETED.code()) ? 30 : 3));
         record.setMachineId(machine == null ? null : machine.getId());
         record.setVehicleNumber(machine == null ? null : machine.getVehicleProductNumber());
         record.setCustomerId(customer.getId());
@@ -837,24 +837,24 @@ public class DemoDataInitializer implements CommandLineRunner {
 
     private void ensureModificationWorkOrders(Map<String, Customer> customers, Map<String, MachineInventory> machines, Map<String, PartInventory> parts) {
         ensureWorkOrder("TEST-MWO-WAITING", machines.get("TEST-FD35-001"), customers.get("TEST-CUST-GAMMA"), parts.get("TEST-PART-TIRE-70012"),
-                ModificationWorkOrderStatuses.WAITING_PARTS, null, null);
+                ModificationWorkOrderStatus.WAITING_PARTS.code(), null, null);
         ensureWorkOrder("TEST-MWO-PROGRESS", machines.get("TEST-FD35-002"), customers.get("TEST-CUST-THETA"), parts.get("TEST-PART-ATT-SIDESHIFT"),
-                ModificationWorkOrderStatuses.IN_PROGRESS, null, null);
+                ModificationWorkOrderStatus.IN_PROGRESS.code(), null, null);
         ensureWorkOrder("TEST-MWO-COMPLETE", machines.get("TEST-FD30-001"), customers.get("TEST-CUST-ALPHA"), parts.get("TEST-PART-FORK-1520"),
-                ModificationWorkOrderStatuses.COMPLETED, LocalDateTime.now().minusDays(5), null);
+                ModificationWorkOrderStatus.COMPLETED.code(), LocalDateTime.now().minusDays(5), null);
         ensureWorkOrder("TEST-MWO-CANCEL", machines.get("TEST-CPD20-001"), customers.get("TEST-CUST-DELTA"), parts.get("TEST-PART-CAMERA"),
-                ModificationWorkOrderStatuses.CANCELED, null, LocalDateTime.now().minusDays(2));
+                ModificationWorkOrderStatus.CANCELED.code(), null, LocalDateTime.now().minusDays(2));
         ensureWorkOrder("TEST-MWO-DISCOUNT", machines.get("TEST-USED-FD30"), customers.get("TEST-CUST-IOTA"), parts.get("TEST-PART-TRADEIN-FORK"),
-                ModificationWorkOrderStatuses.COMPLETED, LocalDateTime.now().minusDays(1), null, PartChangeActions.DISCOUNT);
+                ModificationWorkOrderStatus.COMPLETED.code(), LocalDateTime.now().minusDays(1), null, PartChangeAction.DISCOUNT.code());
         ensureWorkOrder("TEST-MWO-COLD", machines.get("TEST-CPD35-MOD"), customers.get("TEST-CUST-LAMBDA"), parts.get("TEST-PART-CABIN-FULL"),
-                ModificationWorkOrderStatuses.WAITING_PARTS, null, null, PartChangeActions.STOCK_IN);
+                ModificationWorkOrderStatus.WAITING_PARTS.code(), null, null, PartChangeAction.STOCK_IN.code());
         ensureWorkOrder("TEST-MWO-IOT", machines.get("TEST-CPD35-LITH"), customers.get("TEST-CUST-THETA"), parts.get("TEST-PART-IOT-ADV"),
-                ModificationWorkOrderStatuses.IN_PROGRESS, null, null, PartChangeActions.STOCK_IN);
+                ModificationWorkOrderStatus.IN_PROGRESS.code(), null, null, PartChangeAction.STOCK_IN.code());
     }
 
     private void ensureWorkOrder(String workOrderNo, MachineInventory machine, Customer customer, PartInventory part,
                                  String status, LocalDateTime completedAt, LocalDateTime canceledAt) {
-        ensureWorkOrder(workOrderNo, machine, customer, part, status, completedAt, canceledAt, PartChangeActions.STOCK_IN);
+        ensureWorkOrder(workOrderNo, machine, customer, part, status, completedAt, canceledAt, PartChangeAction.STOCK_IN.code());
     }
 
     private void ensureWorkOrder(String workOrderNo, MachineInventory machine, Customer customer, PartInventory part,

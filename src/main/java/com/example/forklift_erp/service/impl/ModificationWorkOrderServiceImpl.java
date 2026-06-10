@@ -2,9 +2,9 @@ package com.example.forklift_erp.service.impl;
 
 import com.example.forklift_erp.common.PageResult;
 import com.example.forklift_erp.common.ResultCode;
-import com.example.forklift_erp.constant.MachineStockStatuses;
-import com.example.forklift_erp.constant.ModificationWorkOrderStatuses;
-import com.example.forklift_erp.constant.PartChangeActions;
+import com.example.forklift_erp.constant.MachineStockStatus;
+import com.example.forklift_erp.constant.ModificationWorkOrderStatus;
+import com.example.forklift_erp.constant.PartChangeAction;
 import com.example.forklift_erp.dto.ModificationWorkOrderActionDTO;
 import com.example.forklift_erp.dto.ModificationWorkOrderCreateDTO;
 import com.example.forklift_erp.dto.ModificationWorkOrderVO;
@@ -152,13 +152,13 @@ public class ModificationWorkOrderServiceImpl implements ModificationWorkOrderSe
         workOrder.setSalesOrderNo(blankToNull(request.getSalesOrderNo()));
         workOrder.setOperator(blankToNull(request.getOperator()));
         workOrder.setRemark(blankToNull(request.getRemark()));
-        workOrder.setStatus(ModificationWorkOrderStatuses.WAITING_PARTS);
+        workOrder.setStatus(ModificationWorkOrderStatus.WAITING_PARTS.code());
         ModificationWorkOrder savedOrder = workOrderRepository.save(workOrder);
 
         preparedLines.forEach(line -> line.setWorkOrderId(savedOrder.getId()));
         lineRepository.saveAllAndFlush(preparedLines);
 
-        machine.setStockStatus(MachineStockStatuses.PENDING_MODIFICATION);
+        machine.setStockStatus(MachineStockStatus.PENDING_MODIFICATION.code());
         collaborationService.stampWrite(machine);
         machineRepository.save(machine);
 
@@ -175,10 +175,10 @@ public class ModificationWorkOrderServiceImpl implements ModificationWorkOrderSe
         ModificationWorkOrder workOrder = workOrderRepository.findByIdForUpdate(id)
                 .orElseThrow(() -> new BusinessException(ResultCode.NOT_FOUND, "Modification work order not found"));
         validateVersion(workOrder.getVersion(), request == null ? null : request.getVersion(), "Modification work order was updated by another user");
-        if (ModificationWorkOrderStatuses.COMPLETED.equals(workOrder.getStatus())) {
+        if (ModificationWorkOrderStatus.COMPLETED.code().equals(workOrder.getStatus())) {
             throw new BusinessException(ResultCode.CONFLICT, "Modification work order is already completed");
         }
-        if (ModificationWorkOrderStatuses.CANCELED.equals(workOrder.getStatus())) {
+        if (ModificationWorkOrderStatus.CANCELED.code().equals(workOrder.getStatus())) {
             throw new BusinessException(ResultCode.CONFLICT, "Modification work order is already completed");
         }
 
@@ -189,11 +189,11 @@ public class ModificationWorkOrderServiceImpl implements ModificationWorkOrderSe
 
         MachineInventory machine = machineRepository.findByIdForUpdate(workOrder.getMachineId())
                 .orElseThrow(() -> new BusinessException(ResultCode.VEHICLE_NOT_FOUND, "Vehicle not found"));
-        machine.setStockStatus(MachineStockStatuses.MODIFYING);
+        machine.setStockStatus(MachineStockStatus.MODIFYING.code());
         collaborationService.stampWrite(machine);
         machineRepository.save(machine);
 
-        workOrder.setStatus(ModificationWorkOrderStatuses.IN_PROGRESS);
+        workOrder.setStatus(ModificationWorkOrderStatus.IN_PROGRESS.code());
         workOrderRepository.save(workOrder);
 
         String operator = firstNonBlank(request == null ? null : request.getOperator(), workOrder.getOperator());
@@ -222,7 +222,7 @@ public class ModificationWorkOrderServiceImpl implements ModificationWorkOrderSe
             lineRepository.save(line);
         }
 
-        workOrder.setStatus(ModificationWorkOrderStatuses.COMPLETED);
+        workOrder.setStatus(ModificationWorkOrderStatus.COMPLETED.code());
         workOrder.setCompletedAt(LocalDateTime.now());
         if (operator != null) {
             workOrder.setOperator(operator);
@@ -234,7 +234,7 @@ public class ModificationWorkOrderServiceImpl implements ModificationWorkOrderSe
 
         MachineInventory completedMachine = machineRepository.findByIdForUpdate(workOrder.getMachineId())
                 .orElseThrow(() -> new BusinessException(ResultCode.VEHICLE_NOT_FOUND, "Vehicle not found"));
-        completedMachine.setStockStatus(MachineStockStatuses.PENDING_OUTBOUND);
+        completedMachine.setStockStatus(MachineStockStatus.PENDING_OUTBOUND.code());
         collaborationService.stampWrite(completedMachine);
         machineRepository.save(completedMachine);
 
@@ -251,13 +251,13 @@ public class ModificationWorkOrderServiceImpl implements ModificationWorkOrderSe
         ModificationWorkOrder workOrder = workOrderRepository.findByIdForUpdate(id)
                 .orElseThrow(() -> new BusinessException(ResultCode.NOT_FOUND, "Modification work order not found"));
         validateVersion(workOrder.getVersion(), request == null ? null : request.getVersion(), "Modification work order was updated by another user");
-        if (ModificationWorkOrderStatuses.COMPLETED.equals(workOrder.getStatus())) {
+        if (ModificationWorkOrderStatus.COMPLETED.code().equals(workOrder.getStatus())) {
             throw new BusinessException(ResultCode.CONFLICT, "Completed modification work order cannot be canceled");
         }
-        if (ModificationWorkOrderStatuses.CANCELED.equals(workOrder.getStatus())) {
+        if (ModificationWorkOrderStatus.CANCELED.code().equals(workOrder.getStatus())) {
             return toVO(workOrder);
         }
-        workOrder.setStatus(ModificationWorkOrderStatuses.CANCELED);
+        workOrder.setStatus(ModificationWorkOrderStatus.CANCELED.code());
         workOrder.setCanceledAt(LocalDateTime.now());
         String operator = request == null ? null : request.getOperator();
         String remark = request == null ? null : request.getRemark();
@@ -288,8 +288,8 @@ public class ModificationWorkOrderServiceImpl implements ModificationWorkOrderSe
         if (!config.getMachineId().equals(machine.getId())) {
             throw new BusinessException(ResultCode.PARAM_ERROR, "Machine config does not belong to this vehicle");
         }
-        String oldPartAction = blankToDefault(lineRequest.getOldPartAction(), PartChangeActions.STOCK_IN);
-        if (PartChangeActions.DISCOUNT.equals(oldPartAction)) {
+        String oldPartAction = blankToDefault(lineRequest.getOldPartAction(), PartChangeAction.STOCK_IN.code());
+        if (PartChangeAction.DISCOUNT.code().equals(oldPartAction)) {
             int discountQuantity = lineRequest.getQuantity() == null ? 1 : lineRequest.getQuantity();
             if (discountQuantity < 1) {
                 throw new BusinessException(ResultCode.PARAM_ERROR, "Quantity must be greater than 0");
@@ -413,13 +413,13 @@ public class ModificationWorkOrderServiceImpl implements ModificationWorkOrderSe
     private void restoreMachineStatusIfNoActiveOrder(Long machineId, Long canceledOrderId) {
         boolean hasActive = workOrderRepository.findByMachineIdOrderByCreatedAtDesc(machineId).stream()
                 .anyMatch(order -> !order.getId().equals(canceledOrderId)
-                        && !ModificationWorkOrderStatuses.COMPLETED.equals(order.getStatus())
-                        && !ModificationWorkOrderStatuses.CANCELED.equals(order.getStatus()));
+                        && !ModificationWorkOrderStatus.COMPLETED.code().equals(order.getStatus())
+                        && !ModificationWorkOrderStatus.CANCELED.code().equals(order.getStatus()));
         if (hasActive) {
             return;
         }
         machineRepository.findByIdForUpdate(machineId).ifPresent(machine -> {
-            machine.setStockStatus(MachineStockStatuses.IN_STOCK);
+            machine.setStockStatus(MachineStockStatus.IN_STOCK.code());
             collaborationService.stampWrite(machine);
             machineRepository.save(machine);
         });
@@ -447,7 +447,7 @@ public class ModificationWorkOrderServiceImpl implements ModificationWorkOrderSe
     }
 
     private boolean isDiscountLine(ModificationWorkOrderLine line) {
-        return PartChangeActions.DISCOUNT.equals(line.getOldPartAction());
+        return PartChangeAction.DISCOUNT.code().equals(line.getOldPartAction());
     }
 
     private BigDecimal amountOrZero(BigDecimal value) {

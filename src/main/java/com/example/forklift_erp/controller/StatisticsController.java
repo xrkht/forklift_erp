@@ -27,7 +27,8 @@ public class StatisticsController {
     @GetMapping("/list-summary")
     @PreAuthorize("@permissionService.hasAnyPermission(authentication, 'stock:adjust', 'vehicle:write', 'repair:write', 'log:read')")
     public Result<ListSummaryVO> listSummary(@RequestParam String type,
-                                             @RequestParam(required = false) String keyword) {
-        return Result.success(statisticsService.listSummary(type, keyword));
+                                             @RequestParam(required = false) String keyword,
+                                             @RequestParam(required = false) String resourceType) {
+        return Result.success(statisticsService.listSummary(type, keyword, resourceType));
     }
 }

@@ -8,6 +8,7 @@ import com.example.forklift_erp.exception.BusinessException;
 import com.example.forklift_erp.repository.ConfigItemRepository;
 import com.example.forklift_erp.repository.ConfigValueRepository;
 import com.example.forklift_erp.repository.MachineConfigRepository;
+import com.example.forklift_erp.repository.VehicleConfigValueRepository;
 import com.example.forklift_erp.service.CollaborationService;
 import com.example.forklift_erp.service.ConfigItemService;
 import lombok.extern.slf4j.Slf4j;
@@ -37,6 +38,9 @@ public class ConfigItemServiceImpl implements ConfigItemService {
     // 新增：注入 MachineConfigRepository 用于引用检查
     @Autowired
     private MachineConfigRepository machineConfigRepository;
+
+    @Autowired
+    private VehicleConfigValueRepository vehicleConfigValueRepository;
 
     @Override
     public List<ConfigItem> findAll() {
@@ -149,7 +153,7 @@ public class ConfigItemServiceImpl implements ConfigItemService {
 
         // 2. 引用检查：是否有车辆使用了这个配置项
         List<MachineConfig> configs = machineConfigRepository.findByConfigItemId(id);
-        if (!configs.isEmpty()) {
+        if (!configs.isEmpty() || vehicleConfigValueRepository.existsByConfigItemId(id)) {
             log.warn("删除配置项被阻止：id={}, 名称={}, 被 {} 辆车使用", id, configItem.getItemName(), configs.size());
             throw new BusinessException(ResultCode.CONFIG_IN_USE,
                     "配置项【" + configItem.getItemName() + "】正在被车辆使用，无法删除");
@@ -213,7 +217,7 @@ public class ConfigItemServiceImpl implements ConfigItemService {
         // 2. 引用检查：是否有车辆使用了这个配置值
         collaborationService.validateWrite(configValue, expectedVersion);
         List<MachineConfig> configs = machineConfigRepository.findByConfigValueId(valueId);
-        if (!configs.isEmpty()) {
+        if (!configs.isEmpty() || vehicleConfigValueRepository.existsByConfigValueId(valueId)) {
             log.warn("删除配置值被阻止：id={}, 值={}, 被 {} 辆车使用", valueId, configValue.getValueLabel(), configs.size());
             throw new BusinessException(ResultCode.CONFIG_IN_USE,
                     "配置值【" + configValue.getValueLabel() + "】正在被车辆使用，无法删除");

@@ -11,8 +11,9 @@ import java.time.LocalDate;
 public class PurchaseOrderDTO {
     private Long version;
 
-    @NotNull(message = "供应商不能为空")
     private Long supplierId;
+    private String supplierName;
+    private String supplier;
 
     private Long configItemId;
     private Long configValueId;

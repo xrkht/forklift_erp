@@ -1,7 +1,0 @@
-POST https://localhost:8443/api/auth/login
-Content-Type: application/json
-
-{
-  "username": "testuser",
-  "password": "newpass123"
-}

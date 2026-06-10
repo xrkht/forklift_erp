@@ -30,10 +30,11 @@ public class PurchaseOrderController {
     @GetMapping
     public Result<?> getAll(@RequestParam(defaultValue = "true") boolean paged,
                             @RequestParam(required = false) String keyword,
+                            @RequestParam(required = false) String resourceType,
                             @RequestParam(required = false) Integer page,
                             @RequestParam(required = false) Integer size) {
         if (paged) {
-            return Result.success(service.findPage(keyword, page, size));
+            return Result.success(service.findPage(keyword, resourceType, page, size));
         }
         return Result.success(service.findAll());
     }
@@ -42,13 +43,13 @@ public class PurchaseOrderController {
     @ResponseStatus(HttpStatus.CREATED)
     @PreAuthorize("@permissionService.hasPermission(authentication, 'stock:adjust')")
     public Result<PurchaseOrderVO> create(@Valid @RequestBody PurchaseOrderDTO request) {
-        return Result.success("采购订单创建成功", service.create(request));
+        return Result.success("入库订单创建成功", service.create(request));
     }
 
     @PutMapping("/{id}")
     @PreAuthorize("@permissionService.hasPermission(authentication, 'stock:adjust')")
     public Result<PurchaseOrderVO> update(@PathVariable Long id, @Valid @RequestBody PurchaseOrderDTO request) {
-        return Result.success("采购订单更新成功", service.update(id, request));
+        return Result.success("入库订单更新成功", service.update(id, request));
     }
 
     @PutMapping("/{id}/received")
@@ -56,7 +57,7 @@ public class PurchaseOrderController {
     public Result<PurchaseOrderVO> setReceived(@PathVariable Long id,
                                                @RequestParam boolean received,
                                                @RequestParam(required = false) Long version) {
-        return Result.success(received ? "采购订单已收货" : "采购订单已改为待收货", service.setReceived(id, received, version));
+        return Result.success(received ? "入库订单已收货" : "入库订单已改为待收货", service.setReceived(id, received, version));
     }
 
     @PutMapping("/{id}/freight")
@@ -71,6 +72,6 @@ public class PurchaseOrderController {
     @PreAuthorize("@permissionService.hasPermission(authentication, 'stock:adjust')")
     public Result<Void> delete(@PathVariable Long id, @RequestParam(required = false) Long version) {
         service.delete(id, version);
-        return Result.success("采购订单删除成功");
+        return Result.success("入库订单删除成功");
     }
 }

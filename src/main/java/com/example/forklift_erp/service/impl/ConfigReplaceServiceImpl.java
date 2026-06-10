@@ -1,7 +1,7 @@
 // src/main/java/com/example/forklift_erp/service/impl/ConfigReplaceServiceImpl.java
 package com.example.forklift_erp.service.impl;
 
-import com.example.forklift_erp.constant.PartChangeActions;
+import com.example.forklift_erp.constant.PartChangeAction;
 import com.example.forklift_erp.common.ResultCode;
 import com.example.forklift_erp.dto.ConfigReplaceRequestDTO;
 import com.example.forklift_erp.dto.PartReplaceRequestDTO;
@@ -136,7 +136,7 @@ public class ConfigReplaceServiceImpl implements ConfigReplaceService {
         //     注意：这里可能需要知道旧件的配件编码，实际业务中旧件应当已有对应的 PartInventory 记录，
         //     但目前没有。我们可以简化处理：如果旧件要入库，要求提供旧件的 partCode 或 ID。
         //     既然你目前没有旧件编码的管理，这里先做占位，实际可能需要扩展DTO。
-        if (PartChangeActions.STOCK_IN.equals(request.getOldPartAction()) && oldConfig != null) {
+        if (PartChangeAction.STOCK_IN.code().equals(request.getOldPartAction()) && oldConfig != null) {
             // 假设旧件的配件信息：如果旧配置关联了某个配件（需要额外字段），这里没有。
             // 你可以设计：当需要旧件入库时，要求前端提供 oldPartCode，然后调用配件入库逻辑。
             // 为保持简单，这里只记录日志，不实际操作。
@@ -429,7 +429,7 @@ public class ConfigReplaceServiceImpl implements ConfigReplaceService {
     private boolean shouldStockInOldPart(String oldPartAction) {
         return oldPartAction == null
                 || oldPartAction.isBlank()
-                || PartChangeActions.STOCK_IN.equalsIgnoreCase(oldPartAction)
+                || PartChangeAction.STOCK_IN.code().equalsIgnoreCase(oldPartAction)
                 || "REMOVED".equalsIgnoreCase(oldPartAction)
                 || "REUSABLE".equalsIgnoreCase(oldPartAction);
     }

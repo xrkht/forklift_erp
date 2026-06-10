@@ -12,6 +12,7 @@ import java.time.LocalDateTime;
 @Table(name = "purchase_order")
 public class PurchaseOrder implements CollaborativeResource {
     public static final String RESOURCE_PART = "PART";
+    public static final String RESOURCE_MACHINE = "MACHINE";
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)

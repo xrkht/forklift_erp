@@ -15,7 +15,6 @@ import org.springframework.http.MediaType;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.test.web.servlet.MockMvc;
 
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -150,7 +149,7 @@ class AuthIntegrationTests extends TestcontainersDatabaseSupport {
     }
 
     @Test
-    void adminUserListIsLimitedToNormalUsers() throws Exception {
+    void superAdminCanListUsersButAdminCannot() throws Exception {
         String adminUsername = uniqueUsername("admin");
         String userUsername = uniqueUsername("user");
 
@@ -160,22 +159,21 @@ class AuthIntegrationTests extends TestcontainersDatabaseSupport {
                 .andExpect(status().isOk());
 
         String adminToken = login(adminUsername, PASSWORD);
-        String response = mockMvc.perform(get("/api/auth/users")
-                        .header("Authorization", bearer(adminToken)))
+        String superResponse = mockMvc.perform(get("/api/auth/users")
+                        .header("Authorization", bearer(superToken)))
                 .andExpect(status().isOk())
                 .andReturn()
                 .getResponse()
                 .getContentAsString();
 
-        JsonNode users = objectMapper.readTree(response).path("data");
-        for (JsonNode user : users) {
-            List<String> roles = new ArrayList<>();
-            user.path("roles").forEach(role -> roles.add(role.asText()));
-            assertThat(roles).doesNotContain("ADMIN", "SUPER_ADMIN");
-        }
-        assertThat(response).contains(userUsername);
-        assertThat(response).doesNotContain(adminUsername);
-        assertThat(response).doesNotContain(superUsername);
+        assertThat(superResponse).contains(adminUsername);
+        assertThat(superResponse).contains(userUsername);
+        assertThat(superResponse).contains(superUsername);
+
+        mockMvc.perform(get("/api/auth/users")
+                        .header("Authorization", bearer(adminToken)))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value(403));
     }
 
     @Test
@@ -253,7 +251,7 @@ class AuthIntegrationTests extends TestcontainersDatabaseSupport {
     }
 
     @Test
-    void normalUserKeepsBusinessPermissionsButCannotReadAdminModules() throws Exception {
+    void adminKeepsBusinessPermissionsButCannotReadAdminModules() throws Exception {
         String adminUsername = uniqueUsername("admin");
         String userUsername = uniqueUsername("user");
 
@@ -270,9 +268,17 @@ class AuthIntegrationTests extends TestcontainersDatabaseSupport {
         List<String> adminPermissions = textValues(adminLogin.path("permissions"));
         List<String> userPermissions = textValues(userLogin.path("permissions"));
 
-        assertThat(superPermissions).contains("user:admin", "user:write", "log:read");
-        assertThat(adminPermissions).contains("user:write", "log:read");
-        assertThat(adminPermissions).doesNotContain("user:admin");
+        assertThat(superPermissions).contains("user:read", "user:write", "user:admin", "log:read");
+        assertThat(adminPermissions).contains(
+                "vehicle:write",
+                "part:write",
+                "repair:write",
+                "config:write",
+                "replace:write",
+                "stock:adjust",
+                "log:read"
+        );
+        assertThat(adminPermissions).doesNotContain("user:read", "user:write", "user:admin");
         assertThat(userPermissions).contains(
                 "vehicle:write",
                 "part:write",
@@ -283,7 +289,29 @@ class AuthIntegrationTests extends TestcontainersDatabaseSupport {
         );
         assertThat(userPermissions).doesNotContain("log:read", "user:read", "user:write", "user:admin");
 
+        String adminToken = adminLogin.path("token").asText();
         String userToken = userLogin.path("token").asText();
+
+        mockMvc.perform(get("/api/auth/users")
+                        .header("Authorization", bearer(adminToken)))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value(403));
+
+        mockMvc.perform(get("/api/imports")
+                        .header("Authorization", bearer(adminToken)))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value(403));
+
+        mockMvc.perform(get("/api/imports")
+                        .header("Authorization", bearer(userToken)))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value(403));
+
+        mockMvc.perform(get("/api/imports")
+                        .header("Authorization", bearer(superToken)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(200));
+
         mockMvc.perform(get("/api/inventory")
                         .header("Authorization", bearer(userToken)))
                 .andExpect(status().isOk());

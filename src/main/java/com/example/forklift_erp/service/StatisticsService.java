@@ -2,9 +2,9 @@ package com.example.forklift_erp.service;
 
 import com.example.forklift_erp.dto.StatisticsDashboardVO;
 import com.example.forklift_erp.dto.ListSummaryVO;
-import com.example.forklift_erp.constant.ModificationWorkOrderStatuses;
-import com.example.forklift_erp.constant.PartChangeActions;
-import com.example.forklift_erp.constant.RentalStatuses;
+import com.example.forklift_erp.constant.ModificationWorkOrderStatus;
+import com.example.forklift_erp.constant.PartChangeAction;
+import com.example.forklift_erp.constant.RentalStatus;
 import com.example.forklift_erp.entity.MachineInventory;
 import com.example.forklift_erp.entity.ModificationWorkOrder;
 import com.example.forklift_erp.entity.ModificationWorkOrderLine;
@@ -41,6 +41,7 @@ import java.util.Comparator;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
@@ -98,7 +99,7 @@ public class StatisticsService {
                 endAt
         );
         List<ModificationWorkOrder> modificationOrders = modificationWorkOrderRepository.findCompletedInRange(
-                ModificationWorkOrderStatuses.COMPLETED,
+                ModificationWorkOrderStatus.COMPLETED.code(),
                 startAt,
                 endAt
         );
@@ -128,12 +129,16 @@ public class StatisticsService {
     }
 
     public ListSummaryVO listSummary(String type, String keyword) {
+        return listSummary(type, keyword, null);
+    }
+
+    public ListSummaryVO listSummary(String type, String keyword, String resourceType) {
         String normalizedType = type == null ? "" : type.trim();
         return switch (normalizedType) {
             case "outboundOrders" -> outboundOrderSummary(keyword);
             case "rentals" -> rentalSummary(keyword);
             case "suppliers" -> supplierSummary(keyword);
-            case "purchases" -> purchaseSummary(keyword);
+            case "purchases" -> purchaseSummary(keyword, resourceType);
             case "stocktakes" -> stocktakingSummary(keyword);
             default -> {
                 ListSummaryVO empty = new ListSummaryVO();
@@ -193,12 +198,15 @@ public class StatisticsService {
         long purchaseSupplierCount = purchaseOrderRepository.countDistinctSupplierNames();
         return summary("suppliers", keyword)
                 .addCard("供应商总数", rows.size(), typed + " 家已标记类型")
-                .addCard("采购订单供应商", purchaseSupplierCount, "已被采购订单引用")
+                .addCard("入库订单供应商", purchaseSupplierCount, "已被入库订单引用")
                 .addCard("联系人", contacts, "可直接联系");
     }
 
-    private ListSummaryVO purchaseSummary(String keyword) {
-        PurchaseOrderRepository.PurchaseSummaryProjection data = purchaseOrderRepository.summarize(normalizeKeyword(keyword));
+    private ListSummaryVO purchaseSummary(String keyword, String resourceType) {
+        PurchaseOrderRepository.PurchaseSummaryProjection data = purchaseOrderRepository.summarize(
+                normalizeKeyword(keyword),
+                normalizePurchaseResourceType(resourceType)
+        );
         long totalCount = number(data.getTotalCount());
         SummaryCount rows = new SummaryCount(totalCount);
         BigDecimal totalAmount = amount(data.getTotalAmount());
@@ -206,9 +214,20 @@ public class StatisticsService {
         long received = number(data.getReceived());
         long pending = number(data.getPending());
         return summary("purchases", keyword)
-                .addCard("采购订单", rows.size(), pending + " 单待跟进")
+                .addCard("入库订单", rows.size(), pending + " 单待跟进")
                 .addMoneyCard("采购金额", totalAmount, "当前筛选合计")
                 .addCard("已收货", received, "运费 " + freightTotal);
+    }
+
+    private String normalizePurchaseResourceType(String value) {
+        String normalized = normalizeKeyword(value);
+        if (normalized == null) {
+            return null;
+        }
+        normalized = normalized.toUpperCase(Locale.ROOT);
+        return PurchaseOrder.RESOURCE_PART.equals(normalized) || PurchaseOrder.RESOURCE_MACHINE.equals(normalized)
+                ? normalized
+                : null;
     }
 
     private ListSummaryVO stocktakingSummary(String keyword) {
@@ -308,7 +327,7 @@ public class StatisticsService {
             addRentalToFinancial(rows.get(YearMonth.from(rentalDate).toString()), rental);
         }
         for (ModificationWorkOrder order : modificationOrders) {
-            if (!ModificationWorkOrderStatuses.COMPLETED.equals(order.getStatus()) || order.getCompletedAt() == null || order.getCompletedAt().getYear() != selectedYear) {
+            if (!ModificationWorkOrderStatus.COMPLETED.code().equals(order.getStatus()) || order.getCompletedAt() == null || order.getCompletedAt().getYear() != selectedYear) {
                 continue;
             }
             addModificationToFinancial(
@@ -362,7 +381,7 @@ public class StatisticsService {
             addRentalToFinancial(row, rental);
         }
         for (ModificationWorkOrder order : modificationOrders) {
-            if (!ModificationWorkOrderStatuses.COMPLETED.equals(order.getStatus()) || order.getCompletedAt() == null) {
+            if (!ModificationWorkOrderStatus.COMPLETED.code().equals(order.getStatus()) || order.getCompletedAt() == null) {
                 continue;
             }
             StatisticsDashboardVO.FinancialRow row = rows.computeIfAbsent(
@@ -533,7 +552,7 @@ public class StatisticsService {
             int quantity = machine.getInventoryCount() == null ? 0 : machine.getInventoryCount();
             machineRow.setItemCount(machineRow.getItemCount() + 1);
             machineRow.setStockQuantity(machineRow.getStockQuantity() + quantity);
-            machineRow.setCostValue(machineRow.getCostValue().add(price(machine.getPurchasePrice(), machine.getSettlementPrice()).multiply(BigDecimal.valueOf(quantity))));
+            machineRow.setCostValue(machineRow.getCostValue().add(price(machine.getSettlementPrice(), machine.getPurchasePrice()).multiply(BigDecimal.valueOf(quantity))));
             machineRow.setRetailValue(machineRow.getRetailValue().add(price(machine.getSalePrice(), machine.getSettlementPrice()).multiply(BigDecimal.valueOf(quantity))));
         }
 
@@ -664,7 +683,7 @@ public class StatisticsService {
         BigDecimal income = BigDecimal.ZERO;
         BigDecimal expense = BigDecimal.ZERO;
         List<BigDecimal> signedAmounts = lines.stream()
-                .filter(line -> PartChangeActions.DISCOUNT.equals(line.getOldPartAction()))
+                .filter(line -> PartChangeAction.DISCOUNT.code().equals(line.getOldPartAction()))
                 .map(ModificationWorkOrderLine::getPriceDifference)
                 .filter(Objects::nonNull)
                 .toList();
@@ -714,7 +733,7 @@ public class StatisticsService {
             MachineInventory machine = machines.get(log.getResourceId());
             if (machine != null) {
                 return new Price(
-                        price(machine.getPurchasePrice(), machine.getSettlementPrice()),
+                        price(machine.getSettlementPrice(), machine.getPurchasePrice()),
                         price(machine.getSalePrice(), machine.getSettlementPrice())
                 );
             }

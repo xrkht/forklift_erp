@@ -2,7 +2,7 @@ package com.example.forklift_erp.controller;
 
 import com.example.forklift_erp.common.Result;
 import com.example.forklift_erp.common.ResultCode;
-import com.example.forklift_erp.constant.RepairStatuses;
+import com.example.forklift_erp.constant.RepairStatus;
 import com.example.forklift_erp.dto.RepairRecordCreateDTO;
 import com.example.forklift_erp.dto.RepairRecordVO;
 import com.example.forklift_erp.exception.BusinessException;
@@ -40,7 +40,7 @@ public class RepairRecordController {
     public static class StatusUpdateRequest {
         private Long version;
 
-        @Pattern(regexp = RepairStatuses.VALIDATION_PATTERN, message = "Invalid status")
+        @Pattern(regexp = RepairStatus.VALIDATION_PATTERN, message = "Invalid status")
         private String status;
     }
 
