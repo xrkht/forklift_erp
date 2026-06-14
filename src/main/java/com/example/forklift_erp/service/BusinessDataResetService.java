@@ -16,6 +16,7 @@ import com.example.forklift_erp.repository.StockMovementLineRepository;
 import com.example.forklift_erp.repository.StockMovementRepository;
 import com.example.forklift_erp.repository.StockOperationLogRepository;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.annotation.Profile;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
@@ -25,6 +26,7 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 
 @Service
+@Profile("!prod")
 public class BusinessDataResetService {
 
     @Autowired

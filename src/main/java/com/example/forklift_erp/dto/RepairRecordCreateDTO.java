@@ -2,6 +2,7 @@
 package com.example.forklift_erp.dto;
 
 import com.example.forklift_erp.entity.RepairRecord;
+import jakarta.validation.constraints.DecimalMin;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Pattern;
@@ -53,9 +54,13 @@ public class RepairRecordCreateDTO {
 
     private List<Long> usedPartIds = new ArrayList<>();
 
-    private BigDecimal workHours;
+    @DecimalMin(value = "0.00", message = "维修服务费不能为负数")
     private BigDecimal repairFee;
+    @DecimalMin(value = "0.00", message = "外包维修支出不能为负数")
+    private BigDecimal repairExpense;
+    @DecimalMin(value = "0.00", message = "配件收费不能为负数")
     private BigDecimal partsFee;
+    @DecimalMin(value = "0.00", message = "客户应收总额不能为负数")
     private BigDecimal totalFee;
 
     @Pattern(regexp = "^(PENDING|COMPLETED)$", message = "状态值非法")
@@ -83,8 +88,8 @@ public class RepairRecordCreateDTO {
         applyRepairPerson(entity);
         entity.setUsedParts(this.usedParts);
         entity.setUsedPartIds(joinIds(this.usedPartIds));
-        entity.setWorkHours(null);
         entity.setRepairFee(this.repairFee);
+        entity.setRepairExpense(this.repairExpense);
         entity.setPartsFee(this.partsFee);
         entity.setTotalFee(this.totalFee);
         entity.setStatus(this.status);

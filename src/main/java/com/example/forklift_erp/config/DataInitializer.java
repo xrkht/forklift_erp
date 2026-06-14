@@ -8,9 +8,11 @@ import com.example.forklift_erp.repository.RoleRepository;
 import com.example.forklift_erp.repository.UserRepository;
 import com.example.forklift_erp.security.PermissionCodes;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.CommandLineRunner;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Component;
+import org.springframework.util.StringUtils;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.HashMap;
@@ -87,6 +89,15 @@ public class DataInitializer implements CommandLineRunner {
     @Autowired
     private PasswordEncoder passwordEncoder;
 
+    @Value("${forklift.bootstrap-admin.enabled:false}")
+    private boolean bootstrapAdminEnabled;
+
+    @Value("${forklift.bootstrap-admin.username:admin}")
+    private String bootstrapAdminUsername;
+
+    @Value("${forklift.bootstrap-admin.password:}")
+    private String bootstrapAdminPassword;
+
     @Override
     @Transactional
     public void run(String... args) {
@@ -142,10 +153,18 @@ public class DataInitializer implements CommandLineRunner {
     }
 
     private void ensureDefaultSuperAdmin(Role superAdminRole) {
-        if (!userRepository.existsByUsername("admin")) {
+        if (!bootstrapAdminEnabled) {
+            return;
+        }
+        String username = bootstrapAdminUsername == null ? "" : bootstrapAdminUsername.trim();
+        if (!StringUtils.hasText(username) || !StringUtils.hasText(bootstrapAdminPassword)) {
+            throw new IllegalStateException("forklift.bootstrap-admin.username and forklift.bootstrap-admin.password are required when bootstrap admin is enabled");
+        }
+        if (!userRepository.existsByUsername(username)) {
             User superAdmin = new User();
-            superAdmin.setUsername("admin");
-            superAdmin.setPassword(passwordEncoder.encode("admin123"));
+            superAdmin.setUsername(username);
+            superAdmin.setPassword(passwordEncoder.encode(bootstrapAdminPassword));
+            superAdmin.setEnabled(true);
             superAdmin.setRoles(Set.of(superAdminRole));
             superAdmin.setJobTag("MANAGEMENT");
             userRepository.save(superAdmin);

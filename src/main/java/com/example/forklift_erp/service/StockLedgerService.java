@@ -14,6 +14,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.Locale;
@@ -100,6 +101,39 @@ public class StockLedgerService {
             String sourceType,
             Long sourceId
     ) {
+        return recordMovement(
+                movementType,
+                resourceType,
+                resourceId,
+                resourceCode,
+                resourceName,
+                warehouseId,
+                beforeQuantity,
+                afterQuantity,
+                operator,
+                remark,
+                sourceType,
+                sourceId,
+                null
+        );
+    }
+
+    @Transactional
+    public StockMovement recordMovement(
+            String movementType,
+            String resourceType,
+            Long resourceId,
+            String resourceCode,
+            String resourceName,
+            Long warehouseId,
+            Integer beforeQuantity,
+            Integer afterQuantity,
+            String operator,
+            String remark,
+            String sourceType,
+            Long sourceId,
+            BigDecimal unitCost
+    ) {
         Long resolvedWarehouseId = resolveWarehouseId(warehouseId);
         int before = beforeQuantity == null ? 0 : beforeQuantity;
         int after = afterQuantity == null ? 0 : afterQuantity;
@@ -127,6 +161,7 @@ public class StockLedgerService {
         line.setQuantityDelta(delta);
         line.setBeforeQuantity(before);
         line.setAfterQuantity(after);
+        line.setUnitCost(unitCost);
         stockMovementLineRepository.saveAndFlush(line);
 
         return savedMovement;

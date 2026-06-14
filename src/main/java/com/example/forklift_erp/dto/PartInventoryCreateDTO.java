@@ -2,6 +2,7 @@
 package com.example.forklift_erp.dto;
 
 import com.example.forklift_erp.entity.PartInventory;
+import jakarta.validation.constraints.DecimalMin;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
@@ -47,8 +48,11 @@ public class PartInventoryCreateDTO {
 
     private String unit;
 
+    @DecimalMin(value = "0.00", message = "采购价不能为负数")
     private BigDecimal purchasePrice;
+    @DecimalMin(value = "0.00", message = "销售价不能为负数")
     private BigDecimal salePrice;
+    @DecimalMin(value = "0.00", message = "结算价不能为负数")
     private BigDecimal settlementPrice;
 
     @Size(max = 255)

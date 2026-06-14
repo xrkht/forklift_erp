@@ -3,6 +3,7 @@ package com.example.forklift_erp;
 import com.example.forklift_erp.entity.Role;
 import com.example.forklift_erp.entity.User;
 import com.example.forklift_erp.repository.CustomerRepository;
+import com.example.forklift_erp.repository.AdminMaintenanceAuditLogRepository;
 import com.example.forklift_erp.repository.MachineInventoryRepository;
 import com.example.forklift_erp.repository.OperationAuditLogRepository;
 import com.example.forklift_erp.repository.OutboundOrderRepository;
@@ -78,6 +79,9 @@ class AdminMaintenanceIntegrationTests {
     private OperationAuditLogRepository operationAuditLogRepository;
 
     @Autowired
+    private AdminMaintenanceAuditLogRepository adminMaintenanceAuditLogRepository;
+
+    @Autowired
     private PasswordEncoder passwordEncoder;
 
     private String superUsername;
@@ -110,10 +114,12 @@ class AdminMaintenanceIntegrationTests {
         assertThat(stockBalanceRepository.count()).isGreaterThan(0);
         assertThat(stockOperationLogRepository.count()).isGreaterThan(0);
         assertThat(operationAuditLogRepository.count()).isGreaterThan(0);
+        long maintenanceAuditCountBefore = adminMaintenanceAuditLogRepository.count();
 
         mockMvc.perform(post("/api/admin/business-data/reset")
                         .header("Authorization", bearer(superToken))
-                        .contentType(MediaType.APPLICATION_JSON))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json(Map.of("confirmation", "RESET_BUSINESS_DATA"))))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value(200))
                 .andExpect(jsonPath("$.data.customers").value(org.hamcrest.Matchers.greaterThanOrEqualTo(1)))
@@ -130,6 +136,41 @@ class AdminMaintenanceIntegrationTests {
         assertThat(stockOperationLogRepository.count()).isZero();
         assertThat(operationAuditLogRepository.count()).isZero();
         assertThat(userRepository.existsByUsername(superUsername)).isTrue();
+        assertThat(adminMaintenanceAuditLogRepository.count()).isGreaterThan(maintenanceAuditCountBefore);
+        assertThat(adminMaintenanceAuditLogRepository.findAll())
+                .anySatisfy(log -> {
+                    assertThat(log.getOperator()).isEqualTo(superUsername);
+                    assertThat(log.getStatus()).isEqualTo("SUCCESS");
+                    assertThat(log.getSummary()).contains("customers");
+                });
+    }
+
+    @Test
+    void resetBusinessDataRequiresConfirmationAndPrivateNetwork() throws Exception {
+        JsonNode customer = createCustomer();
+        long customerCount = customerRepository.count();
+
+        mockMvc.perform(post("/api/admin/business-data/reset")
+                        .header("Authorization", bearer(superToken))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json(Map.of("confirmation", "WRONG"))))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value(4001));
+        assertThat(customerRepository.count()).isEqualTo(customerCount);
+
+        mockMvc.perform(post("/api/admin/business-data/reset")
+                        .with(request -> {
+                            request.setRemoteAddr("203.0.113.10");
+                            return request;
+                        })
+                        .header("Authorization", bearer(superToken))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json(Map.of("confirmation", "RESET_BUSINESS_DATA"))))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value(403));
+        assertThat(customerRepository.count()).isEqualTo(customerCount);
+
+        customerRepository.deleteById(customer.path("id").asLong());
     }
 
     @Test

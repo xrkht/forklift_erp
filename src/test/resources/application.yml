@@ -1,9 +1,9 @@
 spring:
   datasource:
-    url: ${FORKLIFT_ERP_TEST_DB_URL:jdbc:mysql://localhost:3306/forklift_erp_test?useUnicode=true&characterEncoding=utf-8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true&createDatabaseIfNotExist=true}
-    username: ${FORKLIFT_ERP_TEST_DB_USERNAME:${FORKLIFT_ERP_DB_USERNAME:root}}
-    password: ${FORKLIFT_ERP_TEST_DB_PASSWORD:${FORKLIFT_ERP_DB_PASSWORD:}}
-    driver-class-name: com.mysql.cj.jdbc.Driver
+    url: ${FORKLIFT_ERP_TEST_DB_URL:jdbc:tc:mysql:8.4.0:///forklift_erp_test?useUnicode=true&characterEncoding=utf-8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true}
+    username: ${FORKLIFT_ERP_TEST_DB_USERNAME:test}
+    password: ${FORKLIFT_ERP_TEST_DB_PASSWORD:test}
+    driver-class-name: ${FORKLIFT_ERP_TEST_DB_DRIVER:org.testcontainers.jdbc.ContainerDatabaseDriver}
   flyway:
     clean-disabled: true
 

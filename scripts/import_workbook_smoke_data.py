@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
 import ssl
 import urllib.error
@@ -314,13 +315,15 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Import a workbook-driven smoke dataset through the ERP API.")
     parser.add_argument("--workbook", help="Path to the workbook. Defaults to the first D:\\erp\\00*.xlsx file.")
     parser.add_argument("--base-url", default="http://localhost:8080")
-    parser.add_argument("--username", default="admin")
-    parser.add_argument("--password", default="admin123")
+    parser.add_argument("--username", default=os.environ.get("FORKLIFT_ERP_BOOTSTRAP_ADMIN_USERNAME", "admin"))
+    parser.add_argument("--password", default=os.environ.get("FORKLIFT_ERP_BOOTSTRAP_ADMIN_PASSWORD"))
     parser.add_argument("--sold-samples", type=int, default=2)
     parser.add_argument("--stock-samples", type=int, default=3)
     parser.add_argument("--old-stock-samples", type=int, default=1)
     parser.add_argument("--reset-before-import", action="store_true")
     args = parser.parse_args()
+    if not args.password:
+        parser.error("--password is required, or set FORKLIFT_ERP_BOOTSTRAP_ADMIN_PASSWORD.")
 
     workbook_path = resolve_workbook_path(args.workbook)
     inbound_rows, sales_rows, old_inbound_rows, inbound_by_vehicle = load_rows(workbook_path)

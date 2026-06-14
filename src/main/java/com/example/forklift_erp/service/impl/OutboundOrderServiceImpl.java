@@ -30,6 +30,8 @@ import org.springframework.core.io.Resource;
 import org.springframework.core.io.UrlResource;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.util.StringUtils;
 import org.springframework.web.multipart.MultipartFile;
 
@@ -60,6 +62,8 @@ public class OutboundOrderServiceImpl implements OutboundOrderService {
     private static final DateTimeFormatter ORDER_NO_TIME = DateTimeFormatter.ofPattern("yyyyMMddHHmmssSSS");
     private static final long MAX_INVOICE_FILE_SIZE = 20L * 1024 * 1024;
     private static final long MAX_CONTRACT_FILE_SIZE = 20L * 1024 * 1024;
+    private static final int MAX_ORIGINAL_FILE_NAME_LENGTH = 255;
+    private static final int MAX_CONTENT_TYPE_LENGTH = 120;
     private static final Set<String> ALLOWED_INVOICE_EXTENSIONS = new HashSet<>(Arrays.asList(
             "pdf", "ofd", "jpg", "jpeg", "png", "webp"
     ));
@@ -137,6 +141,8 @@ public class OutboundOrderServiceImpl implements OutboundOrderService {
             throw new BusinessException(ResultCode.CONFLICT, "车辆正在租赁中，不能创建销售出库订单");
         }
 
+        BigDecimal unitCost = money(firstPrice(machine.getSettlementPrice(), machine.getPurchasePrice()));
+
         Customer customer = findCustomer(request.getCustomerId());
         OutboundOrder order = new OutboundOrder();
         order.setOrderNo(nextOrderNo());
@@ -196,7 +202,9 @@ public class OutboundOrderServiceImpl implements OutboundOrderService {
                 after,
                 request.getOperator(),
                 joinRemark("整车出库订单 " + savedOrder.getOrderNo(), request.getOrderRemark()),
-                savedOrder.getId()
+                savedOrder.getId(),
+                unitCost,
+                money(firstPrice(savedOrder.getSalePrice(), savedOrder.getSettlementPrice()))
         );
         savedOrder.setStockOperationLogId(stockLog.getId());
         OutboundOrder result = outboundOrderRepository.saveAndFlush(savedOrder);
@@ -220,6 +228,7 @@ public class OutboundOrderServiceImpl implements OutboundOrderService {
             throw new BusinessException(ResultCode.PARAM_ERROR, "出库数量必须大于0");
         }
         int before = part.getQuantity() == null ? 0 : part.getQuantity();
+        BigDecimal unitCost = money(firstPrice(part.getSettlementPrice(), part.getPurchasePrice()));
         if (before < quantity) {
             throw new BusinessException(ResultCode.INSUFFICIENT_STOCK, "配件库存不足，当前库存：" + before);
         }
@@ -258,7 +267,9 @@ public class OutboundOrderServiceImpl implements OutboundOrderService {
                 after,
                 request.getOperator(),
                 joinRemark("配件出库订单 " + savedOrder.getOrderNo(), request.getOrderRemark()),
-                savedOrder.getId()
+                savedOrder.getId(),
+                unitCost,
+                money(firstPrice(savedOrder.getSalePrice(), savedOrder.getSettlementPrice()))
         );
         savedOrder.setStockOperationLogId(stockLog.getId());
         OutboundOrder result = outboundOrderRepository.saveAndFlush(savedOrder);
@@ -352,27 +363,28 @@ public class OutboundOrderServiceImpl implements OutboundOrderService {
                 .toString()
                 .replace("-", "")
                 + "." + extension;
-        Path target = invoiceStorageRoot().resolve(storedFileName).normalize();
+        Path invoiceRoot = invoiceStorageRoot();
+        Path target = invoiceRoot.resolve(storedFileName).normalize();
         String previousFileName = order.getInvoiceStoredFileName();
 
         try {
-            Files.createDirectories(invoiceStorageRoot());
+            Files.createDirectories(invoiceRoot);
             try (InputStream inputStream = file.getInputStream()) {
                 Files.copy(inputStream, target, StandardCopyOption.REPLACE_EXISTING);
             }
         } catch (IOException e) {
             throw new BusinessException(ResultCode.SYSTEM_ERROR, "发票文件保存失败");
         }
+        registerFileReplacementCleanup(target, () -> deleteStoredInvoice(previousFileName));
 
         order.setInvoiceStoredFileName(storedFileName);
         order.setInvoiceOriginalName(originalName);
-        order.setInvoiceContentType(firstNonBlank(file.getContentType(), probeContentType(target), "application/octet-stream"));
+        order.setInvoiceContentType(safeContentType(file.getContentType(), probeContentType(target)));
         order.setInvoiceFileSize(file.getSize());
         order.setInvoiceUploadedAt(LocalDateTime.now());
         collaborationService.stampWrite(order);
 
         OutboundOrder saved = outboundOrderRepository.saveAndFlush(order);
-        deleteStoredInvoice(previousFileName);
         operationAuditService.record("订单列表", "UPLOAD_INVOICE", "OUTBOUND_ORDER", saved.getId(),
                 saved.getOrderNo(), saved.getCustomerName(), "上传订单发票 " + originalName,
                 saved.getOperator(), saved.getOrderRemark(), SOURCE_TYPE, saved.getId());
@@ -419,27 +431,28 @@ public class OutboundOrderServiceImpl implements OutboundOrderService {
                 .toString()
                 .replace("-", "")
                 + "." + extension;
-        Path target = contractStorageRoot().resolve(storedFileName).normalize();
+        Path contractRoot = contractStorageRoot();
+        Path target = contractRoot.resolve(storedFileName).normalize();
         String previousFileName = order.getContractStoredFileName();
 
         try {
-            Files.createDirectories(contractStorageRoot());
+            Files.createDirectories(contractRoot);
             try (InputStream inputStream = file.getInputStream()) {
                 Files.copy(inputStream, target, StandardCopyOption.REPLACE_EXISTING);
             }
         } catch (IOException e) {
             throw new BusinessException(ResultCode.SYSTEM_ERROR, "合同文件保存失败");
         }
+        registerFileReplacementCleanup(target, () -> deleteStoredContract(previousFileName));
 
         order.setContractStoredFileName(storedFileName);
         order.setContractOriginalName(originalName);
-        order.setContractContentType(firstNonBlank(file.getContentType(), probeContentType(target), "application/octet-stream"));
+        order.setContractContentType(safeContentType(file.getContentType(), probeContentType(target)));
         order.setContractFileSize(file.getSize());
         order.setContractUploadedAt(LocalDateTime.now());
         collaborationService.stampWrite(order);
 
         OutboundOrder saved = outboundOrderRepository.saveAndFlush(order);
-        deleteStoredContract(previousFileName);
         operationAuditService.record("订单列表", "UPLOAD_CONTRACT", "OUTBOUND_ORDER", saved.getId(),
                 saved.getOrderNo(), saved.getCustomerName(), "上传订单合同 " + originalName,
                 saved.getOperator(), saved.getOrderRemark(), SOURCE_TYPE, saved.getId());
@@ -600,7 +613,9 @@ public class OutboundOrderServiceImpl implements OutboundOrderService {
             Integer afterQuantity,
             String operator,
             String remark,
-            Long orderId
+            Long orderId,
+            BigDecimal unitCost,
+            BigDecimal unitRevenue
     ) {
         StockOperationLog stockLog = new StockOperationLog();
         stockLog.setResourceType(resourceType);
@@ -611,6 +626,8 @@ public class OutboundOrderServiceImpl implements OutboundOrderService {
         stockLog.setQuantity(quantity);
         stockLog.setBeforeQuantity(beforeQuantity);
         stockLog.setAfterQuantity(afterQuantity);
+        stockLog.setUnitCost(unitCost);
+        stockLog.setUnitRevenue(unitRevenue);
         stockLog.setOperator(operator);
         stockLog.setRemark(remark);
         StockOperationLog savedLog = stockOperationLogRepository.save(stockLog);
@@ -626,7 +643,8 @@ public class OutboundOrderServiceImpl implements OutboundOrderService {
                 operator,
                 remark,
                 SOURCE_TYPE,
-                orderId
+                orderId,
+                unitCost
         );
         operationAuditService.record(resourceType.equals(OutboundOrder.RESOURCE_MACHINE) ? "整车出入库" : "配件出入库",
                 "OUTBOUND", resourceType, resourceId, resourceCode, resourceName,
@@ -712,6 +730,9 @@ public class OutboundOrderServiceImpl implements OutboundOrderService {
         if (originalName.isBlank() || originalName.contains("..") || originalName.contains("/") || originalName.contains("\\")) {
             throw new BusinessException(ResultCode.PARAM_ERROR, "发票文件名不合法");
         }
+        if (originalName.length() > MAX_ORIGINAL_FILE_NAME_LENGTH) {
+            throw new BusinessException(ResultCode.PARAM_ERROR, "发票文件名过长");
+        }
         return originalName;
     }
 
@@ -719,6 +740,9 @@ public class OutboundOrderServiceImpl implements OutboundOrderService {
         String originalName = StringUtils.cleanPath(Objects.requireNonNullElse(originalFilename, "contract.pdf")).trim();
         if (originalName.isBlank() || originalName.contains("..") || originalName.contains("/") || originalName.contains("\\")) {
             throw new BusinessException(ResultCode.PARAM_ERROR, "合同文件名不合法");
+        }
+        if (originalName.length() > MAX_ORIGINAL_FILE_NAME_LENGTH) {
+            throw new BusinessException(ResultCode.PARAM_ERROR, "合同文件名过长");
         }
         return originalName;
     }
@@ -757,13 +781,46 @@ public class OutboundOrderServiceImpl implements OutboundOrderService {
         }
     }
 
+    private String safeContentType(String uploadedContentType, String probedContentType) {
+        return truncate(firstNonBlank(uploadedContentType, probedContentType, "application/octet-stream"),
+                MAX_CONTENT_TYPE_LENGTH);
+    }
+
+    private void registerFileReplacementCleanup(Path newFile, Runnable deletePreviousAfterCommit) {
+        if (!TransactionSynchronizationManager.isSynchronizationActive()) {
+            deletePreviousAfterCommit.run();
+            return;
+        }
+        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+            @Override
+            public void afterCommit() {
+                deletePreviousAfterCommit.run();
+            }
+
+            @Override
+            public void afterCompletion(int status) {
+                if (status != TransactionSynchronization.STATUS_COMMITTED) {
+                    deleteFileIfExists(newFile);
+                }
+            }
+        });
+    }
+
+    private void deleteFileIfExists(Path filePath) {
+        try {
+            Files.deleteIfExists(filePath);
+        } catch (IOException e) {
+            log.warn("Failed to delete uploaded file {}", filePath, e);
+        }
+    }
+
     private void deleteStoredInvoice(String storedFileName) {
         if (storedFileName == null || storedFileName.isBlank()) {
             return;
         }
         try {
             Files.deleteIfExists(resolveInvoiceFile(storedFileName));
-        } catch (IOException e) {
+        } catch (IOException | RuntimeException e) {
             log.warn("删除旧发票文件失败: {}", storedFileName, e);
         }
     }
@@ -774,7 +831,7 @@ public class OutboundOrderServiceImpl implements OutboundOrderService {
         }
         try {
             Files.deleteIfExists(resolveContractFile(storedFileName));
-        } catch (IOException e) {
+        } catch (IOException | RuntimeException e) {
             log.warn("删除旧合同文件失败: {}", storedFileName, e);
         }
     }
@@ -796,6 +853,10 @@ public class OutboundOrderServiceImpl implements OutboundOrderService {
         return null;
     }
 
+    private BigDecimal money(BigDecimal value) {
+        return value == null ? BigDecimal.ZERO : value;
+    }
+
     private String blankToNull(String value) {
         return value == null || value.isBlank() ? null : value.trim();
     }
@@ -807,6 +868,13 @@ public class OutboundOrderServiceImpl implements OutboundOrderService {
             }
         }
         return null;
+    }
+
+    private String truncate(String value, int maxLength) {
+        if (value == null || value.length() <= maxLength) {
+            return value;
+        }
+        return value.substring(0, maxLength);
     }
 
     private String joinRemark(String... values) {

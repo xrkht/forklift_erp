@@ -149,6 +149,10 @@ button {
   resize: vertical;
 }
 
+.field select[multiple] {
+  min-height: 124px;
+}
+
 .field input:focus,
 .field select:focus,
 .field textarea:focus,
@@ -752,7 +756,7 @@ button {
 
 .finance-bar-track {
   position: relative;
-  height: 28px;
+  height: 36px;
   border-radius: 8px;
   background: var(--panel-2);
   border: 1px solid var(--line);
@@ -762,7 +766,7 @@ button {
 .finance-bar {
   position: absolute;
   left: 0;
-  height: 50%;
+  height: 33.333%;
   min-width: 0;
 }
 
@@ -772,8 +776,17 @@ button {
 }
 
 .finance-bar.cost {
-  bottom: 0;
+  top: 33.333%;
   background: var(--warn);
+}
+
+.finance-bar.net {
+  bottom: 0;
+  background: var(--success);
+}
+
+.finance-bar.net.negative {
+  background: var(--danger);
 }
 
 .finance-legend {
@@ -798,6 +811,10 @@ button {
 
 .legend-dot.cost {
   background: var(--warn);
+}
+
+.legend-dot.net {
+  background: var(--success);
 }
 
 .table-wrap {

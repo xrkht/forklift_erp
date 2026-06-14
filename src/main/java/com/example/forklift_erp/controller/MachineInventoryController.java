@@ -26,6 +26,7 @@ import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.*;
 
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
@@ -325,6 +326,8 @@ public class MachineInventoryController {
         stockLog.setQuantity(quantity);
         stockLog.setBeforeQuantity(beforeQuantity);
         stockLog.setAfterQuantity(afterQuantity);
+        BigDecimal unitCost = financialCost(machine);
+        stockLog.setUnitCost(unitCost);
         stockLog.setOperator(operator);
         stockLog.setRemark(remark);
         StockOperationLog savedLog = stockOperationLogRepository.save(stockLog);
@@ -340,12 +343,20 @@ public class MachineInventoryController {
                 operator,
                 remark,
                 "STOCK_LOG",
-                savedLog.getId()
+                savedLog.getId(),
+                unitCost
         );
         operationAuditService.record("整车出入库", operationType, "MACHINE", machine.getId(),
                 machine.getVehicleProductNumber(), machine.getName(),
                 ("INBOUND".equals(operationType) ? "整车入库 " : "整车出库 ") + quantity,
                 operator, remark, "STOCK", savedLog.getId());
         return savedLog;
+    }
+
+    private BigDecimal financialCost(MachineInventory machine) {
+        if (machine.getSettlementPrice() != null) {
+            return machine.getSettlementPrice();
+        }
+        return machine.getPurchasePrice() == null ? BigDecimal.ZERO : machine.getPurchasePrice();
     }
 }

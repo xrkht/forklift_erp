@@ -1,5 +1,6 @@
 package com.example.forklift_erp.dto;
 
+import jakarta.validation.constraints.DecimalMin;
 import jakarta.validation.constraints.NotNull;
 import lombok.Data;
 
@@ -17,9 +18,11 @@ public class VehicleOutboundOrderCreateDTO {
     private Long customerId;
 
     @NotNull(message = "结算价不能为空")
+    @DecimalMin(value = "0.00", message = "结算价不能为负数")
     private BigDecimal settlementPrice;
 
     private LocalDate salesDate;
+    @DecimalMin(value = "0.00", message = "销售单价不能为负数")
     private BigDecimal salePrice;
     private Boolean paymentSettled;
     private String paymentRemark;

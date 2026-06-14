@@ -23,8 +23,8 @@ public class RepairRecordVO {
     private Boolean repairExternal;
     private String usedParts;
     private String usedPartIds;
-    private BigDecimal workHours;
     private BigDecimal repairFee;
+    private BigDecimal repairExpense;
     private BigDecimal partsFee;
     private BigDecimal totalFee;
     private String status;
@@ -48,8 +48,8 @@ public class RepairRecordVO {
         vo.setRepairExternal(Boolean.TRUE.equals(entity.getRepairExternal()));
         vo.setUsedParts(entity.getUsedParts());
         vo.setUsedPartIds(entity.getUsedPartIds());
-        vo.setWorkHours(entity.getWorkHours());
         vo.setRepairFee(entity.getRepairFee());
+        vo.setRepairExpense(entity.getRepairExpense());
         vo.setPartsFee(entity.getPartsFee());
         vo.setTotalFee(entity.getTotalFee());
         vo.setStatus(entity.getStatus());

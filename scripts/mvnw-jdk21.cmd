@@ -1,0 +1,3 @@
+@echo off
+powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0mvnw-jdk21.ps1" %*
+exit /b %ERRORLEVEL%

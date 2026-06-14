@@ -10,6 +10,8 @@ server:
     key-alias: forklift-erp
 
 spring:
+  config:
+    import: optional:file:.env[.properties]
   application:
     name: forklift-erp # 应用名称，与Spring Initializr创建时保持一致
   datasource:
@@ -46,15 +48,19 @@ logging:
 
 # JWT配置
 jwt:
-  secret: ${FORKLIFT_ERP_JWT_SECRET:forklift-erp-development-jwt-secret-change-me-32-bytes-minimum}
-  expiration: 31536000000   # 1 年（毫秒），可调整为 Long.MAX_VALUE 但建议合理设置
+  secret: ${FORKLIFT_ERP_JWT_SECRET}
+  expiration: ${FORKLIFT_ERP_JWT_EXPIRATION:31536000000}   # 1 年（毫秒），可调整为 Long.MAX_VALUE 但建议合理设置
   header: Authorization # Token在请求头中的名称
 
 forklift:
   invoice-storage-dir: ${FORKLIFT_ERP_INVOICE_STORAGE_DIR:uploads/invoices}
   contract-storage-dir: ${FORKLIFT_ERP_CONTRACT_STORAGE_DIR:uploads/contracts}
+  bootstrap-admin:
+    enabled: ${FORKLIFT_ERP_BOOTSTRAP_ADMIN_ENABLED:false}
+    username: ${FORKLIFT_ERP_BOOTSTRAP_ADMIN_USERNAME:admin}
+    password: ${FORKLIFT_ERP_BOOTSTRAP_ADMIN_PASSWORD:}
   seed-demo-data:
-    enabled: ${FORKLIFT_ERP_SEED_DEMO_DATA:true} # 本地启动时幂等补齐演示业务数据；生产可设为 false
+    enabled: ${FORKLIFT_ERP_SEED_DEMO_DATA:false} # 本地启动时幂等补齐演示业务数据；生产可设为 false
 
 springdoc:
   api-docs:

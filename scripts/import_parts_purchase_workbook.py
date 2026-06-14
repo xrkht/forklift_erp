@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 from dataclasses import asdict, dataclass, field
 from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
@@ -279,9 +280,11 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Import Longgong parts purchase workbook through the ERP API.")
     parser.add_argument("--workbook", help="Path to the parts purchase workbook.")
     parser.add_argument("--base-url", default="http://localhost:8080")
-    parser.add_argument("--username", default="admin")
-    parser.add_argument("--password", default="admin123")
+    parser.add_argument("--username", default=os.environ.get("FORKLIFT_ERP_BOOTSTRAP_ADMIN_USERNAME", "admin"))
+    parser.add_argument("--password", default=os.environ.get("FORKLIFT_ERP_BOOTSTRAP_ADMIN_PASSWORD"))
     args = parser.parse_args()
+    if not args.password:
+        parser.error("--password is required, or set FORKLIFT_ERP_BOOTSTRAP_ADMIN_PASSWORD.")
     print(json.dumps(import_parts(args), ensure_ascii=False, indent=2))
 
 

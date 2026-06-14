@@ -86,7 +86,7 @@ const tabs = {
   customers: { title: "客户列表", subtitle: "维护公司抬头、地址、联系人和税号/身份证号" },
   repairs: { title: "维修记录", subtitle: "维修工单、费用与状态追踪" },
   logs: { title: "日志查看", subtitle: "配件替换、维修和出入库流水" },
-  stats: { title: "统计财报", subtitle: "按月度和年度汇总库存收支、维修收入与库存价值" },
+  stats: { title: "统计财报", subtitle: "按月度和年度汇总营收、成本、净收益与库存价值" },
   configs: { title: "配置字典", subtitle: "车辆配置项与可选值维护" },
   users: { title: "用户管理", subtitle: "账号、角色与客户端登录切换" }
 };
@@ -123,9 +123,9 @@ const fields = {
     { name: "warrantyCardNumber", label: "保修卡号", section: "整机识别" },
     { name: "manufacturingDate", label: "制造日期", type: "date", coerce: "date", section: "整机识别" },
     { name: "stockStatus", label: "库存状态", type: "select", options: stockStatusOptions(), defaultValue: "IN_STOCK", section: "价格库存" },
-    { name: "purchasePrice", label: "采购价", type: "number", coerce: "decimal", step: "0.01", section: "价格库存" },
-    { name: "settlementPrice", label: "结算价", type: "number", coerce: "decimal", step: "0.01", section: "价格库存" },
-    { name: "salePrice", label: "销售单价", type: "number", coerce: "decimal", step: "0.01", section: "价格库存" },
+    { name: "purchasePrice", label: "采购价", type: "number", coerce: "decimal", step: "0.01", min: "0", section: "价格库存" },
+    { name: "settlementPrice", label: "结算价", type: "number", coerce: "decimal", step: "0.01", min: "0", section: "价格库存" },
+    { name: "salePrice", label: "销售单价", type: "number", coerce: "decimal", step: "0.01", min: "0", section: "价格库存" },
     { name: "inventoryCount", label: "库存数", type: "number", coerce: "int", step: "1", defaultValue: 1, section: "价格库存" },
     { name: "salesDate", label: "销售日期", type: "date", coerce: "date", section: "销售与去向" },
     { name: "isSalesReported", label: "是否报销售", section: "销售与去向" },
@@ -145,8 +145,8 @@ const fields = {
     { name: "machineType", label: "动力", type: "select", options: powerTypeOptions, allowCustom: true, required: true },
     { name: "supplier", label: "供应商" },
     { name: "warehouseName", label: "经销商/仓位" },
-    { name: "purchasePrice", label: "采购价", type: "number", coerce: "decimal", step: "0.01" },
-    { name: "salePrice", label: "销售单价", type: "number", coerce: "decimal", step: "0.01" }
+    { name: "purchasePrice", label: "采购价", type: "number", coerce: "decimal", step: "0.01", min: "0" },
+    { name: "salePrice", label: "销售单价", type: "number", coerce: "decimal", step: "0.01", min: "0" }
   ],
   vehicleInbound: [
     { name: "vehicleProductNumber", label: "车号/产品编号", required: true, section: "入库信息" },
@@ -164,9 +164,9 @@ const fields = {
     { name: "warrantyCardNumber", label: "保修卡号", section: "整机识别" },
     { name: "manufacturingDate", label: "制造日期", type: "date", coerce: "date", section: "整机识别" },
     { name: "stockStatus", label: "库存状态", type: "select", options: stockStatusOptions(), defaultValue: "IN_STOCK", section: "价格库存" },
-    { name: "purchasePrice", label: "采购价", type: "number", coerce: "decimal", step: "0.01", section: "价格库存" },
-    { name: "settlementPrice", label: "结算价", type: "number", coerce: "decimal", step: "0.01", section: "价格库存" },
-    { name: "salePrice", label: "销售单价", type: "number", coerce: "decimal", step: "0.01", section: "价格库存" },
+    { name: "purchasePrice", label: "采购价", type: "number", coerce: "decimal", step: "0.01", min: "0", section: "价格库存" },
+    { name: "settlementPrice", label: "结算价", type: "number", coerce: "decimal", step: "0.01", min: "0", section: "价格库存" },
+    { name: "salePrice", label: "销售单价", type: "number", coerce: "decimal", step: "0.01", min: "0", section: "价格库存" },
     { name: "inventoryCount", label: "库存数", type: "number", coerce: "int", step: "1", defaultValue: 1, section: "价格库存" },
     { name: "remarks", label: "备注", type: "textarea", span: 2, section: "销售与去向" }
   ],
@@ -181,9 +181,9 @@ const fields = {
     { name: "sourceMachineId", label: "来源车辆 ID", type: "number", coerce: "int", step: "1" },
     { name: "quantity", label: "数量", type: "number", coerce: "int", step: "1", required: true, defaultValue: 0 },
     { name: "unit", label: "单位", defaultValue: "件" },
-    { name: "purchasePrice", label: "采购价", type: "number", coerce: "decimal", step: "0.01" },
-    { name: "salePrice", label: "销售价", type: "number", coerce: "decimal", step: "0.01" },
-    { name: "settlementPrice", label: "结算价", type: "number", coerce: "decimal", step: "0.01" },
+    { name: "purchasePrice", label: "采购价", type: "number", coerce: "decimal", step: "0.01", min: "0" },
+    { name: "salePrice", label: "销售价", type: "number", coerce: "decimal", step: "0.01", min: "0" },
+    { name: "settlementPrice", label: "结算价", type: "number", coerce: "decimal", step: "0.01", min: "0" },
     { name: "manufacturingDate", label: "生产日期", type: "date", coerce: "date" },
     { name: "inboundDate", label: "入库时间", type: "datetime-local", coerce: "datetime" },
     { name: "remarks", label: "备注", type: "textarea", span: 2 }
@@ -197,9 +197,10 @@ const fields = {
     { name: "repairContent", label: "维修内容", type: "textarea", span: 2 },
     { name: "repairPersonChoice", label: "维修人员", type: "select", required: true, options: repairPersonOptions },
     { name: "usedPartIds", label: "使用配件", type: "select", coerce: "intList", options: repairPartOptions },
-    { name: "repairFee", label: "维修费", type: "number", coerce: "decimal", step: "0.01" },
-    { name: "partsFee", label: "配件费", type: "number", coerce: "decimal", step: "0.01" },
-    { name: "totalFee", label: "总费用", type: "number", coerce: "decimal", step: "0.01", readOnly: true },
+    { name: "repairFee", label: "维修服务费", type: "number", coerce: "decimal", step: "0.01", min: "0" },
+    { name: "repairExpense", label: "外包维修支出", type: "number", coerce: "decimal", step: "0.01", min: "0" },
+    { name: "partsFee", label: "配件收费", type: "number", coerce: "decimal", step: "0.01", min: "0" },
+    { name: "totalFee", label: "客户应收总额", type: "number", coerce: "decimal", step: "0.01", min: "0", readOnly: true },
     { name: "remarks", label: "备注", type: "textarea", span: 2 }
   ],
   configItem: [
@@ -229,8 +230,8 @@ const fields = {
   vehicleOutbound: [
     { name: "machineId", label: "车号/产品编号", type: "select", coerce: "int", required: true, options: vehicleOutboundOptions, section: "销售车辆" },
     { name: "salesDate", label: "销售日期", type: "date", coerce: "date", defaultValue: todayInputDate, section: "销售车辆" },
-    { name: "settlementPrice", label: "结算价", type: "number", coerce: "decimal", step: "0.01", required: true, section: "价格收款" },
-    { name: "salePrice", label: "销售单价", type: "number", coerce: "decimal", step: "0.01", section: "价格收款" },
+    { name: "settlementPrice", label: "结算价", type: "number", coerce: "decimal", step: "0.01", min: "0", required: true, section: "价格收款" },
+    { name: "salePrice", label: "销售单价", type: "number", coerce: "decimal", step: "0.01", min: "0", section: "价格收款" },
     { name: "paymentSettled", label: "车款是否结清", type: "checkbox", coerce: "boolean", section: "价格收款" },
     { name: "paymentRemark", label: "收款情况", type: "textarea", span: 2, section: "价格收款" },
     { name: "customerMode", label: "客户录入", type: "select", required: true, options: customerEntryModeOptions, defaultValue: "existing", section: "客户资料" },
@@ -264,7 +265,7 @@ const fields = {
     { name: "partCode", label: "配件", type: "select", required: true, options: partCodeOptions },
     { name: "quantity", label: "数量", type: "number", coerce: "int", step: "1", required: true, defaultValue: 1 },
     { name: "customerId", label: "客户", type: "select", coerce: "int", required: true, options: customerOptions },
-    { name: "settlementPrice", label: "结算价", type: "number", coerce: "decimal", step: "0.01" },
+    { name: "settlementPrice", label: "结算价", type: "number", coerce: "decimal", step: "0.01", min: "0" },
     { name: "operator", label: "操作人" },
     { name: "orderRemark", label: "订单备注", type: "textarea", span: 2 }
   ],
@@ -272,7 +273,7 @@ const fields = {
     { name: "machineId", label: "租赁车辆", type: "select", coerce: "int", required: true, options: vehicleRentalOptions, section: "租赁车辆" },
     { name: "customerId", label: "租赁去向（客户）", type: "select", coerce: "int", required: true, options: customerOptions, section: "租赁信息" },
     { name: "destination", label: "具体去向/地址", span: 2, section: "租赁信息" },
-    { name: "monthlyRentalPrice", label: "月租价格", type: "number", coerce: "decimal", step: "0.01", required: true, section: "租赁信息" },
+    { name: "monthlyRentalPrice", label: "月租价格", type: "number", coerce: "decimal", step: "0.01", min: "0", required: true, section: "租赁信息" },
     { name: "startDate", label: "开始日期", type: "date", coerce: "date", defaultValue: todayInputDate, section: "租赁信息" },
     { name: "endDate", label: "结束日期", type: "date", coerce: "date", section: "租赁信息" },
     { name: "status", label: "租赁状态", type: "toggle", options: rentalStatusOptions, defaultValue: "ACTIVE", section: "租赁信息" },
@@ -289,8 +290,8 @@ const fields = {
   ],
   outboundOrder: [
     { name: "salesDate", label: "销售日期", type: "date", coerce: "date" },
-    { name: "settlementPrice", label: "结算价", type: "number", coerce: "decimal", step: "0.01" },
-    { name: "salePrice", label: "销售单价", type: "number", coerce: "decimal", step: "0.01" },
+    { name: "settlementPrice", label: "结算价", type: "number", coerce: "decimal", step: "0.01", min: "0" },
+    { name: "salePrice", label: "销售单价", type: "number", coerce: "decimal", step: "0.01", min: "0" },
     { name: "paymentSettled", label: "车款结清", type: "checkbox", coerce: "boolean" },
     { name: "paymentRemark", label: "收款情况", type: "textarea", span: 2 },
     { name: "salesReported", label: "已报销售", type: "checkbox", coerce: "boolean" },
@@ -1053,7 +1054,7 @@ function handleModalInput(event) {
   const input = event.target.closest("[data-combo-input]");
   if (!input) {
     const form = event.target.closest("form");
-    if (form?.dataset.kind === "repair" && ["repairFee", "partsFee"].includes(event.target.name)) {
+    if (form?.dataset.kind === "repair" && ["repairFee", "repairExpense", "partsFee"].includes(event.target.name)) {
       syncRepairTotalFee(form);
     }
     return;
@@ -1117,7 +1118,9 @@ async function handleModalChange(event) {
     return;
   }
   if (state.modal?.item && event.target.name) {
-    state.modal.item[event.target.name] = event.target.value;
+    state.modal.item[event.target.name] = event.target.multiple
+      ? Array.from(event.target.selectedOptions || []).map(option => option.value)
+      : event.target.value;
   }
 
   if (kind === "configItem") {
@@ -1129,8 +1132,17 @@ async function handleModalChange(event) {
   }
 
   if (kind === "repair") {
-    if (event.target.name === "repairFee" || event.target.name === "partsFee") {
+    if (["repairFee", "repairExpense", "partsFee"].includes(event.target.name)) {
       syncRepairTotalFee(form);
+    }
+    if (event.target.name === "repairPersonChoice") {
+      state.modal.item = { ...state.modal.item, ...serializeForm(kind, form) };
+      if (state.modal.item.repairPersonChoice !== "OTHER") {
+        state.modal.item.repairExpense = null;
+      }
+      renderModal();
+      syncRepairTotalFee(els.modalCard.querySelector("form[data-kind='repair']"));
+      return;
     }
     if (event.target.name === "machineId") {
       syncRepairVehicleSelection(form, Number(event.target.value || 0));
@@ -2275,7 +2287,7 @@ function renderOverview() {
         ${renderSurface("维修跟进", compactTable([
           { label: "客户", key: "customerName" },
           { label: "状态", html: true, render: row => repairStatusToggle(row) },
-          { label: "费用", key: "totalFee", formatter: money },
+          { label: "应收", key: "totalFee", formatter: money },
           { label: "操作", html: true, render: row => hasPermission("repair:write") ? `<button class="btn btn-sm" type="button" data-action="toggle-repair-status" data-id="${escapeAttr(row.id)}">${icon("swap")}完成</button>` : "" }
         ], repairs.filter(item => item.status !== "COMPLETED").slice(0, 8)))}
       </section>
@@ -2942,7 +2954,10 @@ function renderRepairs() {
         { label: "客户", html: true, render: row => repairCustomerSummary(row) },
         { label: "维修人", html: true, render: row => repairPersonSummary(row) },
         { label: "状态", html: true, render: row => repairStatusToggle(row) },
-        { label: "总费用", key: "totalFee", formatter: money },
+        { label: "维修服务费", key: "repairFee", formatter: money },
+        { label: "外包维修支出", key: "repairExpense", formatter: money },
+        { label: "配件收费", key: "partsFee", formatter: money },
+        { label: "客户应收总额", key: "totalFee", formatter: money },
         { label: "操作", html: true, render: row => rowActions("repair", row, ["edit", "delete"]) }
       ], rows))}
       ${renderPagination("repairs")}
@@ -3011,10 +3026,10 @@ function renderStatistics() {
       </div>
 
       <section class="summary-grid">
-        ${summaryCard("年度总收入", money(annual.totalIncome), `出库 ${money(annual.outboundRevenue)} / 维修 ${money(annual.repairIncome)} / 租赁 ${money(annual.rentalIncome)}`)}
-        ${summaryCard("入库成本", money(annual.inboundCost), `${annual.inboundQuantity || 0} 件/台入库`)}
-        ${summaryCard("出库毛利", money(annual.grossProfit), `${annual.outboundQuantity || 0} 件/台出库`)}
-        ${summaryCard("租赁收入", money(annual.rentalIncome), `${annual.rentalOrders || 0} 单租赁`)}
+        ${summaryCard("年度营业收入", money(annual.totalIncome), `出库 ${money(annual.outboundRevenue)} / 维修营收 ${money(annual.repairIncome)} / 租赁 ${money(annual.rentalIncome)}`)}
+        ${summaryCard("年度净收益", money(annual.netProfit), `利润成本 ${money(annual.totalExpense)}`)}
+        ${summaryCard("现金净流量", money(annual.netCashflow), `现金支出 ${money(annual.cashExpense)}`)}
+        ${summaryCard("维修客户应收", money(annual.repairReceivable), `外包支出 ${money(annual.repairExpense)} / 配件成本 ${money(annual.repairPartsCost)}`)}
       </section>
 
       ${renderSurface("月度收支走势", renderFinanceBars(monthlyRows))}
@@ -3025,15 +3040,21 @@ function renderStatistics() {
           { label: "入库成本", key: "inboundCost", formatter: money },
           { label: "出库收入", key: "outboundRevenue", formatter: money },
           { label: "出库成本", key: "outboundCost", formatter: money },
-          { label: "维修收入", key: "repairIncome", formatter: money },
+          { label: "维修营收", key: "repairIncome", formatter: money },
+          { label: "维修应收", key: "repairReceivable", formatter: money },
+          { label: "外包支出", key: "repairExpense", formatter: money },
+          { label: "配件成本", key: "repairPartsCost", formatter: money },
           { label: "租赁收入", key: "rentalIncome", formatter: money },
-          { label: "毛利", key: "grossProfit", formatter: money }
+          { label: "净收益", key: "netProfit", formatter: money },
+          { label: "现金净流量", key: "netCashflow", formatter: money }
         ], monthlyRows))}
         ${renderSurface("年度对比", renderTable([
           { label: "年份", key: "period" },
-          { label: "总收入", key: "totalIncome", formatter: money },
+          { label: "营业收入", key: "totalIncome", formatter: money },
           { label: "入库成本", key: "inboundCost", formatter: money },
-          { label: "出库毛利", key: "grossProfit", formatter: money },
+          { label: "利润成本", key: "totalExpense", formatter: money },
+          { label: "净收益", key: "netProfit", formatter: money },
+          { label: "现金净流量", key: "netCashflow", formatter: money },
           { label: "维修单", key: "repairOrders" },
           { label: "租赁单", key: "rentalOrders" }
         ], yearlyRows))}
@@ -3053,7 +3074,7 @@ function renderStatistics() {
           { label: "档案数", key: "itemCount" },
           { label: "库存数", key: "stockQuantity" },
           { label: "成本价值", key: "costValue", formatter: money },
-          { label: "零售价值", key: "retailValue", formatter: money }
+          { label: "结算价值", key: "settlementValue", formatter: money }
         ], stockRows))}
       </section>
 
@@ -3071,7 +3092,7 @@ function renderStatistics() {
           { label: "车号", key: "vehicleNumber" },
           { label: "车型", key: "machineName" },
           { label: "去向", key: "destination" },
-          { label: "月租价", key: "rentalPrice", formatter: money },
+          { label: "租赁收入", key: "rentalPrice", formatter: money },
           { label: "状态", html: true, render: row => rentalStatusBadge(row.status) }
         ], topRentalRows))}
       </section>
@@ -3530,7 +3551,11 @@ function renderYearOptions(selectedYear, yearlyRows) {
 }
 
 function renderFinanceBars(rows) {
-  const values = rows.flatMap(row => [Number(row.totalIncome || 0), Number(row.inboundCost || 0)]);
+  const values = rows.flatMap(row => [
+    Number(row.totalIncome || 0),
+    Number(row.cashExpense || 0),
+    Math.abs(Number(row.netCashflow || 0))
+  ]);
   const max = Math.max(1, ...values);
   return `
     <div class="finance-bars">
@@ -3539,14 +3564,16 @@ function renderFinanceBars(rows) {
           <div class="finance-period">${escapeHtml(row.period?.slice(5) || row.period || "-")}</div>
           <div class="finance-bar-track">
             <span class="finance-bar income" style="width:${barWidth(row.totalIncome, max)}%"></span>
-            <span class="finance-bar cost" style="width:${barWidth(row.inboundCost, max)}%"></span>
+            <span class="finance-bar cost" style="width:${barWidth(row.cashExpense, max)}%"></span>
+            <span class="finance-bar net ${Number(row.netCashflow || 0) < 0 ? "negative" : ""}" style="width:${barWidth(Math.abs(Number(row.netCashflow || 0)), max)}%"></span>
           </div>
-          <div class="finance-bar-value">${escapeHtml(money(row.totalIncome))}</div>
+          <div class="finance-bar-value">${escapeHtml(money(row.netCashflow))}</div>
         </div>
       `).join("")}
       <div class="finance-legend">
         <span><i class="legend-dot income"></i>收入</span>
-        <span><i class="legend-dot cost"></i>入库成本</span>
+        <span><i class="legend-dot cost"></i>现金支出</span>
+        <span><i class="legend-dot net"></i>净现金流</span>
       </div>
     </div>
   `;
@@ -3825,6 +3852,20 @@ function renderField(field, data) {
     `;
   }
 
+  if (field.type === "select" && coerce === "intList") {
+    const options = resolveOptions(field);
+    const selectedValues = new Set(intListValues(rawValue));
+    const size = Math.min(6, Math.max(3, options.length || 3));
+    return `
+      <label class="field"${span}>
+        <span>${escapeHtml(field.label)}</span>
+        <select name="${escapeAttr(field.name)}" data-coerce="${escapeAttr(coerce)}" multiple size="${escapeAttr(size)}"${required}>
+          ${options.map(option => `<option value="${escapeAttr(option.value)}"${selectedValues.has(String(option.value)) ? " selected" : ""}>${escapeHtml(option.label)}</option>`).join("")}
+        </select>
+      </label>
+    `;
+  }
+
   if (field.type === "select") {
     const options = resolveOptions(field);
     const selected = findOptionByValue(options, value);
@@ -3885,9 +3926,19 @@ function renderField(field, data) {
   return `
     <label class="field"${span}>
       <span>${escapeHtml(field.label)}</span>
-      <input name="${escapeAttr(field.name)}" type="${escapeAttr(field.type || "text")}" data-coerce="${escapeAttr(coerce)}" value="${escapeAttr(value)}" placeholder="${escapeAttr(fieldPlaceholder(field, [], data))}"${renderPrefillAttrs(field, prefillValue)}${field.step ? ` step="${escapeAttr(field.step)}"` : ""}${field.readOnly ? " readonly" : ""}${required}>
+      <input name="${escapeAttr(field.name)}" type="${escapeAttr(field.type || "text")}" data-coerce="${escapeAttr(coerce)}" value="${escapeAttr(value)}" placeholder="${escapeAttr(fieldPlaceholder(field, [], data))}"${renderPrefillAttrs(field, prefillValue)}${field.step ? ` step="${escapeAttr(field.step)}"` : ""}${field.min !== undefined ? ` min="${escapeAttr(field.min)}"` : ""}${field.readOnly ? " readonly" : ""}${required}>
     </label>
   `;
+}
+
+function intListValues(value) {
+  if (Array.isArray(value)) {
+    return value.map(item => String(item)).filter(Boolean);
+  }
+  if (value === null || value === undefined || value === "") {
+    return [];
+  }
+  return String(value).split(",").map(item => item.trim()).filter(Boolean);
 }
 
 function renderConfigSelectionEditor(item) {
@@ -4129,7 +4180,11 @@ function serializeForm(kind, form) {
     const input = form.elements[field.name];
     if (!input) continue;
     const coerce = input.dataset.coerce || "string";
-    let raw = input.type === "checkbox" ? input.checked : String(input.value || "").trim();
+    let raw = input.type === "checkbox"
+      ? input.checked
+      : input.multiple
+        ? Array.from(input.selectedOptions || []).map(option => option.value).join(",")
+        : String(input.value || "").trim();
     const combo = input.closest?.("[data-combo]");
     const comboTypedValue = combo ? String(combo.querySelector("[data-combo-input]")?.value || "").trim() : "";
     const prefillLabel = String(input.dataset.prefillLabel || "").trim();
@@ -4376,7 +4431,7 @@ function repairDefaults() {
       machineId: "请从车辆库存中选择车号",
       customerId: "请从客户列表中选择客户",
       usedPartIds: "可从配件库存中选择使用配件",
-      totalFee: "维修费 + 配件费自动计算"
+      totalFee: "客户应收 = 维修服务费 + 配件收费；外部维修时加外包支出"
     }
   };
   setPrefill(entity, "repairPersonChoice", "OTHER", "预填：其他");
@@ -4388,10 +4443,10 @@ function prepareRepairModalItem(item = {}) {
     item.repairPersonChoice = item.repairExternal ? "OTHER" : (item.repairPersonUserId || "");
   }
   if (item.usedPartIds && typeof item.usedPartIds === "string") {
-    item.usedPartIds = item.usedPartIds.split(",").map(value => value.trim()).filter(Boolean)[0] || "";
+    item.usedPartIds = item.usedPartIds.split(",").map(value => value.trim()).filter(Boolean);
   }
   if (item.totalFee === undefined || item.totalFee === null || item.totalFee === "") {
-    item.totalFee = decimalSum(item.repairFee, item.partsFee);
+    item.totalFee = decimalSum(item.repairFee, item.repairPersonChoice === "OTHER" ? item.repairExpense : 0, item.partsFee);
   }
   return item;
 }
@@ -4429,7 +4484,11 @@ function syncPartDictionaryFields(form, changedName) {
 }
 
 function syncRepairTotalFee(form) {
-  setFormFieldValue(form, "totalFee", decimalSum(form.elements.repairFee?.value, form.elements.partsFee?.value), false);
+  if (!form) return;
+  const repairExpense = form.elements.repairPersonChoice?.value === "OTHER"
+    ? form.elements.repairExpense?.value
+    : 0;
+  setFormFieldValue(form, "totalFee", decimalSum(form.elements.repairFee?.value, repairExpense, form.elements.partsFee?.value), false);
 }
 
 function decimalSum(...values) {
@@ -4526,6 +4585,12 @@ function getFields(kind, item = state.modal?.item || {}) {
   }
   if (kind === "partStock" && item.direction === "outbound") {
     return fields.partOutbound;
+  }
+  if (kind === "repair") {
+    const repairPersonChoice = String(fieldOrPrefillValue(item, "repairPersonChoice") || "");
+    if (repairPersonChoice !== "OTHER") {
+      return fields.repair.filter(field => field.name !== "repairExpense");
+    }
   }
   return fields[kind] || [];
 }

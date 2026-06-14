@@ -263,6 +263,36 @@ class AuthIntegrationTests {
     }
 
     @Test
+    void tokenIssuedBeforeUserIsDisabledCannotAccessProtectedEndpoints() throws Exception {
+        String username = uniqueUsername("user");
+
+        registerViaApi(superToken, username, PASSWORD, "USER")
+                .andExpect(status().isOk());
+
+        String issuedToken = login(username, PASSWORD);
+        mockMvc.perform(get("/api/inventory")
+                        .header("Authorization", bearer(issuedToken)))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(put("/api/auth/users/{id}/enabled", findUserId(username))
+                        .header("Authorization", bearer(superToken))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json(Map.of(
+                                "version", findUserVersion(username),
+                                "enabled", false
+                        ))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.enabled").value(false));
+
+        mockMvc.perform(get("/api/inventory")
+                        .header("Authorization", bearer(issuedToken)))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.code").value(401));
+
+        loginExpectingStatus(username, PASSWORD, 401);
+    }
+
+    @Test
     void normalUserKeepsBusinessPermissionsButCannotReadAdminModules() throws Exception {
         String adminUsername = uniqueUsername("admin");
         String userUsername = uniqueUsername("user");

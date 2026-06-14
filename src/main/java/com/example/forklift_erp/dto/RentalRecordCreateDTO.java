@@ -24,6 +24,7 @@ public class RentalRecordCreateDTO {
     @DecimalMin(value = "0.00", inclusive = false, message = "月租价格必须大于0")
     private BigDecimal monthlyRentalPrice;
 
+    @DecimalMin(value = "0.00", message = "租金不能为负数")
     private BigDecimal rentalPrice;
 
     private LocalDate startDate;

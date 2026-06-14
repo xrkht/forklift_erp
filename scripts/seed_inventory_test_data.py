@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 from dataclasses import asdict, dataclass
 from decimal import Decimal
 from typing import Any
@@ -424,11 +425,13 @@ def run_seed(args: argparse.Namespace) -> dict[str, Any]:
 def main() -> None:
     parser = argparse.ArgumentParser(description="Seed realistic inventory, vehicle configs, and parts for ERP testing.")
     parser.add_argument("--base-url", default="http://localhost:8080")
-    parser.add_argument("--username", default="admin")
-    parser.add_argument("--password", default="admin123")
+    parser.add_argument("--username", default=os.environ.get("FORKLIFT_ERP_BOOTSTRAP_ADMIN_USERNAME", "admin"))
+    parser.add_argument("--password", default=os.environ.get("FORKLIFT_ERP_BOOTSTRAP_ADMIN_PASSWORD"))
     parser.add_argument("--target-instock", type=int, default=240, help="Target number of vehicles with positive stock.")
     parser.add_argument("--optional-every", type=int, default=5, help="Every Nth vehicle becomes an optional-config vehicle.")
     args = parser.parse_args()
+    if not args.password:
+        parser.error("--password is required, or set FORKLIFT_ERP_BOOTSTRAP_ADMIN_PASSWORD.")
     print(json.dumps(run_seed(args), ensure_ascii=False, indent=2))
 
 

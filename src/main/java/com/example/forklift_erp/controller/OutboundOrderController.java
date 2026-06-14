@@ -84,7 +84,7 @@ public class OutboundOrderController {
 
     @PutMapping("/{id}")
     @PreAuthorize("@permissionService.hasPermission(authentication, 'stock:adjust')")
-    public Result<OutboundOrderVO> update(@PathVariable Long id, @RequestBody OutboundOrderUpdateDTO request) {
+    public Result<OutboundOrderVO> update(@PathVariable Long id, @Valid @RequestBody OutboundOrderUpdateDTO request) {
         return Result.success("出库订单更新成功", service.update(id, request == null ? new OutboundOrderUpdateDTO() : request));
     }
 
