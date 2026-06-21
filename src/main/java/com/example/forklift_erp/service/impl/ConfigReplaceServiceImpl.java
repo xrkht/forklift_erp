@@ -18,6 +18,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
@@ -452,6 +453,9 @@ public class ConfigReplaceServiceImpl implements ConfigReplaceService {
         stockLog.setQuantity(quantity);
         stockLog.setBeforeQuantity(beforeQuantity);
         stockLog.setAfterQuantity(afterQuantity);
+        BigDecimal unitCost = firstAmount(part.getSettlementPrice(), part.getPurchasePrice());
+        stockLog.setUnitCost(unitCost);
+        stockLog.setUnitRevenue(BigDecimal.ZERO);
         stockLog.setOperator(operator);
         stockLog.setRemark(remark);
         StockOperationLog savedLog = stockOperationLogRepository.save(stockLog);
@@ -466,6 +470,7 @@ public class ConfigReplaceServiceImpl implements ConfigReplaceService {
                 part.getWarehouseId(),
                 beforeQuantity,
                 afterQuantity,
+                unitCost,
                 operator,
                 remark,
                 sourceType,
@@ -476,5 +481,14 @@ public class ConfigReplaceServiceImpl implements ConfigReplaceService {
                 ("INBOUND".equals(operationType) ? "配件入库 " : "配件出库 ") + quantity,
                 operator, remark, "STOCK", savedLog.getId());
         return savedLog;
+    }
+
+    private BigDecimal firstAmount(BigDecimal... values) {
+        for (BigDecimal value : values) {
+            if (value != null) {
+                return value;
+            }
+        }
+        return BigDecimal.ZERO;
     }
 }

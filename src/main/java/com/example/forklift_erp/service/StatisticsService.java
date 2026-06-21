@@ -5,6 +5,7 @@ import com.example.forklift_erp.dto.ListSummaryVO;
 import com.example.forklift_erp.constant.ModificationWorkOrderStatus;
 import com.example.forklift_erp.constant.PartChangeAction;
 import com.example.forklift_erp.constant.RentalStatus;
+import com.example.forklift_erp.constant.RepairStatus;
 import com.example.forklift_erp.entity.MachineInventory;
 import com.example.forklift_erp.entity.ModificationWorkOrder;
 import com.example.forklift_erp.entity.ModificationWorkOrderLine;
@@ -34,9 +35,11 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.YearMonth;
+import java.time.temporal.ChronoUnit;
 import java.util.Comparator;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
@@ -51,6 +54,7 @@ import java.util.stream.Collectors;
 public class StatisticsService {
     private static final int LOW_PART_THRESHOLD = 5;
     private static final int LOW_MACHINE_THRESHOLD = 0;
+    private static final int MONEY_SCALE = 2;
 
     @Autowired
     private StockOperationLogRepository stockOperationLogRepository;
@@ -118,8 +122,9 @@ public class StatisticsService {
         dashboard.setSelectedYear(selectedYear);
         dashboard.setGeneratedAt(LocalDateTime.now());
         dashboard.setMonthlyFinance(buildMonthlyRows(selectedYear, stockLogs, repairs, rentals, modificationOrders, modificationLinesByOrderId, machines, parts));
-        dashboard.setYearlyFinance(buildYearlyRows(stockLogs, repairs, rentals, modificationOrders, modificationLinesByOrderId, machines, parts));
-        dashboard.setAnnualSummary(sumRows(String.valueOf(selectedYear), dashboard.getMonthlyFinance()));
+        dashboard.setYearlyFinance(buildYearlyRows(stockLogs, repairs, rentals, modificationOrders, modificationLinesByOrderId, machines, parts,
+                startAt.toLocalDate(), endAt.toLocalDate().minusDays(1)));
+        dashboard.setAnnualSummary(annualRow(selectedYear, dashboard.getYearlyFinance()));
         dashboard.setResourceFlows(buildResourceFlows(selectedYear, stockLogs, machines, parts));
         dashboard.setTopOutbounds(buildTopOutbounds(selectedYear, stockLogs, machines, parts));
         dashboard.setTopRentals(buildTopRentals(selectedYear, rentals));
@@ -175,16 +180,21 @@ public class StatisticsService {
     }
 
     private ListSummaryVO rentalSummary(String keyword) {
-        RentalRecordRepository.RentalSummaryProjection data = rentalRecordRepository.summarize(normalizeKeyword(keyword));
-        long totalCount = number(data.getTotalCount());
+        String normalizedKeyword = normalizeKeyword(keyword);
+        List<RentalRecord> records = rentalRecordRepository.findAllByOrderByCreatedAtDesc().stream()
+                .filter(record -> rentalMatches(record, normalizedKeyword))
+                .toList();
+        long totalCount = records.size();
         SummaryCount rows = new SummaryCount(totalCount);
-        long activeRows = number(data.getActiveRows());
-        long returnedRows = number(data.getReturnedRows());
-        long vehicleCount = number(data.getVehicleCount());
-        BigDecimal rentalIncome = amount(data.getRentalIncome());
+        long activeRows = records.stream().filter(record -> RentalStatus.ACTIVE.code().equals(record.getStatus())).count();
+        long returnedRows = records.stream().filter(record -> RentalStatus.RETURNED.code().equals(record.getStatus())).count();
+        long vehicleCount = records.stream().map(RentalRecord::getMachineId).filter(Objects::nonNull).distinct().count();
+        BigDecimal rentalIncome = records.stream()
+                .map(this::rentalAmount)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
         return summary("rentals", keyword)
                 .addCard("租赁记录", rows.size(), activeRows + " 台租赁中")
-                .addMoneyCard("月租收入", rentalIncome, returnedRows + " 单已归还")
+                .addMoneyCard("已计租赁收入", rentalIncome, returnedRows + " 单已归还")
                 .addCard("租赁车辆", vehicleCount, "按具体车号记录")
                 .addCard("待归还", activeRows, activeRows > 0 ? "请持续跟进租赁去向" : "暂无进行中租赁");
     }
@@ -282,12 +292,13 @@ public class StatisticsService {
             Long itemCount,
             Long stockQuantity,
             BigDecimal costValue,
-            BigDecimal retailValue
+            BigDecimal settlementValue
     ) {
         row.setItemCount(toInt(itemCount));
         row.setStockQuantity(toInt(stockQuantity));
         row.setCostValue(amount(costValue));
-        row.setRetailValue(amount(retailValue));
+        row.setSettlementValue(amount(settlementValue));
+        row.setRetailValue(amount(settlementValue));
     }
 
     private List<StatisticsDashboardVO.FinancialRow> buildMonthlyRows(
@@ -320,11 +331,7 @@ public class StatisticsService {
             addRepairToFinancial(rows.get(YearMonth.from(repair.getRepairDate()).toString()), repair);
         }
         for (RentalRecord rental : rentals) {
-            LocalDate rentalDate = rentalDate(rental);
-            if (rentalDate == null || rentalDate.getYear() != selectedYear) {
-                continue;
-            }
-            addRentalToFinancial(rows.get(YearMonth.from(rentalDate).toString()), rental);
+            addRentalToMonthlyRows(rows, selectedYear, rental);
         }
         for (ModificationWorkOrder order : modificationOrders) {
             if (!ModificationWorkOrderStatus.COMPLETED.code().equals(order.getStatus()) || order.getCompletedAt() == null || order.getCompletedAt().getYear() != selectedYear) {
@@ -346,7 +353,9 @@ public class StatisticsService {
             List<ModificationWorkOrder> modificationOrders,
             Map<Long, List<ModificationWorkOrderLine>> modificationLinesByOrderId,
             Map<Long, MachineInventory> machines,
-            Map<Long, PartInventory> parts
+            Map<Long, PartInventory> parts,
+            LocalDate rangeStart,
+            LocalDate rangeEnd
     ) {
         Map<String, StatisticsDashboardVO.FinancialRow> rows = new LinkedHashMap<>();
         for (StockOperationLog log : stockLogs) {
@@ -370,15 +379,7 @@ public class StatisticsService {
             addRepairToFinancial(row, repair);
         }
         for (RentalRecord rental : rentals) {
-            LocalDate rentalDate = rentalDate(rental);
-            if (rentalDate == null) {
-                continue;
-            }
-            StatisticsDashboardVO.FinancialRow row = rows.computeIfAbsent(
-                    String.valueOf(rentalDate.getYear()),
-                    this::newFinancialRow
-            );
-            addRentalToFinancial(row, rental);
+            addRentalToYearlyRows(rows, rental, rangeStart, rangeEnd);
         }
         for (ModificationWorkOrder order : modificationOrders) {
             if (!ModificationWorkOrderStatus.COMPLETED.code().equals(order.getStatus()) || order.getCompletedAt() == null) {
@@ -420,16 +421,20 @@ public class StatisticsService {
                 return created;
             });
             Price price = priceFor(log, machines, parts);
-            int quantity = quantity(log);
-            if ("INBOUND".equals(log.getOperationType())) {
-                row.setInboundQuantity(row.getInboundQuantity() + quantity);
-                row.setInboundCost(row.getInboundCost().add(price.cost().multiply(BigDecimal.valueOf(quantity))));
-            } else if ("OUTBOUND".equals(log.getOperationType())) {
-                BigDecimal revenue = price.revenue().multiply(BigDecimal.valueOf(quantity));
-                BigDecimal cost = price.cost().multiply(BigDecimal.valueOf(quantity));
-                row.setOutboundQuantity(row.getOutboundQuantity() + quantity);
+            int inboundQuantity = inboundQuantity(log);
+            if (inboundQuantity > 0) {
+                row.setInboundQuantity(row.getInboundQuantity() + inboundQuantity);
+                row.setInboundCost(row.getInboundCost().add(price.cost().multiply(BigDecimal.valueOf(inboundQuantity))));
+            }
+            int outboundQuantity = outboundQuantity(log);
+            if (outboundQuantity > 0) {
+                BigDecimal revenue = price.revenue().multiply(BigDecimal.valueOf(outboundQuantity));
+                BigDecimal cost = price.cost().multiply(BigDecimal.valueOf(outboundQuantity));
+                row.setOutboundQuantity(row.getOutboundQuantity() + outboundQuantity);
                 row.setOutboundRevenue(row.getOutboundRevenue().add(revenue));
-                row.setGrossProfit(row.getGrossProfit().add(revenue.subtract(cost)));
+                if (revenue.signum() > 0) {
+                    row.setGrossProfit(row.getGrossProfit().add(revenue.subtract(cost)));
+                }
             }
         }
         return rows.values().stream().toList();
@@ -443,9 +448,12 @@ public class StatisticsService {
     ) {
         Map<String, StatisticsDashboardVO.TopOutboundRow> rows = new LinkedHashMap<>();
         for (StockOperationLog log : stockLogs) {
-            if (!"OUTBOUND".equals(log.getOperationType())
-                    || log.getCreatedAt() == null
+            if (log.getCreatedAt() == null
                     || log.getCreatedAt().getYear() != selectedYear) {
+                continue;
+            }
+            int quantity = outboundQuantity(log);
+            if (quantity <= 0) {
                 continue;
             }
             String key = log.getResourceType() + ":" + Objects.toString(log.getResourceId(), log.getResourceCode());
@@ -457,15 +465,18 @@ public class StatisticsService {
                 return created;
             });
             Price price = priceFor(log, machines, parts);
-            int quantity = quantity(log);
             BigDecimal revenue = price.revenue().multiply(BigDecimal.valueOf(quantity));
             BigDecimal cost = price.cost().multiply(BigDecimal.valueOf(quantity));
+            if (revenue.signum() <= 0) {
+                continue;
+            }
             row.setQuantity(row.getQuantity() + quantity);
             row.setRevenue(row.getRevenue().add(revenue));
             row.setCost(row.getCost().add(cost));
             row.setGrossProfit(row.getGrossProfit().add(revenue.subtract(cost)));
         }
         return rows.values().stream()
+                .filter(row -> row.getRevenue().signum() > 0)
                 .sorted(Comparator.comparing(StatisticsDashboardVO.TopOutboundRow::getRevenue).reversed())
                 .limit(8)
                 .toList();
@@ -475,14 +486,15 @@ public class StatisticsService {
             int selectedYear,
             List<RentalRecord> rentals
     ) {
+        LocalDate yearStart = LocalDate.of(selectedYear, 1, 1);
+        LocalDate yearEnd = LocalDate.of(selectedYear, 12, 31);
         return rentals.stream()
-                .filter(rental -> {
-                    LocalDate rentalDate = rentalDate(rental);
-                    return rentalDate != null && rentalDate.getYear() == selectedYear;
-                })
-                .sorted(Comparator.comparing(this::rentalAmount, Comparator.nullsLast(Comparator.naturalOrder())).reversed())
+                .map(rental -> Map.entry(rental, rentalAmountForRange(rental, yearStart, yearEnd)))
+                .filter(entry -> entry.getValue().signum() > 0)
+                .sorted(Map.Entry.<RentalRecord, BigDecimal>comparingByValue().reversed())
                 .limit(8)
-                .map(rental -> {
+                .map(entry -> {
+                    RentalRecord rental = entry.getKey();
                     StatisticsDashboardVO.TopRentalRow row = new StatisticsDashboardVO.TopRentalRow();
                     row.setRentalNo(rental.getRentalNo());
                     row.setVehicleNumber(rental.getVehicleNumber());
@@ -490,7 +502,7 @@ public class StatisticsService {
                     row.setSpecificationModel(rental.getSpecificationModel());
                     row.setDestination(rental.getDestination());
                     row.setStatus(rental.getStatus());
-                    row.setRentalPrice(rentalAmount(rental));
+                    row.setRentalPrice(entry.getValue());
                     return row;
                 })
                 .toList();
@@ -502,14 +514,14 @@ public class StatisticsService {
         machineRow.setLabel("Vehicle inventory");
         MachineInventoryRepository.StockValueProjection machineValue = machineInventoryRepository.stockValue();
         applyStockValue(machineRow, machineValue.getItemCount(), machineValue.getStockQuantity(),
-                machineValue.getCostValue(), machineValue.getRetailValue());
+                machineValue.getCostValue(), machineValue.getSettlementValue());
 
         StatisticsDashboardVO.StockValueRow partRow = new StatisticsDashboardVO.StockValueRow();
         partRow.setResourceType("PART");
         partRow.setLabel("Part inventory");
         PartInventoryRepository.StockValueProjection partValue = partInventoryRepository.stockValue();
         applyStockValue(partRow, partValue.getItemCount(), partValue.getStockQuantity(),
-                partValue.getCostValue(), partValue.getRetailValue());
+                partValue.getCostValue(), partValue.getSettlementValue());
         return List.of(machineRow, partRow);
     }
 
@@ -553,7 +565,8 @@ public class StatisticsService {
             machineRow.setItemCount(machineRow.getItemCount() + 1);
             machineRow.setStockQuantity(machineRow.getStockQuantity() + quantity);
             machineRow.setCostValue(machineRow.getCostValue().add(price(machine.getSettlementPrice(), machine.getPurchasePrice()).multiply(BigDecimal.valueOf(quantity))));
-            machineRow.setRetailValue(machineRow.getRetailValue().add(price(machine.getSalePrice(), machine.getSettlementPrice()).multiply(BigDecimal.valueOf(quantity))));
+            machineRow.setSettlementValue(machineRow.getSettlementValue().add(price(machine.getSettlementPrice(), machine.getSalePrice()).multiply(BigDecimal.valueOf(quantity))));
+            machineRow.setRetailValue(machineRow.getSettlementValue());
         }
 
         StatisticsDashboardVO.StockValueRow partRow = new StatisticsDashboardVO.StockValueRow();
@@ -563,8 +576,9 @@ public class StatisticsService {
             int quantity = part.getQuantity() == null ? 0 : part.getQuantity();
             partRow.setItemCount(partRow.getItemCount() + 1);
             partRow.setStockQuantity(partRow.getStockQuantity() + quantity);
-            partRow.setCostValue(partRow.getCostValue().add(price(part.getPurchasePrice(), part.getSettlementPrice()).multiply(BigDecimal.valueOf(quantity))));
-            partRow.setRetailValue(partRow.getRetailValue().add(price(part.getSalePrice(), part.getSettlementPrice()).multiply(BigDecimal.valueOf(quantity))));
+            partRow.setCostValue(partRow.getCostValue().add(price(part.getSettlementPrice(), part.getPurchasePrice()).multiply(BigDecimal.valueOf(quantity))));
+            partRow.setSettlementValue(partRow.getSettlementValue().add(price(part.getSettlementPrice(), part.getSalePrice()).multiply(BigDecimal.valueOf(quantity))));
+            partRow.setRetailValue(partRow.getSettlementValue());
         }
         return List.of(machineRow, partRow);
     }
@@ -613,11 +627,17 @@ public class StatisticsService {
             sum.setOutboundRevenue(sum.getOutboundRevenue().add(row.getOutboundRevenue()));
             sum.setOutboundCost(sum.getOutboundCost().add(row.getOutboundCost()));
             sum.setGrossProfit(sum.getGrossProfit().add(row.getGrossProfit()));
+            sum.setNetProfit(sum.getNetProfit().add(row.getNetProfit()));
+            sum.setNetCashflow(sum.getNetCashflow().add(row.getNetCashflow()));
             sum.setRepairIncome(sum.getRepairIncome().add(row.getRepairIncome()));
+            sum.setRepairReceivable(sum.getRepairReceivable().add(row.getRepairReceivable()));
+            sum.setRepairExpense(sum.getRepairExpense().add(row.getRepairExpense()));
+            sum.setRepairPartsCost(sum.getRepairPartsCost().add(row.getRepairPartsCost()));
             sum.setRentalIncome(sum.getRentalIncome().add(row.getRentalIncome()));
             sum.setModificationIncome(sum.getModificationIncome().add(row.getModificationIncome()));
             sum.setModificationExpense(sum.getModificationExpense().add(row.getModificationExpense()));
             sum.setTotalIncome(sum.getTotalIncome().add(row.getTotalIncome()));
+            sum.setTotalExpense(sum.getTotalExpense().add(row.getTotalExpense()));
             sum.setInboundQuantity(sum.getInboundQuantity() + row.getInboundQuantity());
             sum.setOutboundQuantity(sum.getOutboundQuantity() + row.getOutboundQuantity());
             sum.setRepairOrders(sum.getRepairOrders() + row.getRepairOrders());
@@ -625,6 +645,14 @@ public class StatisticsService {
             sum.setModificationOrders(sum.getModificationOrders() + row.getModificationOrders());
         }
         return sum;
+    }
+
+    private StatisticsDashboardVO.FinancialRow annualRow(int selectedYear, List<StatisticsDashboardVO.FinancialRow> rows) {
+        String period = String.valueOf(selectedYear);
+        return rows.stream()
+                .filter(row -> period.equals(row.getPeriod()))
+                .findFirst()
+                .orElseGet(() -> newFinancialRow(period));
     }
 
     private StatisticsDashboardVO.FinancialRow newFinancialRow(String period) {
@@ -643,33 +671,44 @@ public class StatisticsService {
             return;
         }
         Price price = priceFor(log, machines, parts);
-        int quantity = quantity(log);
-        if ("INBOUND".equals(log.getOperationType())) {
-            row.setInboundQuantity(row.getInboundQuantity() + quantity);
-            row.setInboundCost(row.getInboundCost().add(price.cost().multiply(BigDecimal.valueOf(quantity))));
-        } else if ("OUTBOUND".equals(log.getOperationType())) {
-            BigDecimal revenue = price.revenue().multiply(BigDecimal.valueOf(quantity));
-            BigDecimal cost = price.cost().multiply(BigDecimal.valueOf(quantity));
-            row.setOutboundQuantity(row.getOutboundQuantity() + quantity);
+        int inboundQuantity = inboundQuantity(log);
+        if (inboundQuantity > 0) {
+            row.setInboundQuantity(row.getInboundQuantity() + inboundQuantity);
+            row.setInboundCost(row.getInboundCost().add(price.cost().multiply(BigDecimal.valueOf(inboundQuantity))));
+        }
+        int outboundQuantity = outboundQuantity(log);
+        if (outboundQuantity > 0) {
+            BigDecimal revenue = price.revenue().multiply(BigDecimal.valueOf(outboundQuantity));
+            BigDecimal cost = price.cost().multiply(BigDecimal.valueOf(outboundQuantity));
+            row.setOutboundQuantity(row.getOutboundQuantity() + outboundQuantity);
             row.setOutboundRevenue(row.getOutboundRevenue().add(revenue));
             row.setOutboundCost(row.getOutboundCost().add(cost));
-            row.setGrossProfit(row.getGrossProfit().add(revenue.subtract(cost)));
+            if (revenue.signum() > 0) {
+                row.setGrossProfit(row.getGrossProfit().add(revenue.subtract(cost)));
+            }
         }
     }
 
     private void addRepairToFinancial(StatisticsDashboardVO.FinancialRow row, RepairRecord repair) {
-        if (row == null || repair.getTotalFee() == null) {
+        if (row == null || !RepairStatus.COMPLETED.code().equals(repair.getStatus())) {
             return;
         }
-        row.setRepairIncome(row.getRepairIncome().add(repair.getTotalFee()));
+        BigDecimal income = repairIncome(repair);
+        BigDecimal expense = repairExpense(repair);
+        BigDecimal partsCost = repairPartsCost(repair);
+        row.setRepairReceivable(row.getRepairReceivable().add(repairReceivable(repair, income, expense)));
+        row.setRepairIncome(row.getRepairIncome().add(income));
+        row.setRepairExpense(row.getRepairExpense().add(expense));
+        row.setRepairPartsCost(row.getRepairPartsCost().add(partsCost));
         row.setRepairOrders(row.getRepairOrders() + 1);
     }
 
-    private void addRentalToFinancial(StatisticsDashboardVO.FinancialRow row, RentalRecord rental) {
-        if (row == null) {
+    private void addRentalToFinancial(StatisticsDashboardVO.FinancialRow row, BigDecimal amount) {
+        if (row == null || amount == null || amount.signum() <= 0) {
             return;
         }
-        row.setRentalIncome(row.getRentalIncome().add(rentalAmount(rental)));
+        row.setRentalIncome(row.getRentalIncome().add(amount));
+        row.setGrossProfit(row.getGrossProfit().add(amount));
         row.setRentalOrders(row.getRentalOrders() + 1);
     }
 
@@ -703,25 +742,147 @@ public class StatisticsService {
         row.setModificationOrders(row.getModificationOrders() + 1);
     }
 
+    private void addRentalToMonthlyRows(
+            Map<String, StatisticsDashboardVO.FinancialRow> rows,
+            int selectedYear,
+            RentalRecord rental
+    ) {
+        LocalDate yearStart = LocalDate.of(selectedYear, 1, 1);
+        LocalDate yearEnd = LocalDate.of(selectedYear, 12, 31);
+        rentalMonthlyAmounts(rental, yearStart, yearEnd).forEach((period, amount) ->
+                addRentalToFinancial(rows.get(period.toString()), amount));
+    }
+
+    private void addRentalToYearlyRows(
+            Map<String, StatisticsDashboardVO.FinancialRow> rows,
+            RentalRecord rental,
+            LocalDate rangeStart,
+            LocalDate rangeEnd
+    ) {
+        Map<Integer, BigDecimal> yearlyAmounts = new LinkedHashMap<>();
+        rentalMonthlyAmounts(rental, rangeStart, rangeEnd).forEach((period, amount) ->
+                yearlyAmounts.merge(period.getYear(), amount, BigDecimal::add));
+        yearlyAmounts.forEach((year, amount) -> {
+            StatisticsDashboardVO.FinancialRow row = rows.computeIfAbsent(String.valueOf(year), this::newFinancialRow);
+            addRentalToFinancial(row, amount);
+        });
+    }
+
     private BigDecimal rentalAmount(RentalRecord rental) {
-        if (rental.getMonthlyRentalPrice() != null) {
-            return rental.getMonthlyRentalPrice();
+        RentalPeriod period = rentalPeriod(rental);
+        if (period == null) {
+            return BigDecimal.ZERO;
         }
-        return rental.getRentalPrice() == null ? BigDecimal.ZERO : rental.getRentalPrice();
+        return rentalAmountForRange(rental, period.start(), period.end());
     }
 
-    private void finishFinancialRow(StatisticsDashboardVO.FinancialRow row) {
-        row.setTotalIncome(row.getOutboundRevenue()
-                .add(row.getRepairIncome())
-                .add(row.getRentalIncome())
-                .add(row.getModificationIncome()));
+    private BigDecimal rentalAmountForRange(RentalRecord rental, LocalDate rangeStart, LocalDate rangeEnd) {
+        return rentalMonthlyAmounts(rental, rangeStart, rangeEnd).values().stream()
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
     }
 
-    private LocalDate rentalDate(RentalRecord rental) {
+    private Map<YearMonth, BigDecimal> rentalMonthlyAmounts(RentalRecord rental, LocalDate rangeStart, LocalDate rangeEnd) {
+        RentalPeriod period = rentalPeriod(rental);
+        BigDecimal monthlyPrice = rentalMonthlyPrice(rental);
+        if (period == null || monthlyPrice.signum() <= 0 || rangeStart == null || rangeEnd == null || rangeEnd.isBefore(rangeStart)) {
+            return Map.of();
+        }
+        LocalDate start = period.start().isBefore(rangeStart) ? rangeStart : period.start();
+        LocalDate end = period.end().isAfter(rangeEnd) ? rangeEnd : period.end();
+        if (end.isBefore(start)) {
+            return Map.of();
+        }
+        Map<YearMonth, BigDecimal> amounts = new LinkedHashMap<>();
+        YearMonth cursor = YearMonth.from(start);
+        YearMonth last = YearMonth.from(end);
+        while (!cursor.isAfter(last)) {
+            LocalDate segmentStart = start.isAfter(cursor.atDay(1)) ? start : cursor.atDay(1);
+            LocalDate segmentEnd = end.isBefore(cursor.atEndOfMonth()) ? end : cursor.atEndOfMonth();
+            long days = ChronoUnit.DAYS.between(segmentStart, segmentEnd) + 1;
+            if (days > 0) {
+                BigDecimal amount = monthlyPrice
+                        .multiply(BigDecimal.valueOf(days))
+                        .divide(BigDecimal.valueOf(cursor.lengthOfMonth()), MONEY_SCALE, RoundingMode.HALF_UP);
+                amounts.put(cursor, amount);
+            }
+            cursor = cursor.plusMonths(1);
+        }
+        return amounts;
+    }
+
+    private RentalPeriod rentalPeriod(RentalRecord rental) {
+        LocalDate start = rentalStartDate(rental);
+        if (start == null) {
+            return null;
+        }
+        LocalDate end = rentalEndDate(rental, start);
+        if (end == null || end.isBefore(start)) {
+            return null;
+        }
+        return new RentalPeriod(start, end);
+    }
+
+    private LocalDate rentalStartDate(RentalRecord rental) {
         if (rental.getStartDate() != null) {
             return rental.getStartDate();
         }
         return rental.getCreatedAt() == null ? null : rental.getCreatedAt().toLocalDate();
+    }
+
+    private LocalDate rentalEndDate(RentalRecord rental, LocalDate start) {
+        if (RentalStatus.RETURNED.code().equals(rental.getStatus())) {
+            if (rental.getEndDate() != null) {
+                return rental.getEndDate();
+            }
+            return rental.getUpdatedAt() == null ? start : rental.getUpdatedAt().toLocalDate();
+        }
+        LocalDate today = LocalDate.now();
+        return today.isBefore(start) ? null : today;
+    }
+
+    private BigDecimal rentalMonthlyPrice(RentalRecord rental) {
+        return firstAmount(rental.getMonthlyRentalPrice(), rental.getRentalPrice());
+    }
+
+    private BigDecimal repairIncome(RepairRecord repair) {
+        BigDecimal income = amount(repair.getRepairFee()).add(amount(repair.getPartsFee()));
+        if (income.signum() == 0 && repair.getTotalFee() != null) {
+            return amount(repair.getTotalFee()).subtract(repairExpense(repair)).max(BigDecimal.ZERO);
+        }
+        return income;
+    }
+
+    private BigDecimal repairReceivable(RepairRecord repair, BigDecimal income, BigDecimal expense) {
+        if (repair.getTotalFee() != null) {
+            return amount(repair.getTotalFee());
+        }
+        return amount(income).add(amount(expense));
+    }
+
+    private BigDecimal repairExpense(RepairRecord repair) {
+        return Boolean.TRUE.equals(repair.getRepairExternal()) ? amount(repair.getRepairExpense()) : BigDecimal.ZERO;
+    }
+
+    private BigDecimal repairPartsCost(RepairRecord repair) {
+        return amount(repair.getPartsCost());
+    }
+
+    private void finishFinancialRow(StatisticsDashboardVO.FinancialRow row) {
+        BigDecimal totalIncome = row.getOutboundRevenue()
+                .add(row.getRepairIncome())
+                .add(row.getRentalIncome())
+                .add(row.getModificationIncome());
+        BigDecimal operatingExpense = row.getOutboundCost()
+                .add(row.getRepairExpense())
+                .add(row.getRepairPartsCost())
+                .add(row.getModificationExpense());
+        BigDecimal totalExpense = row.getInboundCost().add(operatingExpense);
+        BigDecimal netProfit = totalIncome.subtract(operatingExpense);
+        row.setTotalIncome(totalIncome);
+        row.setTotalExpense(totalExpense);
+        row.setGrossProfit(netProfit);
+        row.setNetProfit(netProfit);
+        row.setNetCashflow(totalIncome.subtract(totalExpense));
     }
 
     private Price priceFor(
@@ -729,36 +890,47 @@ public class StatisticsService {
             Map<Long, MachineInventory> machines,
             Map<Long, PartInventory> parts
     ) {
-        if ("MACHINE".equals(log.getResourceType())) {
-            MachineInventory machine = machines.get(log.getResourceId());
-            if (machine != null) {
-                return new Price(
-                        price(machine.getSettlementPrice(), machine.getPurchasePrice()),
-                        price(machine.getSalePrice(), machine.getSettlementPrice())
-                );
-            }
-        }
-        if ("PART".equals(log.getResourceType())) {
-            PartInventory part = parts.get(log.getResourceId());
-            if (part != null) {
-                return new Price(
-                        price(part.getPurchasePrice(), part.getSettlementPrice()),
-                        price(part.getSalePrice(), part.getSettlementPrice())
-                );
-            }
-        }
-        return new Price(BigDecimal.ZERO, BigDecimal.ZERO);
+        return new Price(amount(log.getUnitCost()), amount(log.getUnitRevenue()));
     }
 
     private BigDecimal price(BigDecimal preferred, BigDecimal fallback) {
-        if (preferred != null) {
+        if (preferred != null && preferred.signum() >= 0) {
             return preferred;
         }
-        return fallback == null ? BigDecimal.ZERO : fallback;
+        return fallback == null || fallback.signum() < 0 ? BigDecimal.ZERO : fallback;
     }
 
     private int quantity(StockOperationLog log) {
         return log.getQuantity() == null ? 0 : log.getQuantity();
+    }
+
+    private int inboundQuantity(StockOperationLog log) {
+        String operationType = log.getOperationType();
+        if ("INBOUND".equals(operationType) || "INITIAL".equals(operationType)) {
+            return quantity(log);
+        }
+        if ("ADJUST".equals(operationType)) {
+            return Math.max(quantityDelta(log), 0);
+        }
+        return 0;
+    }
+
+    private int outboundQuantity(StockOperationLog log) {
+        String operationType = log.getOperationType();
+        if ("OUTBOUND".equals(operationType)) {
+            return quantity(log);
+        }
+        if ("ADJUST".equals(operationType)) {
+            return Math.max(-quantityDelta(log), 0);
+        }
+        return 0;
+    }
+
+    private int quantityDelta(StockOperationLog log) {
+        if (log.getBeforeQuantity() != null && log.getAfterQuantity() != null) {
+            return log.getAfterQuantity() - log.getBeforeQuantity();
+        }
+        return quantity(log);
     }
 
     private int quantity(Integer value) {
@@ -772,7 +944,7 @@ public class StatisticsService {
     }
 
     private BigDecimal amount(BigDecimal value) {
-        return value == null ? BigDecimal.ZERO : value;
+        return value == null || value.signum() < 0 ? BigDecimal.ZERO : value;
     }
 
     private long number(Long value) {
@@ -807,12 +979,37 @@ public class StatisticsService {
         return keyword == null || keyword.isBlank() ? null : keyword.trim();
     }
 
+    private boolean rentalMatches(RentalRecord record, String keyword) {
+        if (keyword == null || keyword.isBlank()) {
+            return true;
+        }
+        String normalized = keyword.toLowerCase(Locale.ROOT);
+        return java.util.stream.Stream.of(
+                        record.getRentalNo(),
+                        record.getVehicleNumber(),
+                        record.getMachineName(),
+                        record.getSpecificationModel(),
+                        record.getCustomerName(),
+                        record.getCustomerAddress(),
+                        record.getDestination(),
+                        record.getStatus(),
+                        record.getOperator(),
+                        record.getRemark()
+                )
+                .filter(Objects::nonNull)
+                .map(value -> value.toLowerCase(Locale.ROOT))
+                .anyMatch(value -> value.contains(normalized));
+    }
+
     private boolean isBlank(String value) {
         return value == null || value.isBlank();
     }
 
     private String resourceLabel(String resourceType) {
         return "MACHINE".equals(resourceType) ? "整车" : "PART".equals(resourceType) ? "配件" : resourceType;
+    }
+
+    private record RentalPeriod(LocalDate start, LocalDate end) {
     }
 
     private record Price(BigDecimal cost, BigDecimal revenue) {

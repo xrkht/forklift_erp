@@ -1,6 +1,8 @@
 package com.example.forklift_erp.dto;
 
 import com.example.forklift_erp.entity.MachineInventory;
+import jakarta.validation.constraints.DecimalMin;
+import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
 import lombok.Data;
 import java.math.BigDecimal;
@@ -27,8 +29,11 @@ public class MachineInventoryCreateDTO {
     private String stockStatus;
     private String applicationNumber;
     private String materialNumber;
+    @DecimalMin(value = "0.00", message = "\u91c7\u8d2d\u4ef7\u4e0d\u80fd\u4e3a\u8d1f\u6570")
     private BigDecimal purchasePrice;
+    @DecimalMin(value = "0.00", message = "\u9500\u552e\u4ef7\u4e0d\u80fd\u4e3a\u8d1f\u6570")
     private BigDecimal salePrice;
+    @DecimalMin(value = "0.00", message = "\u7ed3\u7b97\u4ef7\u4e0d\u80fd\u4e3a\u8d1f\u6570")
     private BigDecimal settlementPrice;
     private String engineNumber;
     private String frameNumber;
@@ -38,6 +43,7 @@ public class MachineInventoryCreateDTO {
     private String salesDate;
     private String isSalesReported;
     private LocalDate salesReportDate;
+    @Min(value = 0, message = "\u5e93\u5b58\u6570\u91cf\u4e0d\u80fd\u4e3a\u8d1f\u6570")
     private Integer inventoryCount;
     private String destination1;
     private String destination2;

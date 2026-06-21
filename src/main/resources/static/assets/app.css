@@ -1294,6 +1294,10 @@ a {
   stroke: var(--warn);
 }
 
+.finance-line.net {
+  stroke: var(--accent);
+}
+
 .finance-point {
   fill: #fff;
   stroke-width: 3;
@@ -1308,12 +1312,20 @@ a {
   stroke: var(--warn);
 }
 
+.finance-point.net {
+  stroke: var(--accent);
+}
+
 .finance-point.is-active.income {
   fill: var(--primary);
 }
 
 .finance-point.is-active.cost {
   fill: var(--warn);
+}
+
+.finance-point.is-active.net {
+  fill: var(--accent);
 }
 
 .finance-chart-column {
@@ -1437,6 +1449,10 @@ a {
 
 .legend-dot.cost {
   background: var(--warn);
+}
+
+.legend-dot.net {
+  background: var(--accent);
 }
 
 .table-wrap {
@@ -3252,6 +3268,11 @@ tbody tr.table-row-checked {
   animation-delay: 0.2s;
 }
 
+.finance-line.net {
+  stroke: var(--accent);
+  animation-delay: 0.3s;
+}
+
 .finance-point {
   filter: drop-shadow(0 3px 5px rgba(31, 41, 55, 0.12));
   transform-box: fill-box;
@@ -3266,6 +3287,11 @@ tbody tr.table-row-checked {
 .finance-point.cost {
   stroke: var(--warn);
   animation-delay: 0.08s;
+}
+
+.finance-point.net {
+  stroke: var(--accent);
+  animation-delay: 0.16s;
 }
 
 .finance-point.is-active {

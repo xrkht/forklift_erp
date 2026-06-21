@@ -25,7 +25,9 @@ public class RepairRecordVO {
     private String usedPartIds;
     private BigDecimal workHours;
     private BigDecimal repairFee;
+    private BigDecimal repairExpense;
     private BigDecimal partsFee;
+    private BigDecimal partsCost;
     private BigDecimal totalFee;
     private String status;
     private String remarks;
@@ -50,7 +52,9 @@ public class RepairRecordVO {
         vo.setUsedPartIds(entity.getUsedPartIds());
         vo.setWorkHours(entity.getWorkHours());
         vo.setRepairFee(entity.getRepairFee());
+        vo.setRepairExpense(entity.getRepairExpense());
         vo.setPartsFee(entity.getPartsFee());
+        vo.setPartsCost(entity.getPartsCost());
         vo.setTotalFee(entity.getTotalFee());
         vo.setStatus(entity.getStatus());
         vo.setRemarks(entity.getRemarks());

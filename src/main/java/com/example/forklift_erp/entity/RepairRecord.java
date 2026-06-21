@@ -110,16 +110,22 @@ public class RepairRecord implements CollaborativeResource {
     private BigDecimal workHours;
 
     /**
-     * 维修费用
+     * 维修收入
      */
     @Column(name = "repair_fee", precision = 10, scale = 2)
     private BigDecimal repairFee;
+
+    @Column(name = "repair_expense", precision = 10, scale = 2)
+    private BigDecimal repairExpense;
 
     /**
      * 配件费用
      */
     @Column(name = "parts_fee", precision = 10, scale = 2)
     private BigDecimal partsFee;
+
+    @Column(name = "parts_cost", precision = 12, scale = 2)
+    private BigDecimal partsCost;
 
     /**
      * 总费用

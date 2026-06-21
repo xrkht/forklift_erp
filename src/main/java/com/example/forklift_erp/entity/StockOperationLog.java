@@ -3,6 +3,7 @@ package com.example.forklift_erp.entity;
 import jakarta.persistence.*;
 import lombok.Data;
 
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
 
 @Data
@@ -37,6 +38,12 @@ public class StockOperationLog {
 
     @Column(name = "after_quantity")
     private Integer afterQuantity;
+
+    @Column(name = "unit_cost", precision = 12, scale = 2)
+    private BigDecimal unitCost;
+
+    @Column(name = "unit_revenue", precision = 12, scale = 2)
+    private BigDecimal unitRevenue;
 
     @Column(length = 50)
     private String operator;

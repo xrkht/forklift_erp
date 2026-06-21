@@ -38,8 +38,12 @@ public interface RentalRecordRepository extends JpaRepository<RentalRecord, Long
 
     @Query("""
             select r from RentalRecord r
-            where ((r.startDate is not null and r.startDate >= :startDate and r.startDate <= :endDate)
-                   or (r.startDate is null and r.createdAt >= :startAt and r.createdAt < :endAt))
+            where ((r.startDate is not null
+                    and r.startDate <= :endDate
+                    and (r.status = 'ACTIVE' or r.endDate is null or r.endDate >= :startDate))
+                   or (r.startDate is null
+                       and r.createdAt < :endAt
+                       and (r.createdAt >= :startAt or r.status = 'ACTIVE' or r.endDate is null or r.endDate >= :startDate)))
             order by r.createdAt desc
             """)
     List<RentalRecord> findInDateRange(

@@ -32,6 +32,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
@@ -171,9 +172,7 @@ public class MachineInventoryServiceImpl implements MachineInventoryService {
             }
         }
         normalizeVehicleIdentity(machineInventory);
-        if (machineInventory.getInventoryCount() == null) {
-            machineInventory.setInventoryCount(creating ? 1 : 0);
-        }
+        normalizeInventoryCount(machineInventory, creating);
         if (Boolean.TRUE.equals(machineInventory.getModelOnly())) {
             machineInventory.setInventoryCount(0);
             machineInventory.setStockStatus(MachineStockStatus.PENDING_INBOUND.code());
@@ -193,6 +192,9 @@ public class MachineInventoryServiceImpl implements MachineInventoryService {
                     ? MachineStockStatus.IN_STOCK.code()
                     : MachineStockStatus.PENDING_INBOUND.code());
         }
+        machineInventory.setPurchasePrice(nonNegativeMoney(machineInventory.getPurchasePrice()));
+        machineInventory.setSalePrice(nonNegativeMoney(machineInventory.getSalePrice()));
+        machineInventory.setSettlementPrice(nonNegativeMoney(machineInventory.getSettlementPrice()));
 
         collaborationService.stampWrite(machineInventory);
         MachineInventory saved = repository.save(machineInventory);
@@ -366,6 +368,17 @@ public class MachineInventoryServiceImpl implements MachineInventoryService {
         throw new BusinessException(ResultCode.PARAM_ERROR, "车号不能为空");
     }
 
+    private void normalizeInventoryCount(MachineInventory machineInventory, boolean creating) {
+        Integer inventoryCount = machineInventory.getInventoryCount();
+        if (inventoryCount == null) {
+            machineInventory.setInventoryCount(creating ? 1 : 0);
+            return;
+        }
+        if (inventoryCount < 0) {
+            throw new BusinessException(ResultCode.PARAM_ERROR, "Inventory count cannot be negative");
+        }
+    }
+
     private boolean isManualForklift(String machineType) {
         String normalized = trimToNull(machineType);
         return normalized != null && normalized.contains("手动");
@@ -435,6 +448,9 @@ public class MachineInventoryServiceImpl implements MachineInventoryService {
         stockLog.setQuantity(quantity);
         stockLog.setBeforeQuantity(beforeQuantity);
         stockLog.setAfterQuantity(afterQuantity);
+        BigDecimal unitCost = stockUnitCost(machine);
+        stockLog.setUnitCost(unitCost);
+        stockLog.setUnitRevenue(BigDecimal.ZERO);
         stockLog.setOperator(operator);
         stockLog.setRemark(remark);
         StockOperationLog savedLog = stockOperationLogRepository.save(stockLog);
@@ -447,6 +463,7 @@ public class MachineInventoryServiceImpl implements MachineInventoryService {
                 machine.getWarehouseId(),
                 beforeQuantity,
                 afterQuantity,
+                unitCost,
                 operator,
                 remark,
                 "STOCK_LOG",
@@ -457,6 +474,23 @@ public class MachineInventoryServiceImpl implements MachineInventoryService {
                 ("INBOUND".equals(operationType) ? "Machine inbound " : "Machine outbound ") + quantity,
                 operator, remark, "STOCK", savedLog.getId());
         return savedLog;
+    }
+
+    private BigDecimal stockUnitCost(MachineInventory machine) {
+        return firstAmount(machine.getSettlementPrice(), machine.getPurchasePrice());
+    }
+
+    private BigDecimal firstAmount(BigDecimal... values) {
+        for (BigDecimal value : values) {
+            if (value != null) {
+                return value;
+            }
+        }
+        return BigDecimal.ZERO;
+    }
+
+    private BigDecimal nonNegativeMoney(BigDecimal value) {
+        return value == null || value.signum() >= 0 ? value : BigDecimal.ZERO;
     }
 
     private String normalizeModelField(String value) {

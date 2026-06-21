@@ -331,12 +331,12 @@ public class ExcelExportServiceImpl implements ExcelExportService {
         List<RepairRecordVO> rows = repairRecordService.findPage(null, 0, EXPORT_PAGE_SIZE, null, null, null, null, null).getContent();
         writeSheet(workbook, styles, "维修记录", List.of(
                 "ID", "维修日期", "车号", "客户", "故障描述", "维修内容", "维修人员", "使用配件",
-                "工时", "维修费用", "配件费用", "总费用", "状态", "备注"
+                "工时", "维修收入", "维修支出", "配件费用", "配件成本", "客户应收", "状态", "备注"
         ), rows.stream().map(row -> List.of(
                 value(row.getId()), value(row.getRepairDate()), value(row.getVehicleNumber()), value(row.getCustomerName()),
                 value(row.getFaultDescription()), value(row.getRepairContent()), value(row.getRepairPerson()),
-                value(row.getUsedParts()), value(row.getWorkHours()), value(row.getRepairFee()), value(row.getPartsFee()),
-                value(row.getTotalFee()), value(row.getStatus()), value(row.getRemarks())
+                value(row.getUsedParts()), value(row.getWorkHours()), value(row.getRepairFee()), value(row.getRepairExpense()), value(row.getPartsFee()),
+                value(row.getPartsCost()), value(row.getTotalFee()), value(row.getStatus()), value(row.getRemarks())
         )).toList());
         return "维修记录";
     }

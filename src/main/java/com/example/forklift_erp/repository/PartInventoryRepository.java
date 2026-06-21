@@ -96,8 +96,8 @@ public interface PartInventoryRepository extends JpaRepository<PartInventory, Lo
             select
               count(p) as itemCount,
               sum(coalesce(p.quantity, 0)) as stockQuantity,
-              sum(coalesce(coalesce(p.purchasePrice, p.settlementPrice), 0) * coalesce(p.quantity, 0)) as costValue,
-              sum(coalesce(coalesce(p.salePrice, p.settlementPrice), 0) * coalesce(p.quantity, 0)) as retailValue
+              sum(coalesce(coalesce(p.settlementPrice, p.purchasePrice), 0) * coalesce(p.quantity, 0)) as costValue,
+              sum(coalesce(coalesce(p.settlementPrice, p.salePrice), 0) * coalesce(p.quantity, 0)) as settlementValue
             from PartInventory p
             """)
     StockValueProjection stockValue();
@@ -132,6 +132,10 @@ public interface PartInventoryRepository extends JpaRepository<PartInventory, Lo
         Long getItemCount();
         Long getStockQuantity();
         BigDecimal getCostValue();
-        BigDecimal getRetailValue();
+        BigDecimal getSettlementValue();
+
+        default BigDecimal getRetailValue() {
+            return getSettlementValue();
+        }
     }
 }

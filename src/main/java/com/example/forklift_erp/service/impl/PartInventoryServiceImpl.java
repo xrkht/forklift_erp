@@ -24,6 +24,7 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
@@ -139,6 +140,9 @@ public class PartInventoryServiceImpl implements PartInventoryService {
         if (part.getWarehouseId() == null) {
             part.setWarehouseId(stockLedgerService.resolveWarehouseId(null));
         }
+        part.setPurchasePrice(nonNegativeMoney(part.getPurchasePrice()));
+        part.setSalePrice(nonNegativeMoney(part.getSalePrice()));
+        part.setSettlementPrice(nonNegativeMoney(part.getSettlementPrice()));
         log.info("Save part: partCode={}, name={}, quantity={}", part.getPartCode(), part.getPartName(), part.getQuantity());
         collaborationService.stampWrite(part);
         PartInventory saved = partRepository.save(part);
@@ -324,6 +328,9 @@ public class PartInventoryServiceImpl implements PartInventoryService {
         stockLog.setQuantity(quantity);
         stockLog.setBeforeQuantity(beforeQuantity);
         stockLog.setAfterQuantity(afterQuantity);
+        BigDecimal unitCost = stockUnitCost(part);
+        stockLog.setUnitCost(unitCost);
+        stockLog.setUnitRevenue(BigDecimal.ZERO);
         stockLog.setOperator(operator);
         stockLog.setRemark(remark);
         StockOperationLog savedLog = stockOperationLogRepository.save(stockLog);
@@ -336,6 +343,7 @@ public class PartInventoryServiceImpl implements PartInventoryService {
                 part.getWarehouseId(),
                 beforeQuantity,
                 afterQuantity,
+                unitCost,
                 operator,
                 remark,
                 "STOCK_LOG",
@@ -346,6 +354,23 @@ public class PartInventoryServiceImpl implements PartInventoryService {
                 ("INBOUND".equals(operationType) ? "Part inbound " : "Part outbound ") + quantity,
                 operator, remark, "STOCK", savedLog.getId());
         return savedLog;
+    }
+
+    private BigDecimal stockUnitCost(PartInventory part) {
+        return firstAmount(part.getSettlementPrice(), part.getPurchasePrice());
+    }
+
+    private BigDecimal firstAmount(BigDecimal... values) {
+        for (BigDecimal value : values) {
+            if (value != null) {
+                return value;
+            }
+        }
+        return BigDecimal.ZERO;
+    }
+
+    private BigDecimal nonNegativeMoney(BigDecimal value) {
+        return value == null || value.signum() >= 0 ? value : BigDecimal.ZERO;
     }
 
 }

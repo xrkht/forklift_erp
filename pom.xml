@@ -22,7 +22,7 @@
 		<java.version>21</java.version>
 		<lombok.version>1.18.46</lombok.version>
 		<frontend.skip>false</frontend.skip>
-		<node.executable>node</node.executable>
+		<frontend.build.executable>java</frontend.build.executable>
 		<test.included.groups></test.included.groups>
 		<test.excluded.groups>docker-integration</test.excluded.groups>
 	</properties>
@@ -138,9 +138,9 @@
 						</goals>
 						<configuration>
 							<skip>${frontend.skip}</skip>
-							<executable>${node.executable}</executable>
+							<executable>${frontend.build.executable}</executable>
 							<arguments>
-								<argument>scripts/build-frontend.mjs</argument>
+								<argument>scripts/BuildFrontend.java</argument>
 							</arguments>
 						</configuration>
 					</execution>
@@ -158,6 +158,7 @@
 							<goal>copy-resources</goal>
 						</goals>
 						<configuration>
+							<skip>${frontend.skip}</skip>
 							<outputDirectory>${project.build.outputDirectory}/static</outputDirectory>
 							<resources>
 								<resource>

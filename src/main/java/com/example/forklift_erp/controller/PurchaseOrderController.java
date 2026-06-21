@@ -5,9 +5,11 @@ import com.example.forklift_erp.dto.PurchaseOrderDTO;
 import com.example.forklift_erp.dto.PurchaseOrderVO;
 import com.example.forklift_erp.service.PurchaseOrderService;
 import jakarta.validation.Valid;
+import jakarta.validation.constraints.DecimalMin;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -23,6 +25,7 @@ import java.math.BigDecimal;
 
 @RestController
 @RequestMapping("/api/purchase-orders")
+@Validated
 public class PurchaseOrderController {
     @Autowired
     private PurchaseOrderService service;
@@ -63,6 +66,7 @@ public class PurchaseOrderController {
     @PutMapping("/{id}/freight")
     @PreAuthorize("@permissionService.hasPermission(authentication, 'stock:adjust')")
     public Result<PurchaseOrderVO> updateFreight(@PathVariable Long id,
+                                                 @DecimalMin(value = "0.00", message = "\u8fd0\u8d39\u4e0d\u80fd\u4e3a\u8d1f\u6570")
                                                  @RequestParam(required = false) BigDecimal freightAmount,
                                                  @RequestParam(required = false) Long version) {
         return Result.success("采购运费已更新", service.updateFreight(id, freightAmount, version));

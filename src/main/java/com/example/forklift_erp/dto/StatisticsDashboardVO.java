@@ -27,11 +27,17 @@ public class StatisticsDashboardVO {
         private BigDecimal outboundRevenue = BigDecimal.ZERO;
         private BigDecimal outboundCost = BigDecimal.ZERO;
         private BigDecimal grossProfit = BigDecimal.ZERO;
+        private BigDecimal netProfit = BigDecimal.ZERO;
+        private BigDecimal netCashflow = BigDecimal.ZERO;
         private BigDecimal repairIncome = BigDecimal.ZERO;
+        private BigDecimal repairReceivable = BigDecimal.ZERO;
+        private BigDecimal repairExpense = BigDecimal.ZERO;
+        private BigDecimal repairPartsCost = BigDecimal.ZERO;
         private BigDecimal rentalIncome = BigDecimal.ZERO;
         private BigDecimal modificationIncome = BigDecimal.ZERO;
         private BigDecimal modificationExpense = BigDecimal.ZERO;
         private BigDecimal totalIncome = BigDecimal.ZERO;
+        private BigDecimal totalExpense = BigDecimal.ZERO;
         private Integer inboundQuantity = 0;
         private Integer outboundQuantity = 0;
         private Integer repairOrders = 0;
@@ -79,6 +85,8 @@ public class StatisticsDashboardVO {
         private Integer itemCount = 0;
         private Integer stockQuantity = 0;
         private BigDecimal costValue = BigDecimal.ZERO;
+        private BigDecimal settlementValue = BigDecimal.ZERO;
+        @Deprecated
         private BigDecimal retailValue = BigDecimal.ZERO;
     }
 

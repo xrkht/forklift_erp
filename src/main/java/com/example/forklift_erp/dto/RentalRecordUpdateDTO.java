@@ -21,6 +21,7 @@ public class RentalRecordUpdateDTO {
     @DecimalMin(value = "0.00", inclusive = false, message = "月租价格必须大于0")
     private BigDecimal monthlyRentalPrice;
 
+    @DecimalMin(value = "0.00", message = "\u79df\u8d41\u4ef7\u683c\u4e0d\u80fd\u4e3a\u8d1f\u6570")
     private BigDecimal rentalPrice;
 
     private LocalDate startDate;

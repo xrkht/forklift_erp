@@ -441,14 +441,6 @@ class OutboundOrderIntegrationTests extends TestcontainersDatabaseSupport {
         JsonNode rental = objectMapper.readTree(rentalResponse).path("data");
         rentalsToCleanup.add(rental.path("id").asLong());
 
-        mockMvc.perform(get("/api/statistics/finance")
-                        .param("year", "2026")
-                        .header("Authorization", bearer(superToken)))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.annualSummary.rentalIncome").value(8800.00))
-                .andExpect(jsonPath("$.data.annualSummary.rentalOrders").value(1))
-                .andExpect(jsonPath("$.data.topRentals[0].destination").value("佛山禅城工地 A 区"));
-
         Map<String, Object> outboundWhileRented = new LinkedHashMap<>();
         outboundWhileRented.put("machineId", machine.path("id").asLong());
         outboundWhileRented.put("machineVersion", machine.path("version").asLong());
@@ -482,6 +474,14 @@ class OutboundOrderIntegrationTests extends TestcontainersDatabaseSupport {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.status").value("RETURNED"))
                 .andExpect(jsonPath("$.data.endDate").value("2026-05-29"));
+
+        mockMvc.perform(get("/api/statistics/finance")
+                        .param("year", "2026")
+                        .header("Authorization", bearer(superToken)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.annualSummary.rentalIncome").value(851.61))
+                .andExpect(jsonPath("$.data.annualSummary.rentalOrders").value(1))
+                .andExpect(jsonPath("$.data.topRentals[0].destination").value("佛山禅城工地 A 区"));
 
         String orderResponse = mockMvc.perform(post("/api/outbound-orders/vehicle")
                         .header("Authorization", bearer(superToken))

@@ -10,8 +10,6 @@ server:
     key-alias: forklift-erp
 
 spring:
-  profiles:
-    default: prod
   application:
     name: forklift-erp # 应用名称，与Spring Initializr创建时保持一致
   datasource:
@@ -52,9 +50,11 @@ jwt:
   expiration: 31536000000   # 1 年（毫秒），可调整为 Long.MAX_VALUE 但建议合理设置
   header: Authorization # Token在请求头中的名称
 
-forklift:
+forklift-erp:
   invoice-storage-dir: ${FORKLIFT_ERP_INVOICE_STORAGE_DIR:uploads/invoices}
   contract-storage-dir: ${FORKLIFT_ERP_CONTRACT_STORAGE_DIR:uploads/contracts}
+
+forklift:
   admin:
     business-data-reset:
       enabled: ${FORKLIFT_ERP_BUSINESS_DATA_RESET_ENABLED:false}

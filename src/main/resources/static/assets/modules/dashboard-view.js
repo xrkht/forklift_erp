@@ -169,9 +169,9 @@ export function createDashboardView(deps) {
         </div>
 
         <section class="summary-grid">
-          ${summaryCard("年度总收入", money(annual.totalIncome), `出库 ${money(annual.outboundRevenue)} / 维修 ${money(annual.repairIncome)} / 租赁 ${money(annual.rentalIncome)} / 改装收入 ${money(annual.modificationIncome)}`)}
-          ${summaryCard("入库成本", money(annual.inboundCost), `${annual.inboundQuantity || 0} 件/台入库`)}
-          ${summaryCard("出库毛利", money(annual.grossProfit), `${annual.outboundQuantity || 0} 件/台出库`)}
+          ${summaryCard("年度总收入", money(annual.totalIncome), `出库 ${money(annual.outboundRevenue)} / 维修收入 ${money(annual.repairIncome)} / 维修应收 ${money(annual.repairReceivable)} / 租赁 ${money(annual.rentalIncome)}`)}
+          ${summaryCard("成本/支出合计", money(annual.totalExpense), `入库 ${money(annual.inboundCost)} / 出库成本 ${money(annual.outboundCost)}`)}
+          ${summaryCard("净现金流", money(annual.netCashflow), `经营毛利 ${money(annual.netProfit)} / 配件成本 ${money(annual.repairPartsCost)}`)}
           ${summaryCard("租赁收入", money(annual.rentalIncome), `${annual.rentalOrders || 0} 单租赁`)}
         </section>
 
@@ -180,8 +180,9 @@ export function createDashboardView(deps) {
         ${renderSurface("年度对比", renderTable([
             { label: "年份", key: "period" },
             { label: "总收入", key: "totalIncome", formatter: money },
-            { label: "入库成本", key: "inboundCost", formatter: money },
-            { label: "出库毛利", key: "grossProfit", formatter: money },
+            { label: "成本/支出", key: "totalExpense", formatter: money },
+            { label: "经营毛利", key: "netProfit", formatter: money },
+            { label: "净现金流", key: "netCashflow", formatter: money },
             { label: "维修单", key: "repairOrders" },
             { label: "租赁单", key: "rentalOrders" },
             { label: "改装工单", key: "modificationOrders" }
@@ -201,7 +202,7 @@ export function createDashboardView(deps) {
             { label: "档案数", key: "itemCount" },
             { label: "库存数", key: "stockQuantity" },
             { label: "成本价值", key: "costValue", formatter: money },
-            { label: "零售价值", key: "retailValue", formatter: money }
+            { label: "结算价值", html: true, render: row => money(row.settlementValue ?? row.retailValue) }
           ], stockRows))}
         </section>
 
@@ -219,7 +220,7 @@ export function createDashboardView(deps) {
             { label: "车号", key: "vehicleNumber" },
             { label: "车型", key: "machineName" },
             { label: "去向", key: "destination" },
-            { label: "月租价", key: "rentalPrice", formatter: money },
+            { label: "租赁收入", key: "rentalPrice", formatter: money },
             { label: "状态", html: true, render: row => rentalStatusBadge(row.status) }
           ], topRentalRows))}
         </section>
@@ -494,12 +495,12 @@ export function createDashboardView(deps) {
     const machineStock = stockRows.find(row => row.resourceType === "MACHINE") || {};
     const partStock = stockRows.find(row => row.resourceType === "PART") || {};
     const totalStockCost = sumMoney(stockRows.map(row => row.costValue));
-    const totalStockRetail = sumMoney(stockRows.map(row => row.retailValue));
+    const totalStockSettlement = sumMoney(stockRows.map(row => row.settlementValue ?? row.retailValue));
     return `
       <section class="summary-grid">
-        ${summaryCard("年度总收入", money(annual.totalIncome), `出库 ${money(annual.outboundRevenue)} / 维修 ${money(annual.repairIncome)}`)}
-        ${summaryCard("年度毛利", money(annual.grossProfit), `租赁 ${money(annual.rentalIncome)} / 改装 ${money(annual.modificationIncome)}`)}
-        ${summaryCard("库存成本", money(totalStockCost), `估值 ${money(totalStockRetail)} / 配件低库存 ${lowParts} 项`)}
+        ${summaryCard("年度总收入", money(annual.totalIncome), `出库 ${money(annual.outboundRevenue)} / 维修收入 ${money(annual.repairIncome)}`)}
+        ${summaryCard("净现金流", money(annual.netCashflow), `经营毛利 ${money(annual.netProfit)} / 配件成本 ${money(annual.repairPartsCost)}`)}
+        ${summaryCard("库存成本", money(totalStockCost), `估值 ${money(totalStockSettlement)} / 配件低库存 ${lowParts} 项`)}
         ${summaryCard("库存结构", `${machineStock.itemCount || 0} / ${partStock.itemCount || 0}`, "整车 / 配件档案数")}
       </section>
     `;

@@ -157,7 +157,7 @@ public class OutboundOrderServiceImpl implements OutboundOrderService {
         order.setQuantity(1);
         order.setUnit("\u53f0");
         copyCustomer(order, customer);
-        order.setSettlementPrice(request.getSettlementPrice());
+        order.setSettlementPrice(firstPrice(request.getSettlementPrice(), BigDecimal.ZERO));
         order.setSalesDate(request.getSalesDate());
         order.setSalePrice(firstPrice(request.getSalePrice(), machine.getSalePrice()));
         order.setReceivableAmount(firstPrice(request.getReceivableAmount(), request.getSettlementPrice()));
@@ -187,9 +187,10 @@ public class OutboundOrderServiceImpl implements OutboundOrderService {
         OutboundOrder savedOrder = outboundOrderRepository.save(order);
 
         int after = before - 1;
+        BigDecimal unitCost = stockUnitCost(machine);
         machine.setInventoryCount(after);
         machine.setStockStatus(after > 0 ? MachineStockStatus.IN_STOCK.code() : MachineStockStatus.OUTBOUND.code());
-        machine.setSettlementPrice(request.getSettlementPrice());
+        machine.setSettlementPrice(firstPrice(request.getSettlementPrice(), BigDecimal.ZERO));
         machine.setSalePrice(firstPrice(request.getSalePrice(), machine.getSalePrice()));
         machine.setSalesDate(toMachineSalesDate(request.getSalesDate()));
         machine.setDestination1(customer.getCompanyName());
@@ -208,8 +209,10 @@ public class OutboundOrderServiceImpl implements OutboundOrderService {
                 1,
                 before,
                 after,
+                unitCost,
+                resultAmount(savedOrder),
                 request.getOperator(),
-                joinRemark("闂佽桨鑳堕ˉ鎰攦閸涙潙绀勯柛婵嗗濮樸劑鎮规担闈涚仼鐎?" + savedOrder.getOrderNo(), request.getOrderRemark()),
+                joinRemark("Vehicle outbound order " + savedOrder.getOrderNo(), request.getOrderRemark()),
                 savedOrder.getId()
         );
         savedOrder.setStockOperationLogId(stockLog.getId());
@@ -231,7 +234,7 @@ public class OutboundOrderServiceImpl implements OutboundOrderService {
         collaborationService.validateWrite(part, request.getPartVersion());
         int quantity = request.getQuantity() == null ? 0 : request.getQuantity();
         if (quantity < 1) {
-            throw new BusinessException(ResultCode.PARAM_ERROR, "闂佸憡鍨甸幖顐よ姳闁秴鏋佸ù鍏兼綑濞呫倝鐓崶褎鍤囬柕鍡楃箲瀵板嫯顦辩紒?");
+            throw new BusinessException(ResultCode.PARAM_ERROR, "Outbound quantity must be greater than 0");
         }
         int before = part.getQuantity() == null ? 0 : part.getQuantity();
         if (before < quantity) {
@@ -279,8 +282,10 @@ public class OutboundOrderServiceImpl implements OutboundOrderService {
                 quantity,
                 before,
                 after,
+                stockUnitCost(savedPart),
+                resultAmount(savedOrder),
                 request.getOperator(),
-                joinRemark("闂備焦婢樼粔鍐测枎閵忋倕绀勯柛婵嗗濮樸劑鎮规担闈涚仼鐎?" + savedOrder.getOrderNo(), request.getOrderRemark()),
+                joinRemark("Part outbound order " + savedOrder.getOrderNo(), request.getOrderRemark()),
                 savedOrder.getId()
         );
         savedOrder.setStockOperationLogId(stockLog.getId());
@@ -301,11 +306,11 @@ public class OutboundOrderServiceImpl implements OutboundOrderService {
         ensureOrderVisible(order);
         collaborationService.validateWrite(order, request.getVersion());
         if (request.getSettlementPrice() != null) {
-            order.setSettlementPrice(request.getSettlementPrice());
+            order.setSettlementPrice(firstPrice(request.getSettlementPrice(), BigDecimal.ZERO));
         }
         order.setSalesDate(request.getSalesDate());
         if (request.getSalePrice() != null) {
-            order.setSalePrice(request.getSalePrice());
+            order.setSalePrice(firstPrice(request.getSalePrice(), BigDecimal.ZERO));
         }
         if (request.getReceivableAmount() != null) {
             order.setReceivableAmount(nonNegative(request.getReceivableAmount()));
@@ -509,6 +514,8 @@ public class OutboundOrderServiceImpl implements OutboundOrderService {
             Integer quantity,
             Integer beforeQuantity,
             Integer afterQuantity,
+            BigDecimal unitCost,
+            BigDecimal unitRevenue,
             String operator,
             String remark,
             Long orderId
@@ -522,6 +529,8 @@ public class OutboundOrderServiceImpl implements OutboundOrderService {
         stockLog.setQuantity(quantity);
         stockLog.setBeforeQuantity(beforeQuantity);
         stockLog.setAfterQuantity(afterQuantity);
+        stockLog.setUnitCost(unitCost);
+        stockLog.setUnitRevenue(unitRevenue);
         stockLog.setOperator(operator);
         stockLog.setRemark(remark);
         StockOperationLog savedLog = stockOperationLogRepository.save(stockLog);
@@ -534,6 +543,7 @@ public class OutboundOrderServiceImpl implements OutboundOrderService {
                 warehouseId,
                 beforeQuantity,
                 afterQuantity,
+                unitCost,
                 operator,
                 remark,
                 SOURCE_TYPE,
@@ -541,8 +551,20 @@ public class OutboundOrderServiceImpl implements OutboundOrderService {
         );
         operationAuditService.record(resourceType.equals(OutboundOrder.RESOURCE_MACHINE) ? "Machine stock" : "Part stock",
                 "OUTBOUND", resourceType, resourceId, resourceCode, resourceName,
-                "闂佸憡鍨甸幖顐よ姳?" + quantity, operator, remark, "STOCK", savedLog.getId());
+                "Outbound quantity: " + quantity, operator, remark, "STOCK", savedLog.getId());
         return savedLog;
+    }
+
+    private BigDecimal stockUnitCost(MachineInventory machine) {
+        return firstPrice(machine.getSettlementPrice(), machine.getPurchasePrice(), BigDecimal.ZERO);
+    }
+
+    private BigDecimal stockUnitCost(PartInventory part) {
+        return firstPrice(part.getSettlementPrice(), part.getPurchasePrice(), BigDecimal.ZERO);
+    }
+
+    private BigDecimal resultAmount(OutboundOrder order) {
+        return firstPrice(order.getReceivableAmount(), order.getSettlementPrice(), order.getSalePrice(), BigDecimal.ZERO);
     }
 
     private String nextOrderNo() {
@@ -555,7 +577,7 @@ public class OutboundOrderServiceImpl implements OutboundOrderService {
 
     private BigDecimal firstPrice(BigDecimal... prices) {
         for (BigDecimal price : prices) {
-            if (price != null) {
+            if (price != null && price.signum() >= 0) {
                 return price;
             }
         }

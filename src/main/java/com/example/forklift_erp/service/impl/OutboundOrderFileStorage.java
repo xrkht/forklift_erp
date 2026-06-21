@@ -42,10 +42,10 @@ public class OutboundOrderFileStorage {
             "pdf", "ofd", "doc", "docx", "jpg", "jpeg", "png", "webp"
     ));
 
-    @Value("${forklift-erp.invoice-storage-dir:${FORKLIFT_ERP_INVOICE_STORAGE_DIR:uploads/invoices}}")
+    @Value("${forklift-erp.invoice-storage-dir:${forklift.invoice-storage-dir:${FORKLIFT_ERP_INVOICE_STORAGE_DIR:uploads/invoices}}}")
     private String invoiceStorageDir;
 
-    @Value("${forklift-erp.contract-storage-dir:${FORKLIFT_ERP_CONTRACT_STORAGE_DIR:uploads/contracts}}")
+    @Value("${forklift-erp.contract-storage-dir:${forklift.contract-storage-dir:${FORKLIFT_ERP_CONTRACT_STORAGE_DIR:uploads/contracts}}}")
     private String contractStorageDir;
 
     StoredOutboundFile storeInvoice(Long orderId, MultipartFile file, String previousFileName) {

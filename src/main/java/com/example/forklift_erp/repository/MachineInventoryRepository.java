@@ -101,8 +101,8 @@ public interface MachineInventoryRepository extends JpaRepository<MachineInvento
             select
               count(m) as itemCount,
               sum(coalesce(m.inventoryCount, 0)) as stockQuantity,
-              sum(coalesce(coalesce(m.purchasePrice, m.settlementPrice), 0) * coalesce(m.inventoryCount, 0)) as costValue,
-              sum(coalesce(coalesce(m.salePrice, m.settlementPrice), 0) * coalesce(m.inventoryCount, 0)) as retailValue
+              sum(coalesce(coalesce(m.settlementPrice, m.purchasePrice), 0) * coalesce(m.inventoryCount, 0)) as costValue,
+              sum(coalesce(coalesce(m.settlementPrice, m.salePrice), 0) * coalesce(m.inventoryCount, 0)) as settlementValue
             from MachineInventory m
             where coalesce(m.modelOnly, false) = false
             """)
@@ -258,6 +258,10 @@ public interface MachineInventoryRepository extends JpaRepository<MachineInvento
         Long getItemCount();
         Long getStockQuantity();
         BigDecimal getCostValue();
-        BigDecimal getRetailValue();
+        BigDecimal getSettlementValue();
+
+        default BigDecimal getRetailValue() {
+            return getSettlementValue();
+        }
     }
 }

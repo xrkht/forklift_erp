@@ -10,16 +10,19 @@ import com.example.forklift_erp.entity.Customer;
 import com.example.forklift_erp.entity.MachineInventory;
 import com.example.forklift_erp.entity.PartInventory;
 import com.example.forklift_erp.entity.RepairRecord;
+import com.example.forklift_erp.entity.StockOperationLog;
 import com.example.forklift_erp.entity.User;
 import com.example.forklift_erp.exception.BusinessException;
 import com.example.forklift_erp.repository.CustomerRepository;
 import com.example.forklift_erp.repository.MachineInventoryRepository;
 import com.example.forklift_erp.repository.PartInventoryRepository;
 import com.example.forklift_erp.repository.RepairRecordRepository;
+import com.example.forklift_erp.repository.StockOperationLogRepository;
 import com.example.forklift_erp.repository.UserRepository;
 import com.example.forklift_erp.service.CollaborationService;
 import com.example.forklift_erp.service.OperationAuditService;
 import com.example.forklift_erp.service.RepairRecordService;
+import com.example.forklift_erp.service.StockLedgerService;
 import com.example.forklift_erp.util.ListPageSupport;
 import com.example.forklift_erp.util.SecurityUtils;
 import lombok.extern.slf4j.Slf4j;
@@ -33,13 +36,18 @@ import org.springframework.transaction.annotation.Transactional;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.Arrays;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.stream.Collectors;
 
 @Slf4j
 @Service
 public class RepairRecordServiceImpl implements RepairRecordService {
+    private static final String REPAIR_SOURCE_TYPE = "REPAIR";
+    private static final String REPAIR_USE_OPERATION = "REPAIR_USE";
+    private static final String REPAIR_RESTORE_OPERATION = "REPAIR_RESTORE";
 
     @Autowired
     private RepairRecordRepository repairRepository;
@@ -61,6 +69,12 @@ public class RepairRecordServiceImpl implements RepairRecordService {
 
     @Autowired
     private OperationAuditService operationAuditService;
+
+    @Autowired
+    private StockLedgerService stockLedgerService;
+
+    @Autowired
+    private StockOperationLogRepository stockOperationLogRepository;
 
     @Override
     public List<RepairRecord> findAll() {
@@ -159,6 +173,7 @@ public class RepairRecordServiceImpl implements RepairRecordService {
         if (Boolean.TRUE.equals(existing.getIsLocked()) && !SecurityUtils.isAdminOrSuperAdmin()) {
             throw new BusinessException(ResultCode.FORBIDDEN, "Repair record is locked and cannot be deleted");
         }
+        syncUsedPartInventory(existing, parseIds(existing.getUsedPartIds()), List.of(), true);
         repairRepository.deleteById(id);
         log.info("Delete repair record: id={}", id);
     }
@@ -199,6 +214,7 @@ public class RepairRecordServiceImpl implements RepairRecordService {
     @Transactional
     public RepairRecordVO create(RepairRecordCreateDTO dto) {
         RepairRecord saved = save(dto.toEntity());
+        saved = syncUsedPartInventory(saved, List.of(), parseIds(saved.getUsedPartIds()), true);
         operationAuditService.record("Repair", "CREATE", "REPAIR", saved.getId(),
                 saved.getVehicleNumber(), saved.getCustomerName(), saved.getFaultDescription(),
                 saved.getRepairPerson(), saved.getRemarks(), "REPAIR", saved.getId());
@@ -211,8 +227,10 @@ public class RepairRecordServiceImpl implements RepairRecordService {
         RepairRecord record = findByIdForUpdate(id)
                 .orElseThrow(() -> new BusinessException(ResultCode.NOT_FOUND, "Repair record not found"));
         collaborationService.validateWrite(record, dto.getVersion());
+        List<Long> previousPartIds = parseIds(record.getUsedPartIds());
         dto.applyToEntity(record);
         RepairRecord saved = save(record);
+        saved = syncUsedPartInventory(saved, previousPartIds, parseIds(saved.getUsedPartIds()), false);
         operationAuditService.record("Repair", "UPDATE", "REPAIR", saved.getId(),
                 saved.getVehicleNumber(), saved.getCustomerName(), "Update repair: " + saved.getStatus(),
                 saved.getRepairPerson(), saved.getRemarks(), "REPAIR", saved.getId());
@@ -271,7 +289,9 @@ public class RepairRecordServiceImpl implements RepairRecordService {
     private void normalizeRepairPerson(RepairRecord record) {
         if (Boolean.TRUE.equals(record.getRepairExternal())) {
             record.setRepairPersonUserId(null);
-            record.setRepairPerson("External");
+            if (record.getRepairPerson() == null || record.getRepairPerson().isBlank() || "External".equalsIgnoreCase(record.getRepairPerson())) {
+                record.setRepairPerson("其他");
+            }
             return;
         }
         if (record.getRepairPersonUserId() == null) {
@@ -293,6 +313,10 @@ public class RepairRecordServiceImpl implements RepairRecordService {
     private void normalizeUsedParts(RepairRecord record) {
         List<Long> ids = parseIds(record.getUsedPartIds());
         if (ids.isEmpty()) {
+            record.setUsedPartIds(null);
+            if (record.getUsedParts() != null && record.getUsedParts().isBlank()) {
+                record.setUsedParts(null);
+            }
             return;
         }
         List<PartInventory> parts = ids.stream()
@@ -307,14 +331,135 @@ public class RepairRecordServiceImpl implements RepairRecordService {
                 .collect(Collectors.joining(";")));
     }
 
+    private RepairRecord syncUsedPartInventory(
+            RepairRecord record,
+            List<Long> previousPartIds,
+            List<Long> currentPartIds,
+            boolean force
+    ) {
+        if (!force && samePartUsage(previousPartIds, currentPartIds)) {
+            record.setPartsCost(money(record.getPartsCost()));
+            return repairRepository.saveAndFlush(record);
+        }
+        if (!previousPartIds.isEmpty()) {
+            applyUsedPartMovement(record, previousPartIds, false);
+        }
+        BigDecimal partsCost = applyUsedPartMovement(record, currentPartIds, true);
+        record.setPartsCost(partsCost);
+        return repairRepository.saveAndFlush(record);
+    }
+
+    private BigDecimal applyUsedPartMovement(RepairRecord record, List<Long> partIds, boolean consume) {
+        BigDecimal totalCost = BigDecimal.ZERO;
+        for (Map.Entry<Long, Integer> entry : countedPartIds(partIds).entrySet()) {
+            int quantity = entry.getValue();
+            if (quantity <= 0) {
+                continue;
+            }
+            PartInventory part = findPartForStockChange(entry.getKey());
+            int before = part.getQuantity() == null ? 0 : part.getQuantity();
+            if (consume && before < quantity) {
+                throw new BusinessException(ResultCode.INSUFFICIENT_STOCK,
+                        "Insufficient used part stock: " + part.getPartCode() + ", available=" + before);
+            }
+            int after = consume ? before - quantity : before + quantity;
+            BigDecimal unitCost = stockUnitCost(part);
+            part.setQuantity(after);
+            collaborationService.stampWrite(part);
+            PartInventory savedPart = partRepository.save(part);
+            saveRepairPartStockLog(savedPart, consume ? REPAIR_USE_OPERATION : REPAIR_RESTORE_OPERATION,
+                    quantity, before, after, unitCost, record);
+            if (consume) {
+                totalCost = totalCost.add(unitCost.multiply(BigDecimal.valueOf(quantity)));
+            }
+        }
+        return totalCost;
+    }
+
+    private Map<Long, Integer> countedPartIds(List<Long> ids) {
+        Map<Long, Integer> counts = new LinkedHashMap<>();
+        for (Long id : ids) {
+            if (id != null && id > 0) {
+                counts.merge(id, 1, Integer::sum);
+            }
+        }
+        return counts;
+    }
+
+    private boolean samePartUsage(List<Long> previousPartIds, List<Long> currentPartIds) {
+        return countedPartIds(previousPartIds).equals(countedPartIds(currentPartIds));
+    }
+
+    private PartInventory findPartForStockChange(Long partId) {
+        Optional<PartInventory> part = SecurityUtils.isAdminOrSuperAdmin()
+                ? partRepository.findByIdForUpdate(partId)
+                : partRepository.findByIdAndIsLockedFalseForUpdate(partId);
+        return part.orElseThrow(() -> new BusinessException(ResultCode.NOT_FOUND, "Used part not found: " + partId));
+    }
+
+    private StockOperationLog saveRepairPartStockLog(
+            PartInventory part,
+            String operationType,
+            Integer quantity,
+            Integer beforeQuantity,
+            Integer afterQuantity,
+            BigDecimal unitCost,
+            RepairRecord repair
+    ) {
+        String operator = SecurityUtils.currentUsername();
+        String remark = "Repair " + repair.getId() + " " + operationType;
+        StockOperationLog stockLog = new StockOperationLog();
+        stockLog.setResourceType(StockLedgerService.RESOURCE_PART);
+        stockLog.setOperationType(operationType);
+        stockLog.setResourceId(part.getId());
+        stockLog.setResourceCode(part.getPartCode());
+        stockLog.setResourceName(part.getPartName());
+        stockLog.setQuantity(quantity);
+        stockLog.setBeforeQuantity(beforeQuantity);
+        stockLog.setAfterQuantity(afterQuantity);
+        stockLog.setUnitCost(unitCost);
+        stockLog.setUnitRevenue(BigDecimal.ZERO);
+        stockLog.setOperator(operator);
+        stockLog.setRemark(remark);
+        StockOperationLog savedLog = stockOperationLogRepository.save(stockLog);
+        stockLedgerService.recordMovement(
+                operationType,
+                StockLedgerService.RESOURCE_PART,
+                part.getId(),
+                part.getPartCode(),
+                part.getPartName(),
+                part.getWarehouseId(),
+                beforeQuantity,
+                afterQuantity,
+                unitCost,
+                operator,
+                remark,
+                REPAIR_SOURCE_TYPE,
+                repair.getId()
+        );
+        operationAuditService.record("Part stock", operationType, "PART", part.getId(),
+                part.getPartCode(), part.getPartName(), "Repair part stock " + quantity,
+                operator, remark, "STOCK", savedLog.getId());
+        return savedLog;
+    }
+
+    private BigDecimal stockUnitCost(PartInventory part) {
+        if (part.getSettlementPrice() != null && part.getSettlementPrice().signum() >= 0) {
+            return part.getSettlementPrice();
+        }
+        return money(part.getPurchasePrice());
+    }
+
     private void normalizeFees(RepairRecord record) {
         BigDecimal repairFee = money(record.getRepairFee());
+        BigDecimal repairExpense = Boolean.TRUE.equals(record.getRepairExternal()) ? money(record.getRepairExpense()) : BigDecimal.ZERO;
         BigDecimal partsFee = money(record.getPartsFee());
-        record.setTotalFee(repairFee.add(partsFee));
+        record.setRepairExpense(repairExpense);
+        record.setTotalFee(repairFee.add(repairExpense).add(partsFee));
     }
 
     private BigDecimal money(BigDecimal value) {
-        return value == null ? BigDecimal.ZERO : value;
+        return value == null || value.signum() < 0 ? BigDecimal.ZERO : value;
     }
 
     private List<Long> parseIds(String ids) {

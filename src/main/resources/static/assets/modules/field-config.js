@@ -140,9 +140,10 @@ export function createFields(deps) {
     { name: "repairContent", label: "维修内容", type: "textarea", span: 2 },
     { name: "repairPersonChoice", label: "维修人员", type: "select", required: true, options: repairPersonOptions },
     { name: "usedPartIds", label: "使用配件", type: "select", coerce: "intList", options: repairPartOptions },
-    { name: "repairFee", label: "维修费", type: "number", coerce: "decimal", step: "0.01" },
+    { name: "repairFee", label: "维修收入", type: "number", coerce: "decimal", step: "0.01" },
+    { name: "repairExpense", label: "维修支出", type: "number", coerce: "decimal", step: "0.01" },
     { name: "partsFee", label: "配件费", type: "number", coerce: "decimal", step: "0.01" },
-    { name: "totalFee", label: "总费用", type: "number", coerce: "decimal", step: "0.01", readOnly: true },
+    { name: "totalFee", label: "客户应收", type: "number", coerce: "decimal", step: "0.01", readOnly: true },
     { name: "remarks", label: "备注", type: "textarea", span: 2 }
   ],
   configItem: [

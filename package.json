@@ -1,7 +1,7 @@
 {
   "scripts": {
-    "build": "node scripts/build-frontend.mjs",
-    "check": "node scripts/build-frontend.mjs"
+    "build": "java scripts/BuildFrontend.java",
+    "check": "java scripts/BuildFrontend.java"
   },
   "devDependencies": {}
 }

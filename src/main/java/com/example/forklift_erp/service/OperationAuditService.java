@@ -10,6 +10,8 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 public class OperationAuditService {
 
+    private static final int MAX_REMARK_LENGTH = 500;
+
     @Autowired
     private OperationAuditLogRepository auditLogRepository;
 
@@ -34,7 +36,7 @@ public class OperationAuditService {
         log.setTargetName(targetName);
         log.setSummary(summary);
         log.setOperator(resolveOperator(operator));
-        log.setRemark(remark);
+        log.setRemark(truncate(remark, MAX_REMARK_LENGTH));
         log.setSourceType(sourceType);
         log.setSourceId(sourceId);
         return auditLogRepository.save(log);
@@ -45,5 +47,12 @@ public class OperationAuditService {
             return operator.trim();
         }
         return SecurityUtils.currentUsername();
+    }
+
+    private String truncate(String value, int maxLength) {
+        if (value == null || value.length() <= maxLength) {
+            return value;
+        }
+        return value.substring(0, maxLength);
     }
 }

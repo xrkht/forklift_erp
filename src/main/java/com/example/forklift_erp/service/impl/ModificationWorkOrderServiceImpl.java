@@ -141,7 +141,7 @@ public class ModificationWorkOrderServiceImpl implements ModificationWorkOrderSe
             int available = part.getQuantity() == null ? 0 : part.getQuantity();
             if (available < quantity) {
                 throw new BusinessException(ResultCode.INSUFFICIENT_STOCK,
-                        "闁板秳娆㈡惔鎾崇摠娑撳秷鍐? " + part.getPartName() + "閿涘矂娓剁憰?" + quantity + "閿涘苯缍嬮崜?" + available);
+                        "Part stock is insufficient: " + part.getPartName() + ", required " + quantity + ", available " + available);
             }
         });
 
@@ -163,7 +163,7 @@ public class ModificationWorkOrderServiceImpl implements ModificationWorkOrderSe
         machineRepository.save(machine);
 
         operationAuditService.record("Modification work order", "CREATE", "MODIFICATION_WORK_ORDER", savedOrder.getId(),
-                savedOrder.getWorkOrderNo(), "鏉烇箒绶營D " + savedOrder.getMachineId(),
+                savedOrder.getWorkOrderNo(), "Vehicle " + savedOrder.getMachineId(),
                 "Create modification work order lines: " + preparedLines.size(), request.getOperator(), request.getRemark(),
                 MOVEMENT_SOURCE_TYPE, savedOrder.getId());
         return toVO(savedOrder);
@@ -184,7 +184,7 @@ public class ModificationWorkOrderServiceImpl implements ModificationWorkOrderSe
 
         List<ModificationWorkOrderLine> lines = lineRepository.findByWorkOrderIdOrderByIdAsc(workOrder.getId());
         if (lines.isEmpty()) {
-            throw new BusinessException(ResultCode.PARAM_ERROR, "閺€纭咁棅瀹搞儱宕熷▽鈩冩箒閺囨寧宕查弰搴ｇ矎");
+            throw new BusinessException(ResultCode.PARAM_ERROR, "Modification work order has no lines to complete");
         }
 
         MachineInventory machine = machineRepository.findByIdForUpdate(workOrder.getMachineId())
@@ -213,7 +213,7 @@ public class ModificationWorkOrderServiceImpl implements ModificationWorkOrderSe
             replaceRequest.setQuantity(line.getQuantity());
             replaceRequest.setOldPartAction(line.getOldPartAction());
             replaceRequest.setOperator(operator);
-            replaceRequest.setRemark(joinRemark("閺€纭咁棅瀹搞儱宕?" + workOrder.getWorkOrderNo(), line.getRemark(), actionRemark));
+            replaceRequest.setRemark(joinRemark("Modification work order " + workOrder.getWorkOrderNo(), line.getRemark(), actionRemark));
             replaceRequest.setStockMovementSourceType(MOVEMENT_SOURCE_TYPE);
             replaceRequest.setStockMovementSourceId(workOrder.getId());
             ConfigReplaceLog replaceLog = configReplaceService.performPartReplace(replaceRequest);
@@ -239,7 +239,7 @@ public class ModificationWorkOrderServiceImpl implements ModificationWorkOrderSe
         machineRepository.save(completedMachine);
 
         operationAuditService.record("Modification work order", "COMPLETE", "MODIFICATION_WORK_ORDER", savedOrder.getId(),
-                savedOrder.getWorkOrderNo(), "鏉烇箒绶營D " + savedOrder.getMachineId(),
+                savedOrder.getWorkOrderNo(), "Vehicle " + savedOrder.getMachineId(),
                 "Complete modification work order lines: " + lines.size(), operator, actionRemark,
                 MOVEMENT_SOURCE_TYPE, savedOrder.getId());
         return toVO(savedOrder);
@@ -271,7 +271,7 @@ public class ModificationWorkOrderServiceImpl implements ModificationWorkOrderSe
         restoreMachineStatusIfNoActiveOrder(savedOrder.getMachineId(), savedOrder.getId());
 
         operationAuditService.record("Modification work order", "CANCEL", "MODIFICATION_WORK_ORDER", savedOrder.getId(),
-                savedOrder.getWorkOrderNo(), "鏉烇箒绶營D " + savedOrder.getMachineId(),
+                savedOrder.getWorkOrderNo(), "Vehicle " + savedOrder.getMachineId(),
                 "Cancel modification work order", operator, remark, MOVEMENT_SOURCE_TYPE, savedOrder.getId());
         return toVO(savedOrder);
     }
@@ -326,7 +326,7 @@ public class ModificationWorkOrderServiceImpl implements ModificationWorkOrderSe
 
         int quantity = lineRequest.getQuantity() == null ? 1 : lineRequest.getQuantity();
         if (quantity < 1) {
-            throw new BusinessException(ResultCode.PARAM_ERROR, "閺囨寧宕查弫浼村櫤韫囧懘銆忔径褌绨?");
+            throw new BusinessException(ResultCode.PARAM_ERROR, "Quantity must be greater than 0");
         }
         requestedPartQuantities.merge(part.getId(), quantity, Integer::sum);
         parts.put(part.getId(), part);
@@ -357,7 +357,7 @@ public class ModificationWorkOrderServiceImpl implements ModificationWorkOrderSe
         }
         if (line.getOldValue() != null && !line.getOldValue().equals(config.getSelectedValue())) {
             throw new BusinessException(ResultCode.CONFLICT,
-                    "闁板秶鐤嗗鎻掑綁閸栨牭绱濇稉宥堝厴閹稿妫銉ュ礋鐎瑰本鍨? " + line.getItemName());
+                    "Vehicle config has changed before replacement: " + line.getItemName());
         }
         PartInventory part = partRepository.findByIdForUpdate(line.getNewPartId())
                 .orElseThrow(() -> new BusinessException(ResultCode.PART_NOT_FOUND, "New part not found"));
@@ -392,8 +392,8 @@ public class ModificationWorkOrderServiceImpl implements ModificationWorkOrderSe
         config.setConfigSource("DISCOUNT");
         config.setInstalledDate(LocalDateTime.now());
         config.setRemark(joinRemark(config.getRemark(),
-                "旧件折价改装；工单=" + workOrder.getWorkOrderNo(),
-                "新件差价=" + amountOrZero(line.getPriceDifference()),
+                "Discount replacement; work order " + workOrder.getWorkOrderNo(),
+                "Price difference=" + amountOrZero(line.getPriceDifference()),
                 line.getRemark(),
                 actionRemark));
         collaborationService.stampWrite(config);
@@ -435,8 +435,8 @@ public class ModificationWorkOrderServiceImpl implements ModificationWorkOrderSe
                 .anyMatch(value -> value.equals(actualType));
         if (!matched) {
             throw new BusinessException(ResultCode.PARAM_ERROR,
-                    "閸欘亣鍏橀弴鎸庡床閸氬瞼琚崹瀣帳娴犺绱版潪锕佺窢闁板秶鐤嗙猾璇茬€?" + config.getItemName()
-                            + "閿涘苯绨辩€涙﹢鍘ゆ禒鍓佽閸?" + part.getPartCategory());
+                    "Part category does not match config item: expected " + config.getItemName()
+                            + ", actual " + part.getPartCategory());
         }
     }
 

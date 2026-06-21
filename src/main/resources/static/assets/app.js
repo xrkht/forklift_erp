@@ -1079,7 +1079,7 @@ function handleModalInput(event) {
   const input = event.target.closest("[data-combo-input]");
   if (!input) {
     const form = event.target.closest("form");
-    if (form?.dataset.kind === "repair" && ["repairFee", "partsFee"].includes(event.target.name)) {
+    if (form?.dataset.kind === "repair" && ["repairFee", "repairExpense", "partsFee"].includes(event.target.name)) {
       syncRepairTotalFee(form);
     }
     if (["vehicleOutbound", "partStock", "outboundOrder"].includes(form?.dataset.kind) && isPaymentField(event.target.name)) {
@@ -1214,8 +1214,16 @@ async function handleModalChange(event) {
   }
 
   if (kind === "repair") {
-    if (event.target.name === "repairFee" || event.target.name === "partsFee") {
+    if (["repairFee", "repairExpense", "partsFee"].includes(event.target.name)) {
       syncRepairTotalFee(form);
+    }
+    if (event.target.name === "repairPersonChoice") {
+      if (!repairUsesExternal(state.modal.item)) {
+        state.modal.item.repairExpense = "";
+      }
+      syncRepairTotalFee(form);
+      renderModal();
+      return;
     }
     if (event.target.name === "machineId") {
       syncRepairVehicleSelection(form, Number(event.target.value || 0));
@@ -3301,7 +3309,11 @@ function detailFields(kind, item) {
       ["地址", item.customerAddress],
       ["维修人", item.repairPerson],
       ["故障描述", item.faultDescription],
-      ["总费用", money(item.totalFee)],
+      ["维修收入", money(item.repairFee)],
+      ...(item.repairExternal ? [["维修支出", money(item.repairExpense)]] : []),
+      ["配件费", money(item.partsFee)],
+      ["配件成本", money(item.partsCost)],
+      ["客户应收", money(item.totalFee)],
       ["状态", repairStatusText(item.status)]
     ],
     user: [
@@ -4317,10 +4329,10 @@ function renderRentals() {
       ${renderBackendSummary("rentals", () => {
         const activeRows = rows.filter(item => item.status === "ACTIVE");
         const returnedRows = rows.filter(item => item.status === "RETURNED");
-        const rentalIncome = rows.reduce((sum, item) => sum + Number(rentalMonthlyPrice(item) || 0), 0);
+        const rentalIncome = rows.reduce((sum, item) => sum + rentalAccruedIncome(item), 0);
         return `<section class="summary-grid">
           ${summaryCard("租赁记录", rows.length, `${activeRows.length} 台租赁中`)}
-          ${summaryCard("月租收入", money(rentalIncome), `${returnedRows.length} 单已归还`)}
+          ${summaryCard("已计租赁收入", money(rentalIncome), `${returnedRows.length} 单已归还`)}
           ${summaryCard("租赁车辆", new Set(rows.map(item => item.machineId).filter(Boolean)).size, "按具体车号记录")}
           ${summaryCard("待归还", activeRows.length, activeRows.length ? "请持续跟进租赁去向" : "暂无进行中租赁")}
         </section>`;
@@ -4373,6 +4385,83 @@ function rentalCustomerSummary(row) {
 
 function rentalMonthlyPrice(row) {
   return row?.monthlyRentalPrice ?? row?.rentalPrice ?? 0;
+}
+
+function rentalAccruedIncome(row = {}) {
+  const period = rentalEffectivePeriod(row);
+  const monthlyPrice = Number(rentalMonthlyPrice(row) || 0);
+  if (!period || monthlyPrice <= 0) return 0;
+  let total = 0;
+  let cursor = { year: period.start.year, month: period.start.month };
+  const last = { year: period.end.year, month: period.end.month };
+  while (compareYearMonth(cursor, last) <= 0) {
+    const monthStart = { year: cursor.year, month: cursor.month, day: 1 };
+    const monthEnd = { year: cursor.year, month: cursor.month, day: daysInMonth(cursor.year, cursor.month) };
+    const segmentStart = maxDate(period.start, monthStart);
+    const segmentEnd = minDate(period.end, monthEnd);
+    const days = daysBetween(segmentStart, segmentEnd) + 1;
+    if (days > 0) {
+      total += monthlyPrice * days / daysInMonth(cursor.year, cursor.month);
+    }
+    cursor = nextYearMonth(cursor);
+  }
+  return Number(total.toFixed(2));
+}
+
+function rentalEffectivePeriod(row = {}) {
+  const start = parseLocalDate(row.startDate) || parseLocalDate(row.createdAt);
+  if (!start) return null;
+  let end = null;
+  if (row.status === "RETURNED") {
+    end = parseLocalDate(row.endDate) || parseLocalDate(row.updatedAt) || start;
+  } else {
+    end = todayLocalDate();
+  }
+  return end && compareDates(end, start) >= 0 ? { start, end } : null;
+}
+
+function parseLocalDate(value) {
+  const text = dateValue(value);
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(text || "");
+  if (!match) return null;
+  return { year: Number(match[1]), month: Number(match[2]), day: Number(match[3]) };
+}
+
+function todayLocalDate() {
+  const today = new Date();
+  return { year: today.getFullYear(), month: today.getMonth() + 1, day: today.getDate() };
+}
+
+function compareDates(left, right) {
+  return dayNumber(left) - dayNumber(right);
+}
+
+function compareYearMonth(left, right) {
+  return left.year === right.year ? left.month - right.month : left.year - right.year;
+}
+
+function maxDate(left, right) {
+  return compareDates(left, right) >= 0 ? left : right;
+}
+
+function minDate(left, right) {
+  return compareDates(left, right) <= 0 ? left : right;
+}
+
+function daysBetween(start, end) {
+  return Math.floor((dayNumber(end) - dayNumber(start)));
+}
+
+function dayNumber(value) {
+  return Math.floor(Date.UTC(value.year, value.month - 1, value.day) / 86400000);
+}
+
+function daysInMonth(year, month) {
+  return new Date(Date.UTC(year, month, 0)).getUTCDate();
+}
+
+function nextYearMonth(value) {
+  return value.month === 12 ? { year: value.year + 1, month: 1 } : { year: value.year, month: value.month + 1 };
 }
 
 function rentalPeriodSummary(row) {
@@ -4746,7 +4835,7 @@ function renderRepairs() {
         { label: "客户", html: true, render: row => repairCustomerSummary(row) },
         { label: "维修人", html: true, render: row => repairPersonSummary(row) },
         { label: "状态", html: true, render: row => repairStatusToggle(row) },
-        { label: "总费用", key: "totalFee", formatter: money },
+        { label: "客户应收", key: "totalFee", formatter: money },
         { label: "操作", html: true, render: row => rowActions("repair", row, ["edit", "delete"]) }
       ], rows, listTableOptions("repair", "repairs")))}
       ${renderPagination("repairs")}
@@ -5227,7 +5316,7 @@ function renderVehicleRepairSurface(machine = {}) {
     { label: "客户", html: true, render: row => repairCustomerSummary(row) },
     { label: "维修人", html: true, render: row => repairPersonSummary(row) },
     { label: "状态", html: true, render: row => repairStatusToggle(row) },
-    { label: "总费用", key: "totalFee", formatter: money },
+    { label: "客户应收", key: "totalFee", formatter: money },
     { label: "操作", html: true, render: row => rowActions("repair", row, ["edit", "delete"]) }
   ], repairs) : emptyState("当前车辆暂无维修记录");
   return renderSurface("维修记录", body, actions);
@@ -5546,10 +5635,15 @@ function renderMonthlyFinanceTable(rows) {
     { label: "出库收入", key: "outboundRevenue", formatter: money },
     { label: "出库成本", key: "outboundCost", formatter: money },
     { label: "维修收入", key: "repairIncome", formatter: money },
+    { label: "维修应收", key: "repairReceivable", formatter: money },
+    { label: "维修支出", key: "repairExpense", formatter: money },
+    { label: "配件成本", key: "repairPartsCost", formatter: money },
     { label: "租赁收入", key: "rentalIncome", formatter: money },
     { label: "折价收入", key: "modificationIncome", formatter: money },
     { label: "折价支出", key: "modificationExpense", formatter: money },
-    { label: "毛利", key: "grossProfit", formatter: money }
+    { label: "成本/支出", key: "totalExpense", formatter: money },
+    { label: "经营毛利", key: "netProfit", formatter: money },
+    { label: "净现金流", key: "netCashflow", formatter: money }
   ], rows);
 }
 
@@ -5562,10 +5656,16 @@ function renderFinanceBars(rows) {
     outboundRevenue: financeNumber(row.outboundRevenue),
     outboundCost: financeNumber(row.outboundCost),
     repairIncome: financeNumber(row.repairIncome),
+    repairReceivable: financeNumber(row.repairReceivable),
+    repairExpense: financeNumber(row.repairExpense),
+    repairPartsCost: financeNumber(row.repairPartsCost),
     rentalIncome: financeNumber(row.rentalIncome),
     modificationIncome: financeNumber(row.modificationIncome),
     modificationExpense: financeNumber(row.modificationExpense),
-    grossProfit: financeNumber(row.grossProfit)
+    totalExpense: financeNumber(row.totalExpense),
+    grossProfit: financeNumber(row.grossProfit),
+    netProfit: financeNumber(row.netProfit),
+    netCashflow: financeNumber(row.netCashflow)
   }));
 
   if (!chartRows.length) {
@@ -5573,33 +5673,39 @@ function renderFinanceBars(rows) {
   }
 
   const totalIncome = chartRows.reduce((sum, row) => sum + row.totalIncome, 0);
-  const totalCost = chartRows.reduce((sum, row) => sum + row.inboundCost, 0);
-  const totalProfit = chartRows.reduce((sum, row) => sum + row.grossProfit, 0);
-  const rawMax = Math.max(1, ...chartRows.flatMap(row => [row.totalIncome, row.inboundCost]));
+  const totalExpense = chartRows.reduce((sum, row) => sum + row.totalExpense, 0);
+  const totalCashflow = chartRows.reduce((sum, row) => sum + row.netCashflow, 0);
+  const rawMax = Math.max(1, ...chartRows.flatMap(row => [row.totalIncome, row.totalExpense, row.netCashflow]));
+  const rawMin = Math.min(0, ...chartRows.map(row => row.netCashflow));
   const max = niceFinanceMax(rawMax);
+  const min = rawMin < 0 ? -niceFinanceMax(Math.abs(rawMin)) : 0;
   const chart = { width: 720, height: 300, left: 58, right: 24, top: 24, bottom: 42 };
   const plotWidth = chart.width - chart.left - chart.right;
   const plotHeight = chart.height - chart.top - chart.bottom;
-  const baseY = chart.top + plotHeight;
+  const valueRange = Math.max(1, max - min);
   const xFor = index => chartRows.length === 1
     ? chart.left + plotWidth / 2
     : chart.left + (index / (chartRows.length - 1)) * plotWidth;
-  const yFor = value => chart.top + plotHeight - (Math.max(0, value) / max) * plotHeight;
+  const yFor = value => chart.top + ((max - value) / valueRange) * plotHeight;
+  const baseY = yFor(0);
   const incomePath = financeLinePath(chartRows, "totalIncome", xFor, yFor);
-  const costPath = financeLinePath(chartRows, "inboundCost", xFor, yFor);
+  const expensePath = financeLinePath(chartRows, "totalExpense", xFor, yFor);
+  const cashflowPath = financeLinePath(chartRows, "netCashflow", xFor, yFor);
   const incomeArea = financeAreaPath(chartRows, "totalIncome", xFor, yFor, baseY);
-  const costArea = financeAreaPath(chartRows, "inboundCost", xFor, yFor, baseY);
-  const ticks = [0, 0.25, 0.5, 0.75, 1].map(ratio => max * ratio);
+  const expenseArea = financeAreaPath(chartRows, "totalExpense", xFor, yFor, baseY);
+  const ticks = min < 0
+    ? [min, min / 2, 0, max / 2, max]
+    : [0, 0.25, 0.5, 0.75, 1].map(ratio => max * ratio);
   const labelEvery = Math.max(1, Math.ceil(chartRows.length / 8));
 
   return `
     <div class="finance-chart-card">
       <div class="finance-chart-stats" aria-label="收支汇总">
         <span class="finance-chart-stat primary"><small>收入合计</small><strong>${escapeHtml(formatChartMoney(totalIncome))}</strong></span>
-        <span class="finance-chart-stat warn"><small>入库成本</small><strong>${escapeHtml(formatChartMoney(totalCost))}</strong></span>
-        <span class="finance-chart-stat teal"><small>毛利</small><strong>${escapeHtml(formatChartMoney(totalProfit))}</strong></span>
+        <span class="finance-chart-stat warn"><small>成本/支出</small><strong>${escapeHtml(formatChartMoney(totalExpense))}</strong></span>
+        <span class="finance-chart-stat teal"><small>净现金流</small><strong>${escapeHtml(formatChartMoney(totalCashflow))}</strong></span>
       </div>
-      <div class="finance-chart" role="img" aria-label="月度收入与入库成本折线图">
+      <div class="finance-chart" role="img" aria-label="月度收入、支出与净现金流折线图">
         <svg class="finance-chart-svg" viewBox="0 0 ${chart.width} ${chart.height}" aria-hidden="true">
           ${ticks.map(value => {
             const y = yFor(value);
@@ -5612,14 +5718,16 @@ function renderFinanceBars(rows) {
           }).join("")}
           <line class="finance-axis-line" x1="${chart.left}" y1="${baseY}" x2="${chart.width - chart.right}" y2="${baseY}"></line>
           <path class="finance-area income" d="${escapeAttr(incomeArea)}"></path>
-          <path class="finance-area cost" d="${escapeAttr(costArea)}"></path>
+          <path class="finance-area cost" d="${escapeAttr(expenseArea)}"></path>
           <path class="finance-line income" d="${escapeAttr(incomePath)}"></path>
-          <path class="finance-line cost" d="${escapeAttr(costPath)}"></path>
+          <path class="finance-line cost" d="${escapeAttr(expensePath)}"></path>
+          <path class="finance-line net" d="${escapeAttr(cashflowPath)}"></path>
           ${chartRows.map((row, index) => {
             const x = xFor(index);
             return `
               <circle class="finance-point income" data-finance-point-index="${escapeAttr(index)}" cx="${roundChart(x)}" cy="${roundChart(yFor(row.totalIncome))}" r="4"></circle>
-              <circle class="finance-point cost" data-finance-point-index="${escapeAttr(index)}" cx="${roundChart(x)}" cy="${roundChart(yFor(row.inboundCost))}" r="4"></circle>
+              <circle class="finance-point cost" data-finance-point-index="${escapeAttr(index)}" cx="${roundChart(x)}" cy="${roundChart(yFor(row.totalExpense))}" r="4"></circle>
+              <circle class="finance-point net" data-finance-point-index="${escapeAttr(index)}" cx="${roundChart(x)}" cy="${roundChart(yFor(row.netCashflow))}" r="4"></circle>
               ${(index % labelEvery === 0 || index === chartRows.length - 1) ? `<text class="finance-x-label" x="${roundChart(x)}" y="${chart.height - 14}" text-anchor="middle">${escapeHtml(row.periodLabel)}</text>` : ""}
             `;
           }).join("")}
@@ -5639,13 +5747,18 @@ function renderFinanceBars(rows) {
                 <strong>${escapeHtml(row.periodLabel)}</strong>
                 ${financeTooltipRow("总收入", row.totalIncome, "primary")}
                 ${financeTooltipRow("入库成本", row.inboundCost, "warn")}
+                ${financeTooltipRow("成本/支出", row.totalExpense, "warn")}
                 ${financeTooltipRow("出库收入", row.outboundRevenue)}
                 ${financeTooltipRow("出库成本", row.outboundCost)}
                 ${financeTooltipRow("维修收入", row.repairIncome)}
+                ${financeTooltipRow("维修应收", row.repairReceivable)}
+                ${financeTooltipRow("维修支出", row.repairExpense)}
+                ${financeTooltipRow("配件成本", row.repairPartsCost)}
                 ${financeTooltipRow("租赁收入", row.rentalIncome)}
                 ${financeTooltipRow("折价收入", row.modificationIncome)}
                 ${financeTooltipRow("折价支出", row.modificationExpense)}
-                ${financeTooltipRow("毛利", row.grossProfit, "teal")}
+                ${financeTooltipRow("经营毛利", row.netProfit, "teal")}
+                ${financeTooltipRow("净现金流", row.netCashflow, "teal")}
               </span>
             </div>
           `;
@@ -5653,7 +5766,8 @@ function renderFinanceBars(rows) {
       </div>
       <div class="finance-legend">
         <span><i class="legend-dot income"></i>收入</span>
-        <span><i class="legend-dot cost"></i>入库成本</span>
+        <span><i class="legend-dot cost"></i>成本/支出</span>
+        <span><i class="legend-dot net"></i>净现金流</span>
       </div>
     </div>
   `;
@@ -7305,7 +7419,7 @@ function repairDefaults() {
       machineId: "请从车辆库存中选择车号",
       customerId: "请从客户列表中选择客户",
       usedPartIds: "可从配件库存中选择使用配件",
-      totalFee: "维修费 + 配件费自动计算"
+      totalFee: "客户应收 = 维修收入 + 配件费；外部维修时另含维修支出"
     }
   };
   setPrefill(entity, "repairPersonChoice", "OTHER", "预填：其他");
@@ -7346,9 +7460,17 @@ function prepareRepairModalItem(item = {}) {
     item.usedPartIds = item.usedPartIds.split(",").map(value => value.trim()).filter(Boolean)[0] || "";
   }
   if (item.totalFee === undefined || item.totalFee === null || item.totalFee === "") {
-    item.totalFee = decimalSum(item.repairFee, item.partsFee);
+    item.totalFee = repairTotalFee(item);
   }
   return item;
+}
+
+function repairUsesExternal(item = {}) {
+  const rawChoice = fieldOrPrefillValue(item, "repairPersonChoice");
+  if (rawChoice !== undefined && rawChoice !== null && String(rawChoice).trim() !== "") {
+    return String(rawChoice).trim().toUpperCase() === "OTHER";
+  }
+  return item.repairExternal === true;
 }
 
 function effectiveFieldValue(entity = {}, name) {
@@ -7384,7 +7506,17 @@ function syncPartDictionaryFields(form, changedName) {
 }
 
 function syncRepairTotalFee(form) {
-  setFormFieldValue(form, "totalFee", decimalSum(form.elements.repairFee?.value, form.elements.partsFee?.value), false);
+  setFormFieldValue(form, "totalFee", repairTotalFee({
+    repairPersonChoice: form.elements.repairPersonChoice?.value,
+    repairExternal: state.modal?.item?.repairExternal,
+    repairFee: form.elements.repairFee?.value,
+    repairExpense: form.elements.repairExpense?.value,
+    partsFee: form.elements.partsFee?.value
+  }), false);
+}
+
+function repairTotalFee(item = {}) {
+  return decimalSum(item.repairFee, repairUsesExternal(item) ? item.repairExpense : 0, item.partsFee);
 }
 
 function decimalSum(...values) {
@@ -7735,6 +7867,9 @@ function getFields(kind, item = state.modal?.item || {}) {
         ...baseFields.slice(insertIndex)
       ];
     }
+  }
+  if (kind === "repair") {
+    return fields.repair.filter(field => field.name !== "repairExpense" || repairUsesExternal(item));
   }
   if (kind === "vehicleConfigChange") {
     const mode = vehicleConfigChangeMode(item);

@@ -3,6 +3,7 @@ package com.example.forklift_erp.dto;
 
 import com.example.forklift_erp.constant.RepairStatus;
 import com.example.forklift_erp.entity.RepairRecord;
+import jakarta.validation.constraints.DecimalMin;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Pattern;
@@ -54,9 +55,15 @@ public class RepairRecordCreateDTO {
 
     private List<Long> usedPartIds = new ArrayList<>();
 
+    @DecimalMin(value = "0.00", message = "\u5de5\u65f6\u4e0d\u80fd\u4e3a\u8d1f\u6570")
     private BigDecimal workHours;
+    @DecimalMin(value = "0.00", message = "\u7ef4\u4fee\u6536\u5165\u4e0d\u80fd\u4e3a\u8d1f\u6570")
     private BigDecimal repairFee;
+    @DecimalMin(value = "0.00", message = "\u7ef4\u4fee\u652f\u51fa\u4e0d\u80fd\u4e3a\u8d1f\u6570")
+    private BigDecimal repairExpense;
+    @DecimalMin(value = "0.00", message = "\u914d\u4ef6\u8d39\u4e0d\u80fd\u4e3a\u8d1f\u6570")
     private BigDecimal partsFee;
+    @DecimalMin(value = "0.00", message = "\u603b\u8d39\u7528\u4e0d\u80fd\u4e3a\u8d1f\u6570")
     private BigDecimal totalFee;
 
     @Pattern(regexp = RepairStatus.VALIDATION_PATTERN, message = "状态值非法")
@@ -86,6 +93,7 @@ public class RepairRecordCreateDTO {
         entity.setUsedPartIds(joinIds(this.usedPartIds));
         entity.setWorkHours(null);
         entity.setRepairFee(this.repairFee);
+        entity.setRepairExpense(this.repairExpense);
         entity.setPartsFee(this.partsFee);
         entity.setTotalFee(this.totalFee);
         entity.setStatus(this.status);

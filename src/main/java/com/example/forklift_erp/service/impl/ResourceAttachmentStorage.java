@@ -38,10 +38,10 @@ public class ResourceAttachmentStorage {
     @Value("${forklift-erp.attachment-storage-dir:${FORKLIFT_ERP_ATTACHMENT_STORAGE_DIR:uploads/attachments}}")
     private String attachmentStorageDir;
 
-    @Value("${forklift-erp.invoice-storage-dir:${FORKLIFT_ERP_INVOICE_STORAGE_DIR:uploads/invoices}}")
+    @Value("${forklift-erp.invoice-storage-dir:${forklift.invoice-storage-dir:${FORKLIFT_ERP_INVOICE_STORAGE_DIR:uploads/invoices}}}")
     private String invoiceStorageDir;
 
-    @Value("${forklift-erp.contract-storage-dir:${FORKLIFT_ERP_CONTRACT_STORAGE_DIR:uploads/contracts}}")
+    @Value("${forklift-erp.contract-storage-dir:${forklift.contract-storage-dir:${FORKLIFT_ERP_CONTRACT_STORAGE_DIR:uploads/contracts}}}")
     private String contractStorageDir;
 
     StoredAttachmentFile storeFile(MultipartFile file, String storageScope) {

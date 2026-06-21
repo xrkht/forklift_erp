@@ -52,7 +52,7 @@ public class OperationAuditLog {
     @Column(length = 50)
     private String operator;
 
-    @Column(length = 255)
+    @Column(length = 500)
     private String remark;
 
     @Column(name = "source_type", length = 40)
