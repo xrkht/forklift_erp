@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Reset Client Cache</title>
+  <style>
+    body {
+      min-height: 100vh;
+      margin: 0;
+      display: grid;
+      place-items: center;
+      background: #f4f7fa;
+      color: #1f2a37;
+      font-family: "Microsoft YaHei", system-ui, sans-serif;
+    }
+
+    main {
+      width: min(420px, calc(100% - 32px));
+      padding: 24px;
+      border: 1px solid #d9e3ec;
+      border-radius: 8px;
+      background: #fff;
+      box-shadow: 0 10px 26px rgba(31, 42, 55, 0.07);
+    }
+
+    h1 {
+      margin: 0 0 10px;
+      font-size: 20px;
+    }
+
+    p {
+      margin: 0;
+      color: #667789;
+      line-height: 1.7;
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>正在重置本地缓存</h1>
+    <p>页面会自动返回登录页，请稍候。</p>
+  </main>
+  <script>
+    async function resetClient() {
+      try {
+        if ("serviceWorker" in navigator) {
+          const registrations = await navigator.serviceWorker.getRegistrations();
+          await Promise.all(registrations.map(registration => registration.unregister()));
+        }
+        if ("caches" in window) {
+          const keys = await caches.keys();
+          await Promise.all(keys.map(key => caches.delete(key)));
+        }
+        localStorage.clear();
+        sessionStorage.clear();
+      } finally {
+        location.replace("/?clientReset=" + Date.now());
+      }
+    }
+
+    resetClient();
+  </script>
+</body>
+</html>

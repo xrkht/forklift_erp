@@ -1,0 +1,531 @@
+@media (max-width: 1180px) {
+  .summary-grid,
+  .grid-three,
+  .overview-stage-grid,
+  .config-layout,
+  .grid-two {
+    grid-template-columns: 1fr;
+  }
+
+  .overview-workbench {
+    grid-template-columns: 1fr;
+  }
+
+  .finance-trend-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .app-screen {
+    grid-template-columns: 1fr;
+  }
+
+  .sidebar {
+    height: auto;
+    max-height: 42vh;
+    padding: 14px;
+    border-bottom: 1px solid var(--line);
+  }
+
+  .topbar {
+    position: static;
+  }
+
+  .config-values-pane {
+    position: static;
+  }
+
+  .config-pane .surface {
+    height: auto;
+    min-height: 0;
+  }
+
+  .config-list {
+    height: auto;
+    max-height: none;
+    overflow: visible;
+  }
+
+  .config-values-pane .table-wrap {
+    height: auto;
+    max-height: none;
+  }
+
+  .sidebar-brand {
+    justify-content: space-between;
+  }
+
+  .nav-list {
+    display: flex;
+    gap: 8px;
+    margin-top: 14px;
+    overflow-x: auto;
+    padding-bottom: 4px;
+  }
+
+  .nav-group {
+    flex: 0 0 auto;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 0 12px 0 0;
+    border-top: 0;
+    border-right: 1px solid var(--line);
+  }
+
+  .nav-group:last-child {
+    border-right: 0;
+  }
+
+  .nav-group-title {
+    flex: 0 0 auto;
+    padding: 0;
+    white-space: nowrap;
+  }
+
+  .nav-item {
+    flex: 0 0 auto;
+    width: auto;
+    white-space: nowrap;
+  }
+}
+
+@media (max-width: 760px) {
+  .content,
+  .topbar {
+    padding-left: 14px;
+    padding-right: 14px;
+  }
+
+  .modal-grid,
+  .detail-grid,
+  .config-selection-row {
+    grid-template-columns: 1fr;
+  }
+
+  .modal-overlay {
+    padding: 12px;
+  }
+
+  .modal-shell,
+  .modal-card {
+    max-height: calc(100vh - 24px);
+    max-height: calc(100dvh - 24px);
+  }
+
+  .toolbar,
+  .section-header,
+  .topbar {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .finance-chart-stats {
+    justify-content: stretch;
+  }
+
+  .finance-inline-report h3 {
+    min-height: 0;
+  }
+
+  .finance-chart-stat {
+    flex: 1 1 140px;
+  }
+
+  .finance-chart {
+    min-height: 0;
+  }
+
+  .finance-tooltip {
+    min-width: 200px;
+  }
+
+  .search-box {
+    min-width: 0;
+  }
+
+  .toolbar-main,
+  .filter-row {
+    align-items: stretch;
+  }
+
+  .vehicle-unit-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .filter-group {
+    width: 100%;
+  }
+
+  .toolbar-actions,
+  .section-actions,
+  .topbar-actions {
+    align-items: stretch;
+  }
+
+  .toolbar-actions .btn,
+  .section-actions .btn,
+  .topbar-actions .btn,
+  .toolbar-actions .hover-menu,
+  .toolbar-actions .hover-menu-trigger {
+    width: 100%;
+  }
+
+  .filter-select {
+    flex: 1 1 140px;
+  }
+
+  .pagination-bar {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .batch-toolbar {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .batch-actions .btn {
+    flex: 1 1 120px;
+  }
+
+  .table-wrap {
+    overflow: visible;
+    border-radius: 0;
+  }
+
+  table,
+  thead,
+  tbody,
+  tr,
+  th,
+  td {
+    display: block;
+  }
+
+  table {
+    min-width: 0;
+  }
+
+  thead {
+    display: none;
+  }
+
+  tbody {
+    display: grid;
+    gap: 10px;
+  }
+
+  tbody tr,
+  tbody tr.table-row-selectable,
+  tbody tr.table-row-active,
+  tbody tr.table-row-checked {
+    display: grid;
+    gap: 0;
+    overflow: hidden;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: var(--panel);
+    box-shadow: var(--shadow-soft);
+  }
+
+  tbody tr:hover,
+  tbody tr.table-row-selectable:hover {
+    background: var(--panel);
+  }
+
+  tbody tr.table-row-active {
+    border-color: var(--primary);
+  }
+
+  tbody tr.table-row-active td {
+    box-shadow: none;
+  }
+
+  tbody tr.table-row-checked {
+    border-color: #bfdbfe;
+    background: #f8fbff;
+  }
+
+  td {
+    display: grid;
+    grid-template-columns: minmax(92px, 34%) minmax(0, 1fr);
+    gap: 10px;
+    align-items: start;
+    padding: 10px 12px;
+    border-bottom: 1px solid var(--line);
+  }
+
+  td:last-child {
+    border-bottom: 0;
+  }
+
+  td::before {
+    content: attr(data-label);
+    color: var(--muted);
+    font-size: 12px;
+    font-weight: 700;
+    line-height: 1.5;
+  }
+
+  td[data-label="选择"] {
+    grid-template-columns: minmax(92px, 34%) minmax(0, 1fr);
+  }
+
+  td[data-label="操作"] .action-row,
+  td[data-label=""] .action-row {
+    justify-content: flex-start;
+  }
+
+  .compact-table tbody {
+    gap: 8px;
+  }
+
+  .pagination-actions .btn {
+    flex: 1 1 92px;
+  }
+
+  .page-logs .table-wrap {
+    max-height: calc(100vh - 360px);
+    min-height: 300px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .detail-drawer-overlay,
+  .detail-drawer,
+  .confirm-overlay,
+  .confirm-dialog,
+  .btn,
+  .nav-item,
+  .filter-chip,
+  .status-toggle,
+  .summary-card,
+  .overview-stage,
+  .todo-queue-card,
+  .todo-queue-item,
+  .vehicle-unit-card,
+  .config-item,
+  .detail-item,
+  tbody tr {
+    transition: none;
+  }
+
+  .detail-surface-pop,
+  .login-panel,
+  .page,
+  .finance-line,
+  .finance-point,
+  .toast {
+    animation: none;
+  }
+
+  .detail-drawer-overlay.is-open .detail-drawer-body {
+    animation: none;
+  }
+}
+
+/* Business-flow ERP refinements */
+:root {
+  --bg: #f5f7fa;
+  --panel: #ffffff;
+  --panel-2: #f8fafc;
+  --line: #d8dee8;
+  --text: #172033;
+  --muted: #667085;
+  --primary: #2f6fd6;
+  --primary-weak: #eaf2ff;
+  --accent: #0f8f7f;
+  --accent-weak: #e7f6f3;
+  --warn: #b7791f;
+  --warn-weak: #fff5df;
+  --success: #16803c;
+  --success-weak: #e8f6ec;
+  --danger: #c9362c;
+  --danger-weak: #fff0ef;
+  --shadow: 0 1px 2px rgba(16, 24, 40, 0.06), 0 8px 18px rgba(16, 24, 40, 0.05);
+  --shadow-soft: 0 1px 2px rgba(16, 24, 40, 0.06);
+  --shadow-strong: 0 16px 40px rgba(16, 24, 40, 0.16);
+  --focus-ring: 0 0 0 3px rgba(47, 111, 214, 0.18);
+  --sidebar: #ffffff;
+  --sidebar-2: #f8fafc;
+  --sidebar-text: #243044;
+  --sidebar-muted: #697586;
+  --sidebar-hover: #eef4ff;
+  --sidebar-active: #eaf2ff;
+  --sidebar-active-line: var(--primary);
+}
+
+html,
+body,
+.app-screen,
+.login-screen {
+  background: var(--bg) !important;
+}
+
+.login-screen::before {
+  display: none;
+}
+
+.sidebar,
+.topbar,
+.surface,
+.summary-card,
+.login-panel,
+.modal-card,
+.detail-drawer,
+.detail-item,
+.overview-stage,
+.config-item {
+  background: var(--panel);
+  box-shadow: var(--shadow-soft);
+}
+
+.surface,
+.summary-card,
+.detail-item,
+.overview-stage,
+.config-item,
+.modal-card,
+.detail-drawer {
+  border-color: var(--line);
+}
+
+.btn,
+.nav-item,
+.filter-chip,
+.status-toggle {
+  box-shadow: none;
+}
+
+.btn-primary,
+.brand-mark {
+  background: var(--primary) !important;
+  box-shadow: none !important;
+}
+
+.btn-danger {
+  background: var(--danger) !important;
+  box-shadow: none !important;
+}
+
+.nav-quick-actions {
+  position: sticky;
+  top: 0;
+  z-index: 4;
+  margin: 0 0 12px;
+  padding: 10px 0 12px;
+  border-bottom: 1px solid var(--line);
+  background: var(--sidebar);
+}
+
+.nav-quick-actions .nav-group-title {
+  color: var(--text);
+}
+
+.nav-action {
+  border: 1px solid transparent;
+  background: var(--panel-2);
+  font-weight: 700;
+}
+
+.nav-action:hover {
+  border-color: rgba(47, 111, 214, 0.24);
+  background: var(--primary-weak);
+}
+
+.batch-toolbar {
+  position: sticky;
+  top: 8px;
+  z-index: 7;
+  border-color: rgba(47, 111, 214, 0.28);
+  background: #f4f8ff;
+  box-shadow: var(--shadow);
+}
+
+.table-wrap {
+  border: 1px solid var(--line);
+  background: var(--panel);
+}
+
+@media (min-width: 761px) {
+  .table-wrap th:last-child,
+  .table-wrap td:last-child {
+    position: sticky;
+    right: 0;
+    z-index: 2;
+    background: var(--panel);
+    box-shadow: -1px 0 0 var(--line);
+  }
+
+  .table-wrap th:last-child {
+    z-index: 3;
+    background: var(--panel-2);
+  }
+}
+
+.detail-tab-body {
+  display: grid;
+  gap: 14px;
+}
+
+.detail-tabs {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  overflow-x: auto;
+  padding-bottom: 2px;
+  border-bottom: 1px solid var(--line);
+}
+
+.detail-tab {
+  flex: 0 0 auto;
+  min-height: 34px;
+  padding: 7px 12px;
+  border: 1px solid transparent;
+  border-radius: 8px 8px 0 0;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.detail-tab:hover {
+  color: var(--text);
+  background: var(--panel-2);
+}
+
+.detail-tab.is-active {
+  border-color: var(--line);
+  border-bottom-color: var(--panel);
+  background: var(--panel);
+  color: var(--primary);
+}
+
+.detail-tab-panel {
+  min-width: 0;
+}
+
+.import-workspace,
+.import-validation {
+  display: grid;
+  gap: 14px;
+}
+
+.import-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 12px;
+  align-items: end;
+}
+
+@media (max-width: 760px) {
+  .nav-quick-actions {
+    position: static;
+  }
+
+  .batch-toolbar {
+    top: 0;
+  }
+}

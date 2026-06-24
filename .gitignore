@@ -1,0 +1,46 @@
+HELP.md
+target/
+logs/
+uploads/
+codex-test-logs/
+.codebuddy/
+.codex-docker-config/
+DockerDesktopInstaller.exe
+__pycache__/
+*.py[cod]
+/config/
+src/main/resources/application-local.yml
+src/main/resources/certs/*.p12
+!**/src/main/**/target/
+!**/src/test/**/target/
+
+### STS ###
+.apt_generated
+.classpath
+.factorypath
+.project
+.settings
+.springBeans
+.sts4-cache
+
+### IntelliJ IDEA ###
+.idea
+*.iws
+*.iml
+*.ipr
+
+### NetBeans ###
+/nbproject/private/
+/nbbuild/
+/dist/
+/nbdist/
+/.nb-gradle/
+build/
+!**/src/main/**/build/
+!**/src/test/**/build/
+
+### VS Code ###
+.vscode/
+
+### Visual Studio ###
+.vs/

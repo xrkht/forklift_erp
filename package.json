@@ -1,0 +1,7 @@
+{
+  "scripts": {
+    "build": "java scripts/BuildFrontend.java",
+    "check": "java scripts/BuildFrontend.java && java scripts/CheckCodeQuality.java"
+  },
+  "devDependencies": {}
+}

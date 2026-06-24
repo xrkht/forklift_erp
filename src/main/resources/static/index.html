@@ -1,0 +1,167 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>龙工叉车</title>
+  <meta name="theme-color" content="#6658f6">
+  <link rel="icon" href="/assets/icon.svg" type="image/svg+xml">
+  <link rel="manifest" href="/manifest.webmanifest">
+  <link rel="stylesheet" href="/assets/app.css?v=20260624-frontend-split">
+  <script>
+    if (new URLSearchParams(location.search).has("resetClient")) {
+      window.__FORKLIFT_CLIENT_RESETTING__ = true;
+      (async () => {
+        try {
+          if ("serviceWorker" in navigator) {
+            const registrations = await navigator.serviceWorker.getRegistrations();
+            await Promise.all(registrations.map(registration => registration.unregister()));
+          }
+          if ("caches" in window) {
+            const keys = await caches.keys();
+            await Promise.all(keys.map(key => caches.delete(key)));
+          }
+          localStorage.clear();
+          sessionStorage.clear();
+        } finally {
+          location.replace("/?clientReset=" + Date.now());
+        }
+      })();
+    }
+  </script>
+  <script type="module" src="/assets/app.js?v=20260624-frontend-split"></script>
+</head>
+<body>
+  <a class="skip-link" href="#moduleContent">跳到主内容</a>
+  <div id="loginScreen" class="login-screen">
+    <section class="login-panel">
+      <div class="brand-row">
+        <div class="brand-mark"><img class="brand-icon" src="/assets/icon.svg" alt="" aria-hidden="true"></div>
+        <div>
+          <div class="brand-name">龙工叉车</div>
+          <div class="brand-subtitle">中山天力叉车</div>
+        </div>
+      </div>
+
+      <h1 class="login-title">登录系统</h1>
+      <p class="login-copy">统一管理车辆、配件、维修和配置数据。</p>
+
+      <form id="loginForm" class="stack-form">
+        <label class="field">
+          <span>用户名</span>
+          <input name="username" type="text" placeholder="admin" autocomplete="username" autocapitalize="none" spellcheck="false" required autofocus>
+        </label>
+        <label class="field">
+          <span>密码</span>
+          <input name="password" type="password" placeholder="admin123" autocomplete="current-password" required>
+        </label>
+        <button type="submit" class="btn btn-primary btn-block">
+          <span class="btn-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none"><path d="M10 17l5-5-5-5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><path d="M15 12H3" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+          </span>
+          <span data-login-label>登录</span>
+        </button>
+      </form>
+    </section>
+  </div>
+
+  <div id="appScreen" class="app-screen is-hidden">
+    <aside class="sidebar">
+      <div class="sidebar-brand">
+        <div class="brand-mark"><img class="brand-icon" src="/assets/icon.svg" alt="" aria-hidden="true"></div>
+        <div>
+          <div class="brand-name">龙工叉车</div>
+          <div class="brand-subtitle">中山天力叉车</div>
+        </div>
+      </div>
+
+      <nav class="nav-list" id="mainNav" aria-label="主导航">
+        <section class="nav-group nav-quick-actions" data-nav-group>
+          <div class="nav-group-title">日常操作</div>
+          <button class="nav-item nav-action" data-action="quick-vehicle-inbound">整车入库</button>
+          <button class="nav-item nav-action" data-action="part-stock" data-direction="inbound">配件入库</button>
+          <button class="nav-item nav-action" data-action="create" data-kind="vehicleOutbound">销售出库</button>
+          <button class="nav-item nav-action" data-action="create" data-kind="rental">租赁登记</button>
+          <button class="nav-item nav-action" data-action="create" data-kind="repair">维修登记</button>
+          <button class="nav-item nav-action" data-action="stock-transfer">库存调拨</button>
+        </section>
+
+        <section class="nav-group" data-nav-group>
+          <div class="nav-group-title">业务总览</div>
+          <button class="nav-item is-active" data-tab="overview">总览</button>
+        </section>
+
+        <section class="nav-group" data-nav-group>
+          <div class="nav-group-title">库存与订单</div>
+          <button class="nav-item" data-tab="vehicles">车辆库存</button>
+          <button class="nav-item" data-tab="parts">配件库存</button>
+          <button class="nav-item" data-tab="modifications" data-permissions="replace:write">改装工单</button>
+          <button class="nav-item" data-tab="outboundOrders" data-permissions="stock:adjust">出库订单</button>
+          <button class="nav-item" data-tab="rentals" data-permissions="stock:adjust">租赁管理</button>
+          <button class="nav-item" data-tab="warehouses" data-permissions="stock:adjust">仓库管理</button>
+          <button class="nav-item" data-tab="repairs">维修记录</button>
+        </section>
+
+        <section class="nav-group" data-nav-group>
+          <div class="nav-group-title">客户与采购</div>
+          <button class="nav-item" data-tab="customers" data-permissions="vehicle:write">客户列表</button>
+          <button class="nav-item" data-tab="suppliers" data-permissions="stock:adjust">采购供应商</button>
+          <button class="nav-item" data-tab="purchases" data-permissions="stock:adjust">入库订单</button>
+          <button class="nav-item" data-tab="stocktakes" data-permissions="stock:adjust">库存盘点</button>
+        </section>
+
+        <section class="nav-group" data-nav-group>
+          <div class="nav-group-title">报表与审计</div>
+          <button class="nav-item" data-tab="stats" data-permissions="log:read">统计财报</button>
+          <button class="nav-item" data-tab="logs" data-permissions="log:read">审计记录</button>
+        </section>
+
+        <section class="nav-group" data-nav-group>
+          <div class="nav-group-title">附件中心</div>
+          <button class="nav-item" data-tab="attachments">附件中心</button>
+        </section>
+
+        <section class="nav-group" data-nav-group>
+          <div class="nav-group-title">系统设置</div>
+          <button class="nav-item" data-tab="configs">配置字典</button>
+          <button class="nav-item" data-tab="users" data-roles="SUPER_ADMIN">用户管理</button>
+          <button class="nav-item" data-tab="maintenance" data-roles="SUPER_ADMIN">数据维护</button>
+        </section>
+      </nav>
+    </aside>
+
+    <div class="workspace">
+      <header class="topbar">
+        <div>
+          <div class="topbar-title" id="pageTitle">总览</div>
+          <div class="topbar-subtitle" id="pageSubtitle">系统概览与业务入口</div>
+        </div>
+        <div class="topbar-actions">
+          <span class="user-chip" id="currentUser">admin</span>
+          <button class="btn btn-ghost" id="switchUserBtn" type="button">切换用户</button>
+          <button class="btn btn-ghost" id="logoutBtn" type="button">
+            <span class="btn-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none"><path d="M9 17l-5-5 5-5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><path d="M4 12h12" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><path d="M13 7V5a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4a2 2 0 0 1-2-2v-2" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            </span>
+            退出
+          </button>
+        </div>
+      </header>
+
+      <main id="moduleContent" class="content" tabindex="-1"></main>
+    </div>
+  </div>
+
+  <div id="modalOverlay" class="modal-overlay is-hidden" aria-hidden="true">
+    <div class="modal-shell">
+      <div class="modal-card" id="modalCard"></div>
+    </div>
+  </div>
+
+  <div id="detailDrawerOverlay" class="detail-drawer-overlay is-hidden" aria-hidden="true">
+    <aside class="detail-drawer" id="detailDrawer" aria-label="详情"></aside>
+  </div>
+
+  <div id="toastHost" class="toast-host" aria-live="polite"></div>
+</body>
+</html>

@@ -1,0 +1,37 @@
+spring:
+  datasource:
+    password: ${FORKLIFT_ERP_DB_PASSWORD}
+  jpa:
+    show-sql: false
+    properties:
+      hibernate:
+        format_sql: false
+
+logging:
+  level:
+    com.example.forklift_erp: info
+    org.springframework.web: warn
+    org.hibernate.SQL: warn
+    org.hibernate.type.descriptor.sql.BasicBinder: warn
+
+jwt:
+  secret: ${FORKLIFT_ERP_JWT_SECRET}
+  expiration: ${FORKLIFT_ERP_JWT_EXPIRATION:86400000}
+
+forklift:
+  admin:
+    bootstrap:
+      username: ${FORKLIFT_ERP_ADMIN_USERNAME:admin}
+      password: ${FORKLIFT_ERP_ADMIN_PASSWORD}
+    business-data-reset:
+      enabled: false
+    data-restore:
+      enabled: ${FORKLIFT_ERP_DATA_RESTORE_ENABLED:false}
+  seed-demo-data:
+    enabled: false
+
+springdoc:
+  api-docs:
+    enabled: ${FORKLIFT_ERP_OPENAPI_ENABLED:false}
+  swagger-ui:
+    enabled: ${FORKLIFT_ERP_OPENAPI_ENABLED:false}
