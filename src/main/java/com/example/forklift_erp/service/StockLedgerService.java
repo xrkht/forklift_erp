@@ -16,6 +16,9 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.List;
 
 @Service
 public class StockLedgerService {
@@ -78,6 +81,82 @@ public class StockLedgerService {
                 });
         balance.setAvailableQuantity(quantity);
         return stockBalanceRepository.save(balance);
+    }
+
+    @Transactional
+    public void reconcileAvailableQuantity(
+            String resourceType,
+            Long resourceId,
+            Long preferredWarehouseId,
+            Integer expectedTotalQuantity
+    ) {
+        Long resolvedWarehouseId = resolveWarehouseId(preferredWarehouseId);
+        int expectedTotal = expectedTotalQuantity == null ? 0 : expectedTotalQuantity;
+        if (expectedTotal < 0) {
+            throw new BusinessException(ResultCode.PARAM_ERROR, "Inventory quantity cannot be negative");
+        }
+
+        List<StockBalance> balances = new ArrayList<>(
+                stockBalanceRepository.findAllForUpdate(resourceType, resourceId)
+        );
+        validateBalances(balances);
+        if (balances.isEmpty()) {
+            StockBalance balance = newBalance(resourceType, resourceId, resolvedWarehouseId);
+            balance.setAvailableQuantity(expectedTotal);
+            stockBalanceRepository.save(balance);
+            return;
+        }
+
+        int currentTotal = balances.stream()
+                .mapToInt(balance -> quantity(balance.getAvailableQuantity()))
+                .sum();
+        int delta = expectedTotal - currentTotal;
+        if (delta > 0) {
+            StockBalance preferred = findOrCreateBalance(balances, resourceType, resourceId, resolvedWarehouseId);
+            preferred.setAvailableQuantity(quantity(preferred.getAvailableQuantity()) + delta);
+            stockBalanceRepository.save(preferred);
+            return;
+        }
+        if (delta == 0) {
+            return;
+        }
+
+        int remaining = -delta;
+        List<StockBalance> reductionOrder = balances.stream()
+                .sorted(Comparator
+                        .comparing((StockBalance balance) -> !resolvedWarehouseId.equals(balance.getWarehouseId()))
+                        .thenComparing(StockBalance::getId))
+                .toList();
+        for (StockBalance balance : reductionOrder) {
+            if (remaining == 0) {
+                break;
+            }
+            int available = quantity(balance.getAvailableQuantity());
+            int reduction = Math.min(available, remaining);
+            if (reduction > 0) {
+                balance.setAvailableQuantity(available - reduction);
+                remaining -= reduction;
+            }
+        }
+        if (remaining > 0) {
+            throw new BusinessException(ResultCode.CONFLICT, "Stock balances are lower than the inventory total change");
+        }
+        stockBalanceRepository.saveAll(reductionOrder);
+    }
+
+    @Transactional
+    public void deleteEmptyBalances(String resourceType, Long resourceId) {
+        List<StockBalance> balances = stockBalanceRepository.findAllForUpdate(resourceType, resourceId);
+        boolean hasQuantity = balances.stream().anyMatch(balance ->
+                quantity(balance.getAvailableQuantity()) != 0
+                        || quantity(balance.getReservedQuantity()) != 0
+                        || quantity(balance.getLockedQuantity()) != 0
+        );
+        if (hasQuantity) {
+            throw new BusinessException(ResultCode.CONFLICT,
+                    "Inventory with a non-zero warehouse balance cannot be deleted");
+        }
+        stockBalanceRepository.deleteAll(balances);
     }
 
     @Transactional
@@ -208,7 +287,7 @@ public class StockLedgerService {
         int after = afterQuantity == null ? 0 : afterQuantity;
         int delta = after - before;
 
-        syncBalance(resourceType, resourceId, resolvedWarehouseId, after);
+        reconcileAvailableQuantity(resourceType, resourceId, resolvedWarehouseId, after);
 
         StockMovement movement = new StockMovement();
         movement.setMovementNo(nextMovementNo());
@@ -238,16 +317,50 @@ public class StockLedgerService {
 
     private StockBalance findOrCreateBalanceForUpdate(String resourceType, Long resourceId, Long warehouseId) {
         return stockBalanceRepository.findForUpdate(resourceType, resourceId, warehouseId)
+                .orElseGet(() -> newBalance(resourceType, resourceId, warehouseId));
+    }
+
+    private StockBalance findOrCreateBalance(
+            List<StockBalance> balances,
+            String resourceType,
+            Long resourceId,
+            Long warehouseId
+    ) {
+        return balances.stream()
+                .filter(balance -> warehouseId.equals(balance.getWarehouseId()))
+                .findFirst()
                 .orElseGet(() -> {
-                    StockBalance created = new StockBalance();
-                    created.setResourceType(resourceType);
-                    created.setResourceId(resourceId);
-                    created.setWarehouseId(warehouseId);
-                    created.setAvailableQuantity(0);
-                    created.setReservedQuantity(0);
-                    created.setLockedQuantity(0);
+                    StockBalance created = newBalance(resourceType, resourceId, warehouseId);
+                    balances.add(created);
                     return created;
                 });
+    }
+
+    private StockBalance newBalance(String resourceType, Long resourceId, Long warehouseId) {
+        StockBalance created = new StockBalance();
+        created.setResourceType(resourceType);
+        created.setResourceId(resourceId);
+        created.setWarehouseId(warehouseId);
+        created.setAvailableQuantity(0);
+        created.setReservedQuantity(0);
+        created.setLockedQuantity(0);
+        return created;
+    }
+
+    private int quantity(Integer value) {
+        return value == null ? 0 : value;
+    }
+
+    private void validateBalances(List<StockBalance> balances) {
+        boolean hasNegativeQuantity = balances.stream().anyMatch(balance ->
+                quantity(balance.getAvailableQuantity()) < 0
+                        || quantity(balance.getReservedQuantity()) < 0
+                        || quantity(balance.getLockedQuantity()) < 0
+        );
+        if (hasNegativeQuantity) {
+            throw new BusinessException(ResultCode.CONFLICT,
+                    "Warehouse balance contains a negative quantity");
+        }
     }
 
     private String nextMovementNo() {

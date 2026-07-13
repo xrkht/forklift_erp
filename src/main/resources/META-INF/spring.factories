@@ -1,0 +1,2 @@
+org.springframework.boot.env.EnvironmentPostProcessor=\
+com.example.forklift_erp.config.ProductionSafetyEnvironmentPostProcessor

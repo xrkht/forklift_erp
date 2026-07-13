@@ -1,4 +1,4 @@
-const CACHE_NAME = "forklift-erp-client-20260624-frontend-split";
+const CACHE_NAME = "forklift-erp-client-20260713-p1-workflow-fixes";
 const SHELL_ASSETS = [
   "/",
   "/index.html",

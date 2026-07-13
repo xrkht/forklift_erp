@@ -6,11 +6,11 @@ import { activeTabPageKeys, pagedTabs, summaryTabs } from "./modules/list-config
 import { icons, tabs } from "./modules/ui-config.js";
 import { createFields } from "./modules/field-config.js";
 import { dateTime, dateValue, display, emptyState, escapeAttr, escapeHtml, fileSize, filterRows, money, normalizeText, nowInputDateTime, sortById, sortLogs, todayInputDate, toInputValue } from "./modules/display-utils.js";
-import { badge, jobTagBadge, jobTagLabel, jobTagType, logCategoryBadge, modificationStatusBadge, nextJobTag, normalizeJobTag, operationActionBadge, quantityChange, rentalStatusBadge, repairStatusText, resourceTypeLabel, roleBadges, statusBadge, stockBadge, stockStatusBadge, stockStatusLabel, stockText, yesNoBadge } from "./modules/status-ui.js";
+import { badge, jobTagBadge, jobTagLabel, jobTagType, logCategoryBadge, modificationStatusBadge, nextJobTag, normalizeJobTag, operationActionBadge, purchaseStatusBadge, purchaseStatusLabel, quantityChange, rentalStatusBadge, repairStatusText, resourceTypeLabel, roleBadges, statusBadge, stockBadge, stockStatusBadge, stockStatusLabel, stockText, yesNoBadge } from "./modules/status-ui.js";
 import { createDataLoaders, referencePageUrl, rowsFromPayload } from "./modules/data-loader.js";
 import { createDashboardView } from "./modules/dashboard-view.js";
 import { createMutationRefresh } from "./modules/mutation-refresh.js";
-import { createModalRenderer } from "./modules/modal-renderer.js";
+import { createModalRenderer, setModalSubmitting } from "./modules/modal-renderer.js";
 import { createDetailDrawer } from "./modules/detail-drawer.js";
 import { createCommandPalette } from "./modules/command-palette.js";
 import { createAttachmentWorkflow } from "./modules/workflows/attachments-workflow.js";
@@ -18,7 +18,7 @@ import { createImportWorkflow } from "./modules/workflows/imports-workflow.js";
 import { createUserWorkflow } from "./modules/workflows/users-workflow.js";
 import { createPartsWorkflow } from "./modules/workflows/parts-workflow.js";
 import { createRentalsWorkflow } from "./modules/workflows/rentals-workflow.js";
-import { createOutboundWorkflow } from "./modules/workflows/outbound-workflow.js";
+import { buildVehicleOutboundOrderPayload, createOutboundWorkflow } from "./modules/workflows/outbound-workflow.js";
 import { createRepairsWorkflow } from "./modules/workflows/repairs-workflow.js";
 import { createStatisticsWorkflow } from "./modules/workflows/statistics-workflow.js";
 import { createVehicleWorkflow } from "./modules/workflows/vehicle-workflow.js";
@@ -1883,12 +1883,14 @@ async function handleModalChange(event) {
 async function handleModalSubmit(event) {
   event.preventDefault();
   const form = event.target;
+  if (form.dataset.submitting === "true") return;
   const kind = form.dataset.kind;
   const item = state.modal?.item || {};
   const shouldContinue = event.submitter?.dataset?.submitMode === "continue" && canSaveAndContinue(kind, item);
   if (!validateCombos(form)) return;
   const activeModelKey = state.vehicleDetail?.modelKey || item.__modelKey || "";
-
+  setModalSubmitting(form, true);
+  try {
   if (kind === "attachmentUpload") {
     try {
       await uploadAttachmentsFromModal(form);
@@ -1899,16 +1901,20 @@ async function handleModalSubmit(event) {
       renderCurrentTab();
     } catch (error) {
       handleActionError(error);
+    } finally {
+      setModalSubmitting(form, false);
     }
     return;
   }
-
   if (kind === "invoiceUpload" || kind === "contractUpload") {
     if (!(await confirmDanger(modalDangerConfirmation(kind, item, {}) || {
       title: kind === "invoiceUpload" ? "确认上传发票" : "确认上传合同",
       target: entityDisplayName("outboundOrder", item),
       impact: "本次上传会作为当前订单文件，历史附件会保留在附件中心。"
-    }))) return;
+    }))) {
+      setModalSubmitting(form, false);
+      return;
+    }
     try {
       if (kind === "invoiceUpload") {
         await uploadInvoiceForOrder(item, form);
@@ -1921,16 +1927,20 @@ async function handleModalSubmit(event) {
       renderCurrentTab();
     } catch (error) {
       handleActionError(error);
+    } finally {
+      setModalSubmitting(form, false);
     }
     return;
   }
-
   if (kind === "dataRestore") {
     if (!(await confirmDanger({
       title: "恢复数据备份",
       target: "数据库业务数据",
       impact: "恢复会清空当前应用表并用备份文件回填，请先确认已经下载了最新备份。"
-    }))) return;
+    }))) {
+      setModalSubmitting(form, false);
+      return;
+    }
     try {
       await restoreDataBackup(form);
       closeModal();
@@ -1940,10 +1950,11 @@ async function handleModalSubmit(event) {
       showToast("数据恢复完成", "success");
     } catch (error) {
       handleActionError(error);
+    } finally {
+      setModalSubmitting(form, false);
     }
     return;
   }
-
   const payload = serializeForm(kind, form);
   let mutationKind = kind;
   if (kind === "vehicleConfigChange") {
@@ -1955,7 +1966,10 @@ async function handleModalSubmit(event) {
   }
   attachVersion(payload, item);
   const dangerConfirmation = modalDangerConfirmation(mutationKind, item, payload);
-  if (dangerConfirmation && !(await confirmDanger(dangerConfirmation))) return;
+  if (dangerConfirmation && !(await confirmDanger(dangerConfirmation))) {
+    setModalSubmitting(form, false);
+    return;
+  }
 
   try {
     if (kind === "switchUser") {
@@ -2000,62 +2014,47 @@ async function handleModalSubmit(event) {
       }
       showContextSuccess("车型入库成功", entityDisplayName("vehicle", { ...payload, id: savedVehicle?.id }), "车辆详情已更新");
     } else if (kind === "purchaseOrder" && payload.resourceType === "MACHINE") {
-      let savedVehicle = null;
-      if (!item.id) {
-        item.specificationModel = payload.specificationModel;
-        await prepareVehicleInboundTemplate(item);
-        const configs = buildInboundConfigs(item, payload.specificationModel);
-        savedVehicle = await api("/api/inventory/inbound", {
-          method: "POST",
-          body: {
-            machineInventory: buildVehicleInboundPayload(payload, item),
-            configs
-          }
-        });
-        if (savedVehicle?.id) {
-          state.selectedVehicleId = Number(savedVehicle.id);
-        }
-      }
       if (item.id) {
         await api(endpoints.purchaseOrder.update(item.id), { method: "PUT", body: payload });
         showContextSuccess("整车入库订单已更新", payload.resourceCode || payload.vehicleProductNumber || payload.resourceName, "入库订单已刷新");
       } else {
-        await api(endpoints.purchaseOrder.create, { method: "POST", body: payload });
+        item.specificationModel = payload.specificationModel;
+        await prepareVehicleInboundTemplate(item);
+        const configs = buildInboundConfigs(item, payload.specificationModel);
+        const workflowResult = await api(endpoints.workflow.machineInboundPurchase, {
+          method: "POST",
+          body: {
+            inbound: {
+              machineInventory: buildVehicleInboundPayload(payload, item),
+              configs
+            },
+            purchaseOrder: payload
+          }
+        });
+        const savedVehicle = workflowResult?.machine;
+        if (savedVehicle?.id) {
+          state.selectedVehicleId = Number(savedVehicle.id);
+        }
         showContextSuccess("整车入库成功", entityDisplayName("vehicle", { ...payload, id: savedVehicle?.id }), "车辆库存和入库订单已刷新");
       }
     } else if (kind === "vehicleOutbound") {
       const machine = findEntity("vehicle", Number(payload.machineId || 0));
       const customerResult = await ensureVehicleOutboundCustomer(payload);
-      if (!customerResult?.customerId) {
+      if (!customerResult) {
         return;
       }
-      await api(endpoints.outboundOrder.vehicle, {
-        method: "POST",
-        body: {
-          machineId: payload.machineId,
-          machineVersion: machine.version,
-          customerId: customerResult.customerId,
-          salesDate: payload.salesDate,
-          settlementPrice: payload.settlementPrice,
-          salePrice: payload.salePrice,
-          receivableAmount: payload.receivableAmount,
-          receivedAmount: payload.receivedAmount,
-          paymentDueDate: payload.paymentDueDate,
-          lastPaymentDate: payload.lastPaymentDate,
-          paymentSettled: payload.paymentSettled,
-          paymentRemark: payload.paymentRemark,
-          salesReported: payload.salesReported,
-          salesReportDate: payload.salesReportDate,
-          invoiceApplied: payload.invoiceApplied,
-          invoiceApplicationDate: payload.invoiceApplicationDate,
-          invoiceStatus: payload.invoiceStatus,
-          invoiceIssuedDate: payload.invoiceIssuedDate,
-          registrationStatus: payload.registrationStatus,
-          contractType: payload.contractType,
-          operator: payload.operator,
-          orderRemark: payload.orderRemark
-        }
-      });
+      const outboundOrder = buildVehicleOutboundOrderPayload(payload, machine, customerResult.customerId);
+      if (customerResult.created) {
+        await api(endpoints.workflow.vehicleOutboundWithCustomer, {
+          method: "POST",
+          body: {
+            customer: customerResult.customer,
+            outboundOrder
+          }
+        });
+      } else {
+        await api(endpoints.outboundOrder.vehicle, { method: "POST", body: outboundOrder });
+      }
       showContextSuccess(customerResult.created ? "已新建客户并创建整车出库订单" : "整车出库订单已创建", entityDisplayName("vehicle", machine), "收款、报销售和发票跟进已生成");
     } else if (kind === "rental") {
       const machine = findEntity("vehicle", Number(payload.machineId || item.machineId || 0));
@@ -2171,6 +2170,13 @@ async function handleModalSubmit(event) {
     }
   } catch (error) {
     handleActionError(error);
+  } finally {
+    setModalSubmitting(form, false);
+  }
+  } catch (error) {
+    handleActionError(error);
+  } finally {
+    setModalSubmitting(form, false);
   }
 }
 
@@ -2269,8 +2275,9 @@ async function togglePurchaseReceived(id) {
   }
   const nextReceived = order.status !== "RECEIVED";
   const url = withVersion(`${endpoints.purchaseOrder.received(id)}?received=${nextReceived ? "true" : "false"}`, order);
-  await api(url, { method: "PUT" });
-  showToast(nextReceived ? "入库订单已收货；再次点击可撤回" : "入库订单已改为待收货", "success");
+  const updatedOrder = await api(url, { method: "PUT" });
+  const restoredStatus = purchaseStatusLabel(updatedOrder?.status);
+  showToast(nextReceived ? "入库订单已收货" : `已撤销收货，状态恢复为“${restoredStatus}”`, "success");
   resetPageAfterMutation("purchaseOrder");
   await refreshAfterMutation("purchaseOrder", { refreshDetail: false });
   renderCurrentTab();
@@ -2442,9 +2449,10 @@ async function ensureVehicleOutboundCustomer(payload) {
     return { customerId: existingCustomer.id, created: false };
   }
 
-  const createdCustomer = await api(endpoints.customer.create, {
-    method: "POST",
-    body: {
+  return {
+    customerId: null,
+    created: true,
+    customer: {
       companyName,
       address: payload.customerAddress,
       contactName: payload.customerContactName || companyName,
@@ -2452,8 +2460,7 @@ async function ensureVehicleOutboundCustomer(payload) {
       taxOrIdNumber: payload.customerTaxOrIdNumber,
       remarks: payload.customerRemarks
     }
-  });
-  return { customerId: createdCustomer.id, created: true };
+  };
 }
 
 async function uploadInvoiceForOrder(order, form) {
@@ -2561,7 +2568,7 @@ async function batchCompleteRepairs() {
 }
 
 async function batchReceivePurchases() {
-  const rows = selectedRows("purchaseOrder").filter(row => row.status !== "RECEIVED" && row.status !== "CANCELED");
+  const rows = selectedRows("purchaseOrder").filter(row => ["ORDERED", "PARTIAL", "ARRIVED"].includes(row.status));
   if (!rows.length) {
     showToast("没有可收货的入库订单", "info");
     return;
@@ -2641,7 +2648,7 @@ async function toggleOutboundOrderLock(id, locked) {
 
 async function goToTab(tab, data = {}) {
   if (!tabs[tab] || !canAccessTab(tab)) return;
-  state.activeTab = tab;
+  state.activeTab = tab; if (state.pages[tab]) resetPage(state.pages[tab]);
   if (tab === "vehicles") {
     state.filters.vehicles.stock = data.stock || "";
   }
@@ -4175,26 +4182,16 @@ function stocktakingActions(row = {}) {
   `;
 }
 
-function purchaseStatusBadge(status) {
-  const map = {
-    ORDERED: ["已下单", "primary"],
-    PARTIAL: ["部分到货", "warn"],
-    ARRIVED: ["已到货", "teal"],
-    RECEIVED: ["已收货", "teal"],
-    CANCELED: ["已取消", "danger"]
-  };
-  const [label, type] = map[status] || [status || "未设置", "primary"];
-  return badge(label, type);
-}
-
 function purchaseStatusControl(row = {}) {
   const received = row.status === "RECEIVED";
+  const receivable = ["ORDERED", "PARTIAL", "ARRIVED"].includes(row.status);
   if (!hasPermission("stock:adjust")) {
     return purchaseStatusBadge(row.status);
   }
   return `
     <div class="cell-stack">
-      <button class="status-toggle ${received ? "teal" : "primary"}" type="button" data-action="toggle-purchase-received" data-id="${escapeAttr(row.id)}" aria-pressed="${received ? "true" : "false"}" title="点击切换收货状态">${escapeHtml(received ? "已收货" : "待收货")}</button>
+      ${purchaseStatusBadge(row.status)}
+      ${received || receivable ? `<button class="btn btn-sm ${received ? "" : "btn-primary"}" type="button" data-action="toggle-purchase-received" data-id="${escapeAttr(row.id)}" title="${received ? "恢复收货前状态" : "将订单标记为已收货"}">${icon(received ? "refresh" : "download")}${received ? "撤销收货" : "标记收货"}</button>` : ""}
       ${received ? `<span class="helper-inline">运费 ${escapeHtml(money(row.freightAmount ?? 0))}</span>` : ""}
       ${received ? `<button class="btn btn-sm" type="button" data-action="purchase-freight" data-id="${escapeAttr(row.id)}">${icon("edit")}修改运费</button>` : ""}
     </div>
@@ -5913,6 +5910,7 @@ function supplierFilterOptions() {
 function stockFilterOptions() {
   return [
     { value: "inStock", label: "有库存" },
+    { value: "longIdle", label: "长期未动" },
     { value: "empty", label: "库存为 0" }
   ];
 }
@@ -5923,7 +5921,7 @@ function filterPartRows(rows = []) {
   return rows.filter(row => {
     const quantity = Number(row.quantity || 0);
     if (stock === "available") return quantity > 0;
-    if (stock === "low") return quantity <= 0;
+    if (stock === "low") return quantity <= Number(state.data.todoCenter?.lowStockThreshold ?? 5);
     return true;
   });
 }
@@ -6201,11 +6199,10 @@ async function fetchVehicleModelVehicles(modelKey) {
   params.set("name", model.name || "");
   params.set("specificationModel", model.specificationModel || "");
   params.set("machineType", model.modelQueryMachineType ?? model.machineType ?? "");
+  params.set("stock", state.filters.vehicles?.stock || "");
   const rows = await api(`${endpoints.vehicle.modelVehicles}?${params.toString()}`);
-  return sortById(rows, false)
-    .sort((a, b) => String(a.vehicleProductNumber || "").localeCompare(String(b.vehicleProductNumber || ""), "zh-CN"));
+  return sortById(rows, false).sort((a, b) => String(a.vehicleProductNumber || "").localeCompare(String(b.vehicleProductNumber || ""), "zh-CN"));
 }
-
 function vehicleModelOptions() {
   return vehicleModelGroups().map(group => ({
     value: group.modelKey,

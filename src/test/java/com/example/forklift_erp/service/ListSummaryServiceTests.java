@@ -12,6 +12,7 @@ import com.example.forklift_erp.repository.SupplierRepository;
 import org.junit.jupiter.api.Test;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -41,7 +42,9 @@ class ListSummaryServiceTests {
     void rentalSummaryFiltersByKeywordAndAggregatesVisibleRows() {
         RentalRecord matched = rental("RENT-1", "Alpha customer", 1L, RentalStatus.RETURNED.code());
         RentalRecord ignored = rental("RENT-2", "Beta customer", 2L, RentalStatus.ACTIVE.code());
-        when(rentalRecordRepository.searchForSummary("alpha")).thenReturn(List.of(matched));
+        when(rentalRecordRepository.searchForSummary(
+                eq("alpha"), eq(""), eq(LocalDate.now()), eq(LocalDate.now().plusDays(7))))
+                .thenReturn(List.of(matched));
         when(rentalRevenueCalculator.totalAmount(matched)).thenReturn(new BigDecimal("3100.00"));
 
         ListSummaryVO summary = service.summarize("rentals", "alpha");
@@ -52,7 +55,8 @@ class ListSummaryServiceTests {
         assertThat(summary.getCards().get(1).getValue()).isEqualTo(new BigDecimal("3100.00"));
         assertThat(summary.getCards().get(2).getValue()).isEqualTo(1L);
         assertThat(summary.getCards().get(3).getValue()).isEqualTo(0L);
-        verify(rentalRecordRepository).searchForSummary("alpha");
+        verify(rentalRecordRepository).searchForSummary(
+                "alpha", "", LocalDate.now(), LocalDate.now().plusDays(7));
     }
 
     @Test

@@ -47,6 +47,12 @@ public class StocktakingRecordService {
     @Autowired
     private StockOperationRecorder stockOperationRecorder;
 
+    @Autowired
+    private StockLedgerService stockLedgerService;
+
+    @Autowired
+    private ResourceVisibilityPolicy visibilityPolicy;
+
     @Transactional(readOnly = true)
     public List<StocktakingRecordVO> findAll() {
         return stocktakingRepository.findAll(Sort.by(Sort.Direction.DESC, "createdAt")).stream()
@@ -140,6 +146,7 @@ public class StocktakingRecordService {
         if (StocktakingRecord.RESOURCE_MACHINE.equals(resourceType)) {
             MachineInventory machine = machineRepository.findById(request.getResourceId())
                     .orElseThrow(() -> new BusinessException(ResultCode.VEHICLE_NOT_FOUND, "Vehicle not found"));
+            visibilityPolicy.ensureWritable(machine.getIsLocked(), "Vehicle is locked and cannot be stocktaken");
             record.setResourceCode(machine.getVehicleProductNumber());
             record.setResourceName(machine.getName());
             record.setSpecificationModel(machine.getSpecificationModel());
@@ -147,6 +154,7 @@ public class StocktakingRecordService {
         } else if (StocktakingRecord.RESOURCE_PART.equals(resourceType)) {
             PartInventory part = partRepository.findById(request.getResourceId())
                     .orElseThrow(() -> new BusinessException(ResultCode.PART_NOT_FOUND, "Part not found"));
+            visibilityPolicy.ensureWritable(part.getIsLocked(), "Part is locked and cannot be stocktaken");
             record.setResourceCode(part.getPartCode());
             record.setResourceName(part.getPartName());
             record.setSpecificationModel(part.getSpecification());
@@ -167,6 +175,7 @@ public class StocktakingRecordService {
         if (StocktakingRecord.RESOURCE_MACHINE.equals(record.getResourceType())) {
             MachineInventory machine = machineRepository.findByIdForUpdate(record.getResourceId())
                     .orElseThrow(() -> new BusinessException(ResultCode.VEHICLE_NOT_FOUND, "Vehicle not found"));
+            visibilityPolicy.ensureWritable(machine.getIsLocked(), "Vehicle is locked and cannot be stocktaken");
             InventoryQuantities.QuantityChange change = InventoryQuantities.adjustTo(
                     machine.getInventoryCount(),
                     record.getActualQuantity(),
@@ -191,6 +200,7 @@ public class StocktakingRecordService {
         if (StocktakingRecord.RESOURCE_PART.equals(record.getResourceType())) {
             PartInventory part = partRepository.findByIdForUpdate(record.getResourceId())
                     .orElseThrow(() -> new BusinessException(ResultCode.PART_NOT_FOUND, "Part not found"));
+            visibilityPolicy.ensureWritable(part.getIsLocked(), "Part is locked and cannot be stocktaken");
             InventoryQuantities.QuantityChange change = InventoryQuantities.adjustTo(
                     part.getQuantity(),
                     record.getActualQuantity(),
@@ -224,6 +234,9 @@ public class StocktakingRecordService {
     ) {
         int delta = afterQuantity - beforeQuantity;
         if (delta == 0) {
+            stockLedgerService.reconcileAvailableQuantity(
+                    resourceType, resourceId, warehouseId, afterQuantity
+            );
             return;
         }
         String operationType = delta > 0 ? "INBOUND" : "OUTBOUND";

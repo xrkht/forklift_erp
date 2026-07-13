@@ -1,6 +1,7 @@
 package com.example.forklift_erp;
 
 import com.example.forklift_erp.entity.MachineInventory;
+import com.example.forklift_erp.entity.RentalRecord;
 import com.example.forklift_erp.entity.Permission;
 import com.example.forklift_erp.entity.Role;
 import com.example.forklift_erp.entity.User;
@@ -24,6 +25,8 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.test.web.servlet.MockMvc;
 
 import java.util.ArrayList;
+import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -192,6 +195,90 @@ class RentalRecordIntegrationTests extends TestcontainersDatabaseSupport {
                         .header("Authorization", bearer(deniedToken)))
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.code").value(403));
+    }
+
+    @Test
+    void dueSoonFilterAppliesToPageTotalAndListSummary() throws Exception {
+        String marker = unique("due-soon");
+        JsonNode customer = createCustomer("Due soon customer");
+        JsonNode overdueMachine = createMachine("RT-DUE-A");
+        JsonNode dueMachine = createMachine("RT-DUE-B");
+        JsonNode futureMachine = createMachine("RT-DUE-C");
+        JsonNode overdue = createRental(customer, overdueMachine, marker + " overdue");
+        JsonNode due = createRental(customer, dueMachine, marker + " due");
+        JsonNode future = createRental(customer, futureMachine, marker + " future");
+        setRentalEndDate(overdue, LocalDate.now().minusDays(1));
+        setRentalEndDate(due, LocalDate.now().plusDays(3));
+        setRentalEndDate(future, LocalDate.now().plusDays(20));
+
+        mockMvc.perform(get("/api/rentals")
+                        .param("paged", "true")
+                        .param("page", "0")
+                        .param("size", "1")
+                        .param("keyword", marker)
+                        .param("status", "dueSoon")
+                        .header("Authorization", bearer(superToken)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.totalElements").value(2))
+                .andExpect(jsonPath("$.data.content.length()").value(1));
+
+        mockMvc.perform(get("/api/statistics/list-summary")
+                        .param("type", "rentals")
+                        .param("keyword", marker)
+                        .param("status", "dueSoon")
+                        .header("Authorization", bearer(superToken)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.cards[0].value").value(2));
+    }
+
+    @Test
+    void longIdleFilterReturnsOnlyOldAvailableUnrentedVehicles() throws Exception {
+        String modelName = unique("Long idle model");
+        String modelSpec = unique("IDLE-SPEC");
+        JsonNode customer = createCustomer("Long idle customer");
+        JsonNode oldMachine = createMachine("IDLE-OLD");
+        JsonNode recentMachine = createMachine("IDLE-RECENT");
+        JsonNode rentedMachine = createMachine("IDLE-RENTED");
+        createRental(customer, rentedMachine, "active long-idle exclusion");
+        updateMachineAgeAndModel(oldMachine, modelName, modelSpec, LocalDateTime.now().minusDays(100));
+        updateMachineAgeAndModel(recentMachine, modelName, modelSpec, LocalDateTime.now().minusDays(20));
+        updateMachineAgeAndModel(rentedMachine, modelName, modelSpec, LocalDateTime.now().minusDays(100));
+
+        mockMvc.perform(get("/api/inventory/models")
+                        .param("stock", "longIdle")
+                        .param("keyword", "IDLE-")
+                        .param("page", "0")
+                        .param("size", "20")
+                        .header("Authorization", bearer(superToken)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.totalElements").value(1))
+                .andExpect(jsonPath("$.data.content[0].inventoryCount").value(1))
+                .andExpect(jsonPath("$.data.content[0].vehicleNumbers").value(oldMachine.path("vehicleProductNumber").asText()));
+
+        mockMvc.perform(get("/api/inventory/model-vehicles")
+                        .param("name", modelName)
+                        .param("specificationModel", modelSpec)
+                        .param("machineType", "内燃叉车")
+                        .param("stock", "longIdle")
+                        .header("Authorization", bearer(superToken)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.length()").value(1))
+                .andExpect(jsonPath("$.data[0].vehicleProductNumber").value(oldMachine.path("vehicleProductNumber").asText()));
+    }
+
+    private void setRentalEndDate(JsonNode rentalNode, LocalDate endDate) {
+        RentalRecord rental = rentalRecordRepository.findById(rentalNode.path("id").asLong()).orElseThrow();
+        rental.setEndDate(endDate);
+        rentalRecordRepository.saveAndFlush(rental);
+    }
+
+    private void updateMachineAgeAndModel(JsonNode machineNode, String name, String specificationModel,
+                                          LocalDateTime inboundDate) {
+        MachineInventory machine = machineRepository.findById(machineNode.path("id").asLong()).orElseThrow();
+        machine.setName(name);
+        machine.setSpecificationModel(specificationModel);
+        machine.setInboundDate(inboundDate);
+        machineRepository.saveAndFlush(machine);
     }
 
     private JsonNode createRental(JsonNode customer, JsonNode machine, String destination) throws Exception {

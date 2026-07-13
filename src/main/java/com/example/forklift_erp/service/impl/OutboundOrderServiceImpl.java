@@ -106,13 +106,14 @@ public class OutboundOrderServiceImpl implements OutboundOrderService {
 
     @Override
     @Transactional(readOnly = true)
-    public PageResult<OutboundOrderVO> findPage(String keyword, Integer page, Integer size) {
+    public PageResult<OutboundOrderVO> findPage(String keyword, String stage, Integer page, Integer size) {
         int normalizedPage = ListPageSupport.page(page);
         int normalizedSize = ListPageSupport.size(size);
         Page<OutboundOrder> result = outboundOrderRepository.searchPage(
                 SearchKeywordSupport.likePrefix(keyword),
                 SearchKeywordSupport.fullTextBoolean(keyword),
                 SecurityUtils.isAdminOrSuperAdmin(),
+                normalizeStage(stage),
                 ListPageSupport.pageRequest(page, size)
         );
         return PageResult.of(
@@ -121,6 +122,16 @@ public class OutboundOrderServiceImpl implements OutboundOrderService {
                 normalizedSize,
                 result.getTotalElements()
         );
+    }
+
+    private String normalizeStage(String stage) {
+        if (stage == null || stage.isBlank()) {
+            return null;
+        }
+        return switch (stage.trim()) {
+            case "payment", "overdue", "salesReport", "invoiceApplication", "invoiceFile", "contractFile", "closed" -> stage.trim();
+            default -> null;
+        };
     }
 
     @Override

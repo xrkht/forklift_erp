@@ -32,10 +32,11 @@ public class OutboundOrderController {
     @PreAuthorize(PermissionCodes.HAS_STOCK_ADJUST)
     public Result<?> getAll(@RequestParam(defaultValue = "true") boolean paged,
                             @RequestParam(required = false) String keyword,
+                            @RequestParam(required = false) String stage,
                             @RequestParam(required = false) Integer page,
                             @RequestParam(required = false) Integer size) {
         if (paged) {
-            return Result.success(service.findPage(keyword, page, size));
+            return Result.success(service.findPage(keyword, stage, page, size));
         }
         return Result.success(service.findAll());
     }

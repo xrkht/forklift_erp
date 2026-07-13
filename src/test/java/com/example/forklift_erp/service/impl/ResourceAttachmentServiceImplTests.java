@@ -2,6 +2,7 @@ package com.example.forklift_erp.service.impl;
 
 import com.example.forklift_erp.common.ResultCode;
 import com.example.forklift_erp.entity.ResourceAttachment;
+import com.example.forklift_erp.entity.OutboundOrder;
 import com.example.forklift_erp.exception.BusinessException;
 import com.example.forklift_erp.repository.OutboundOrderRepository;
 import com.example.forklift_erp.repository.ResourceAttachmentRepository;
@@ -28,12 +29,15 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 class ResourceAttachmentServiceImplTests {
     Path tempDir;
 
     private ResourceAttachmentRepository attachmentRepository;
+    private OutboundOrderRepository outboundOrderRepository;
     private ResourceAttachmentContextResolver contextResolver;
     private ResourceAttachmentServiceImpl service;
 
@@ -53,7 +57,8 @@ class ResourceAttachmentServiceImplTests {
         );
 
         ReflectionTestUtils.setField(service, "attachmentRepository", attachmentRepository);
-        ReflectionTestUtils.setField(service, "outboundOrderRepository", mock(OutboundOrderRepository.class));
+        outboundOrderRepository = mock(OutboundOrderRepository.class);
+        ReflectionTestUtils.setField(service, "outboundOrderRepository", outboundOrderRepository);
         ReflectionTestUtils.setField(service, "operationAuditService", mock(OperationAuditService.class));
         ReflectionTestUtils.setField(service, "attachmentStorage", storage);
         ReflectionTestUtils.setField(service, "uploadReadinessPolicy", mock(OutboundUploadReadinessPolicy.class));
@@ -135,5 +140,50 @@ class ResourceAttachmentServiceImplTests {
                     assertThat(error.getCode()).isEqualTo(ResultCode.NOT_FOUND.getCode());
                     assertThat(error.getMessage()).isEqualTo("Attachment file not found");
                 });
+    }
+
+    @Test
+    void legacyBackfillSkipsMetadataWhenPhysicalFileIsMissing() {
+        OutboundOrder order = legacyInvoiceOrder("missing.pdf");
+        when(outboundOrderRepository.findLegacyAttachmentBackfillCandidates(any()))
+                .thenReturn(java.util.List.of(order));
+        when(attachmentRepository.findFirstByResourceTypeAndResourceIdAndAttachmentCategoryAndDeletedFalseOrderByUploadedAtDesc(
+                "OUTBOUND_ORDER", 11L, "INVOICE"))
+                .thenReturn(Optional.empty());
+
+        service.backfillLegacyOutboundAttachments();
+
+        verify(attachmentRepository, never()).save(any(ResourceAttachment.class));
+    }
+
+    @Test
+    void legacyBackfillPersistsMetadataWhenPhysicalFileExists() throws IOException {
+        Path invoiceDir = tempDir.resolve("invoices");
+        Files.createDirectories(invoiceDir);
+        Files.writeString(invoiceDir.resolve("existing.pdf"), "pdf");
+        OutboundOrder order = legacyInvoiceOrder("existing.pdf");
+        when(outboundOrderRepository.findLegacyAttachmentBackfillCandidates(any()))
+                .thenReturn(java.util.List.of(order), java.util.List.of());
+        when(attachmentRepository.findFirstByResourceTypeAndResourceIdAndAttachmentCategoryAndDeletedFalseOrderByUploadedAtDesc(
+                "OUTBOUND_ORDER", 11L, "INVOICE"))
+                .thenReturn(Optional.empty());
+        when(attachmentRepository.save(any(ResourceAttachment.class)))
+                .thenAnswer(invocation -> invocation.getArgument(0));
+
+        service.backfillLegacyOutboundAttachments();
+
+        verify(attachmentRepository).save(any(ResourceAttachment.class));
+    }
+
+    private OutboundOrder legacyInvoiceOrder(String storedFileName) {
+        OutboundOrder order = new OutboundOrder();
+        order.setId(11L);
+        order.setOrderNo("OO-011");
+        order.setCustomerName("Test customer");
+        order.setInvoiceStoredFileName(storedFileName);
+        order.setInvoiceOriginalName("invoice.pdf");
+        order.setInvoiceContentType("application/pdf");
+        order.setInvoiceFileSize(3L);
+        return order;
     }
 }

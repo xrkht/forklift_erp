@@ -127,7 +127,11 @@ export function createDataLoaders({
     const pageState = state.pages.vehicles;
     if (options.force === false && pageState.loaded) return;
     pageState.loading = true;
-    const payload = await api(pageUrl(endpoints.vehicle.models, pageState, state.search.vehicles || ""));
+    const baseUrl = pageUrl(endpoints.vehicle.models, pageState, state.search.vehicles || "");
+    const extraParams = pagedTabs.vehicles?.buildParams?.(state, options) || {};
+    const query = new URLSearchParams(Object.entries(extraParams)
+      .filter(([, value]) => value !== null && value !== undefined && String(value).trim() !== ""));
+    const payload = await api(query.size ? `${baseUrl}&${query.toString()}` : baseUrl);
     state.data.vehicleModels = pageContent(payload).map(prepareVehicleModelSummary);
     assignPageState(pageState, payload);
   }

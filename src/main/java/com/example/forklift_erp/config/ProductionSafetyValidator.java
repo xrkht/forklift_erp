@@ -19,7 +19,6 @@ import java.util.List;
 public class ProductionSafetyValidator implements ApplicationRunner {
     static final String DEV_JWT_SECRET = "forklift-erp-development-jwt-secret-change-me-32-bytes-minimum";
     static final String DEV_ADMIN_PASSWORD = "admin123";
-    static final String LEGACY_DB_PASSWORD = "ChH060118";
     static final long DEV_JWT_EXPIRATION_MS = 31_536_000_000L;
     static final long MAX_DEFAULT_PROD_JWT_EXPIRATION_MS = 30L * 24 * 60 * 60 * 1000;
 
@@ -43,7 +42,7 @@ public class ProductionSafetyValidator implements ApplicationRunner {
         List<String> failures = new ArrayList<>();
         requireSecret(failures, "FORKLIFT_ERP_JWT_SECRET", "jwt.secret", DEV_JWT_SECRET);
         requireJwtExpiration(failures);
-        requireSecret(failures, "FORKLIFT_ERP_DB_PASSWORD", "spring.datasource.password", LEGACY_DB_PASSWORD);
+        requireSecret(failures, "FORKLIFT_ERP_DB_PASSWORD", "spring.datasource.password", null);
         requireSecret(failures, "FORKLIFT_ERP_ADMIN_PASSWORD", "forklift.admin.bootstrap.password", DEV_ADMIN_PASSWORD);
         requireDisabled(failures, "FORKLIFT_ERP_SEED_DEMO_DATA", "forklift.seed-demo-data.enabled");
         requireDisabled(failures, "FORKLIFT_ERP_BUSINESS_DATA_RESET_ENABLED", "forklift.admin.business-data-reset.enabled");
@@ -59,24 +58,24 @@ public class ProductionSafetyValidator implements ApplicationRunner {
     }
 
     private void warnForNonProductionDefaults() {
-        if (DEV_JWT_SECRET.equals(environment.getProperty("jwt.secret"))) {
+        if (DEV_JWT_SECRET.equals(property("jwt.secret"))) {
             log.warn("Using the development JWT secret. Set FORKLIFT_ERP_JWT_SECRET before running shared environments.");
         }
-        if (DEV_JWT_EXPIRATION_MS == environment.getProperty("jwt.expiration", Long.class, 0L)) {
+        if (DEV_JWT_EXPIRATION_MS == parseLong(property("jwt.expiration"), 0L)) {
             log.warn("Using the development JWT expiration. Set FORKLIFT_ERP_JWT_EXPIRATION before running shared environments.");
         }
-        if (DEV_ADMIN_PASSWORD.equals(environment.getProperty("forklift.admin.bootstrap.password"))) {
+        if (DEV_ADMIN_PASSWORD.equals(property("forklift.admin.bootstrap.password"))) {
             log.warn("Using the development bootstrap admin password. Set FORKLIFT_ERP_ADMIN_PASSWORD outside local development.");
         }
     }
 
     private void requireSecret(List<String> failures, String envName, String propertyName, String disallowedValue) {
-        String value = environment.getProperty(propertyName);
+        String value = property(propertyName);
         if (isBlankOrPlaceholder(value)) {
             failures.add(envName + " must be configured");
             return;
         }
-        if (disallowedValue.equals(value)) {
+        if (disallowedValue != null && disallowedValue.equals(value)) {
             failures.add(envName + " must not use the checked-in development/default value");
             return;
         }
@@ -86,13 +85,13 @@ public class ProductionSafetyValidator implements ApplicationRunner {
     }
 
     private void requireDisabled(List<String> failures, String envName, String propertyName) {
-        if (Boolean.parseBoolean(environment.getProperty(propertyName, "false"))) {
+        if (Boolean.parseBoolean(property(propertyName))) {
             failures.add(envName + " must be false in prod");
         }
     }
 
     private void requireJwtExpiration(List<String> failures) {
-        String value = environment.getProperty("jwt.expiration");
+        String value = property("jwt.expiration");
         if (isBlankOrPlaceholder(value)) {
             failures.add("FORKLIFT_ERP_JWT_EXPIRATION must be configured or use the prod default");
             return;
@@ -108,7 +107,7 @@ public class ProductionSafetyValidator implements ApplicationRunner {
             failures.add("FORKLIFT_ERP_JWT_EXPIRATION must be greater than zero");
             return;
         }
-        boolean explicitEnvOverride = !isBlankOrPlaceholder(environment.getProperty("FORKLIFT_ERP_JWT_EXPIRATION"));
+        boolean explicitEnvOverride = !isBlankOrPlaceholder(property("FORKLIFT_ERP_JWT_EXPIRATION"));
         if (!explicitEnvOverride && expiration > MAX_DEFAULT_PROD_JWT_EXPIRATION_MS) {
             failures.add("FORKLIFT_ERP_JWT_EXPIRATION must be explicit for expirations longer than 30 days");
         }
@@ -116,5 +115,21 @@ public class ProductionSafetyValidator implements ApplicationRunner {
 
     private boolean isBlankOrPlaceholder(String value) {
         return value == null || value.isBlank() || value.contains("${");
+    }
+
+    private String property(String name) {
+        try {
+            return environment.getProperty(name);
+        } catch (IllegalArgumentException unresolvedPlaceholder) {
+            return null;
+        }
+    }
+
+    private long parseLong(String value, long fallback) {
+        try {
+            return value == null ? fallback : Long.parseLong(value);
+        } catch (NumberFormatException ignored) {
+            return fallback;
+        }
     }
 }

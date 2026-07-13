@@ -2,6 +2,7 @@ package com.example.forklift_erp.config;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.mock.env.MockEnvironment;
+import org.springframework.boot.SpringApplication;
 
 import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -9,12 +10,40 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 class ProductionSafetyValidatorTests {
 
     @Test
+    void environmentPostProcessorRejectsUnsafeProdConfigurationEarly() {
+        MockEnvironment environment = new MockEnvironment()
+                .withProperty("jwt.secret", ProductionSafetyValidator.DEV_JWT_SECRET)
+                .withProperty("jwt.expiration", String.valueOf(ProductionSafetyValidator.DEV_JWT_EXPIRATION_MS))
+                .withProperty("spring.datasource.password", "")
+                .withProperty("forklift.admin.bootstrap.password", ProductionSafetyValidator.DEV_ADMIN_PASSWORD)
+                .withProperty("forklift.seed-demo-data.enabled", "true")
+                .withProperty("forklift.admin.business-data-reset.enabled", "true")
+                .withProperty("forklift.admin.data-restore.enabled", "true");
+        environment.setActiveProfiles("prod");
+
+        assertThatThrownBy(() -> new ProductionSafetyEnvironmentPostProcessor()
+                .postProcessEnvironment(environment, new SpringApplication()))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("Unsafe production configuration");
+    }
+
+    @Test
+    void environmentPostProcessorDoesNothingOutsideProd() {
+        MockEnvironment environment = new MockEnvironment()
+                .withProperty("jwt.secret", ProductionSafetyValidator.DEV_JWT_SECRET);
+
+        assertThatCode(() -> new ProductionSafetyEnvironmentPostProcessor()
+                .postProcessEnvironment(environment, new SpringApplication()))
+                .doesNotThrowAnyException();
+    }
+
+    @Test
     void prodProfileRejectsDevelopmentSecretsAndDangerousSwitches() {
         MockEnvironment environment = new MockEnvironment()
                 .withProperty("spring.profiles.active", "prod")
                 .withProperty("jwt.secret", ProductionSafetyValidator.DEV_JWT_SECRET)
                 .withProperty("jwt.expiration", String.valueOf(ProductionSafetyValidator.DEV_JWT_EXPIRATION_MS))
-                .withProperty("spring.datasource.password", ProductionSafetyValidator.LEGACY_DB_PASSWORD)
+                .withProperty("spring.datasource.password", "")
                 .withProperty("forklift.admin.bootstrap.password", ProductionSafetyValidator.DEV_ADMIN_PASSWORD)
                 .withProperty("forklift.seed-demo-data.enabled", "true")
                 .withProperty("forklift.admin.business-data-reset.enabled", "true")

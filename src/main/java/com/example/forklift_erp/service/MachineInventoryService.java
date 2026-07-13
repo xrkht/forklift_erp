@@ -19,7 +19,11 @@ public interface MachineInventoryService {
 
     PageResult<VehicleModelSummaryVO> findModelPage(String keyword, Integer page, Integer size);
 
+    PageResult<VehicleModelSummaryVO> findModelPage(String keyword, String stock, Integer page, Integer size);
+
     List<MachineInventoryVO> findVehiclesByModel(String name, String specificationModel, String machineType);
+
+    List<MachineInventoryVO> findVehiclesByModel(String name, String specificationModel, String machineType, String stock);
 
     Optional<MachineInventory> findById(Long id);
 

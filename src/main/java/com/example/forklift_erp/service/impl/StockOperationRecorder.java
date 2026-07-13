@@ -6,6 +6,7 @@ import com.example.forklift_erp.entity.StockOperationLog;
 import com.example.forklift_erp.repository.StockOperationLogRepository;
 import com.example.forklift_erp.service.OperationAuditService;
 import com.example.forklift_erp.service.StockLedgerService;
+import com.example.forklift_erp.util.SecurityUtils;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -96,6 +97,7 @@ public class StockOperationRecorder {
 
     @Transactional
     public StockOperationLog record(Command command) {
+        String operator = SecurityUtils.currentUsername();
         StockOperationLog stockLog = new StockOperationLog();
         stockLog.setResourceType(command.resourceType());
         stockLog.setOperationType(command.operationType());
@@ -107,7 +109,7 @@ public class StockOperationRecorder {
         stockLog.setAfterQuantity(command.afterQuantity());
         stockLog.setUnitCost(command.unitCost());
         stockLog.setUnitRevenue(command.unitRevenue());
-        stockLog.setOperator(command.operator());
+        stockLog.setOperator(operator);
         stockLog.setRemark(command.remark());
         StockOperationLog savedLog = stockOperationLogRepository.save(stockLog);
         String movementSourceType = command.movementSourceType() == null || command.movementSourceType().isBlank()
@@ -124,13 +126,13 @@ public class StockOperationRecorder {
                 command.beforeQuantity(),
                 command.afterQuantity(),
                 command.unitCost(),
-                command.operator(),
+                operator,
                 command.remark(),
                 movementSourceType,
                 movementSourceId
         );
         operationAuditService.record(command.auditModule(), command.operationType(), command.resourceType(), command.resourceId(),
-                command.resourceCode(), command.resourceName(), command.auditSummary(), command.operator(), command.remark(),
+                command.resourceCode(), command.resourceName(), command.auditSummary(), operator, command.remark(),
                 AUDIT_SOURCE_TYPE, savedLog.getId());
         return savedLog;
     }

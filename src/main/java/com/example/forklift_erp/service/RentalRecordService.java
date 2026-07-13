@@ -12,6 +12,8 @@ public interface RentalRecordService {
 
     PageResult<RentalRecordVO> findPage(String keyword, Integer page, Integer size);
 
+    PageResult<RentalRecordVO> findPage(String keyword, String status, Integer page, Integer size);
+
     RentalRecordVO findById(Long id);
 
     RentalRecordVO create(RentalRecordCreateDTO request);

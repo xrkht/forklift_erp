@@ -11,6 +11,7 @@ import com.example.forklift_erp.exception.BusinessException;
 import com.example.forklift_erp.repository.*;
 import com.example.forklift_erp.service.CollaborationService;
 import com.example.forklift_erp.service.ConfigReplaceService;
+import com.example.forklift_erp.service.ResourceVisibilityPolicy;
 import com.example.forklift_erp.service.StockLedgerService;
 import com.example.forklift_erp.util.MoneyValues;
 import lombok.extern.slf4j.Slf4j;
@@ -51,6 +52,9 @@ public class ConfigReplaceServiceImpl implements ConfigReplaceService {
     @Autowired
     private StockOperationRecorder stockOperationRecorder;
 
+    @Autowired
+    private ResourceVisibilityPolicy visibilityPolicy;
+
     @Override
     @Transactional
     public ConfigReplaceLog performReplace(ConfigReplaceRequestDTO request) {
@@ -59,6 +63,7 @@ public class ConfigReplaceServiceImpl implements ConfigReplaceService {
                 .orElseThrow(() -> new BusinessException(ResultCode.VEHICLE_NOT_FOUND, "车辆不存在"));
 
         // 2. 校验新配置值存在
+        visibilityPolicy.ensureWritable(machine.getIsLocked(), "Vehicle is locked and cannot be modified");
         collaborationService.validateWrite(machine, request.getMachineVersion());
 
         ConfigValue newConfigValue = configValueRepository.findById(request.getNewConfigValueId())
@@ -117,6 +122,7 @@ public class ConfigReplaceServiceImpl implements ConfigReplaceService {
         if (request.getNewPartId() != null) {
             PartInventory newPart = partRepository.findByIdForUpdate(request.getNewPartId())
                     .orElseThrow(() -> new BusinessException(ResultCode.PART_NOT_FOUND, "新配件不存在"));
+            visibilityPolicy.ensureWritable(newPart.getIsLocked(), "Part is locked and cannot be used for replacement");
             collaborationService.validateWrite(newPart, request.getNewPartVersion());
             if (newPart.getQuantity() < 1) {
                 throw new BusinessException(ResultCode.INSUFFICIENT_STOCK, "配件库存不足: " + newPart.getPartName());
@@ -171,6 +177,7 @@ public class ConfigReplaceServiceImpl implements ConfigReplaceService {
     public ConfigReplaceLog performPartReplace(PartReplaceRequestDTO request) {
         MachineInventory machine = machineRepository.findByIdForUpdate(request.getMachineId())
                 .orElseThrow(() -> new BusinessException(ResultCode.VEHICLE_NOT_FOUND, "车辆不存在"));
+        visibilityPolicy.ensureWritable(machine.getIsLocked(), "Vehicle is locked and cannot be modified");
         collaborationService.validateWrite(machine, request.getMachineVersion());
 
         MachineConfig oldConfig = machineConfigRepository.findByIdForUpdate(request.getMachineConfigId())
@@ -185,6 +192,7 @@ public class ConfigReplaceServiceImpl implements ConfigReplaceService {
 
         PartInventory newPart = partRepository.findByIdForUpdate(request.getNewPartId())
                 .orElseThrow(() -> new BusinessException(ResultCode.PART_NOT_FOUND, "新配件不存在"));
+        visibilityPolicy.ensureWritable(newPart.getIsLocked(), "Part is locked and cannot be used for replacement");
         collaborationService.validateWrite(newPart, request.getNewPartVersion());
         int quantity = request.getQuantity() == null ? 1 : request.getQuantity();
         if (quantity < 1) {
@@ -278,6 +286,7 @@ public class ConfigReplaceServiceImpl implements ConfigReplaceService {
     public ConfigReplaceLog performPartInstall(VehiclePartInstallRequestDTO request) {
         MachineInventory machine = machineRepository.findByIdForUpdate(request.getMachineId())
                 .orElseThrow(() -> new BusinessException(ResultCode.VEHICLE_NOT_FOUND, "车辆不存在"));
+        visibilityPolicy.ensureWritable(machine.getIsLocked(), "Vehicle is locked and cannot be modified");
         collaborationService.validateWrite(machine, request.getMachineVersion());
 
         ConfigItem configItem = configItemRepository.findById(request.getConfigItemId())
@@ -285,6 +294,7 @@ public class ConfigReplaceServiceImpl implements ConfigReplaceService {
 
         PartInventory newPart = partRepository.findByIdForUpdate(request.getNewPartId())
                 .orElseThrow(() -> new BusinessException(ResultCode.PART_NOT_FOUND, "仓库配件不存在"));
+        visibilityPolicy.ensureWritable(newPart.getIsLocked(), "Part is locked and cannot be installed");
         collaborationService.validateWrite(newPart, request.getNewPartVersion());
 
         int quantity = request.getQuantity() == null ? 1 : request.getQuantity();

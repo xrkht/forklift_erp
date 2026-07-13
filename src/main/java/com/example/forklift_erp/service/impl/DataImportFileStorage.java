@@ -19,7 +19,7 @@ public class DataImportFileStorage {
             new FileStorageSupport.UploadConstraints(
                     MAX_IMPORT_FILE_SIZE,
                     Set.of("xlsx", "xls"),
-                    "Import file is required",
+                    "请选择导入文件",
                     "Import file cannot exceed 20MB",
                     "Only Excel files are supported"
             );
@@ -80,7 +80,7 @@ public class DataImportFileStorage {
 
     private void ensureImportFile(MultipartFile file) {
         if (file == null || file.isEmpty()) {
-            throw new BusinessException(ResultCode.PARAM_ERROR, "璇烽€夋嫨瀵煎叆鏂囦欢");
+            throw new BusinessException(ResultCode.PARAM_ERROR, "请选择导入文件");
         }
     }
 }

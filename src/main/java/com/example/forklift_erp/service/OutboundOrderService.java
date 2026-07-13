@@ -13,7 +13,11 @@ import java.util.List;
 public interface OutboundOrderService {
     List<OutboundOrderVO> findAll();
 
-    PageResult<OutboundOrderVO> findPage(String keyword, Integer page, Integer size);
+    PageResult<OutboundOrderVO> findPage(String keyword, String stage, Integer page, Integer size);
+
+    default PageResult<OutboundOrderVO> findPage(String keyword, Integer page, Integer size) {
+        return findPage(keyword, null, page, size);
+    }
 
     OutboundOrderVO findById(Long id);
 

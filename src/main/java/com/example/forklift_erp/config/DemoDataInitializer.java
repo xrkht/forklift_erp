@@ -566,48 +566,48 @@ public class DemoDataInitializer implements CommandLineRunner {
     private void ensureOutboundOrders(Map<String, Customer> customers, Map<String, MachineInventory> machines, Map<String, PartInventory> parts) {
         ensureOutboundOrder("TEST-OO-M-001", customers.get("TEST-CUST-ALPHA"), machines.get("TEST-FD25-OUT"), null,
                 1, "unit", "76000", "76000", "76000", "76000", true, true, false,
-                "ISSUED", "REGISTERED", "STANDARD", false, true);
+                "ISSUED", "REGISTERED", "STANDARD", false);
         ensureOutboundOrder("TEST-OO-M-002", customers.get("TEST-CUST-THETA"), machines.get("TEST-CPD25-001"), null,
                 1, "unit", "91000", "96000", "91000", "35000", false, true, true,
-                "APPLIED", "PENDING", "FRAME", true, false);
+                "APPLIED", "PENDING", "FRAME", true);
         ensureOutboundOrder("TEST-OO-P-001", customers.get("TEST-CUST-BETA"), null, parts.get("TEST-PART-FILTER-DIESEL"),
                 8, "pcs", "55", "75", "440", "440", true, false, false,
-                null, null, null, false, false);
+                null, null, null, false);
         ensureOutboundOrder("TEST-OO-P-002", customers.get("TEST-CUST-DELTA"), null, parts.get("TEST-PART-LIGHT-BLUE"),
                 3, "pcs", "160", "220", "480", "0", false, false, false,
-                null, null, null, false, false);
+                null, null, null, false);
         ensureOutboundOrder("TEST-OO-M-003", customers.get("TEST-CUST-EPSILON"), machines.get("TEST-FD70-PORT"), null,
                 1, "unit", "210000", "225000", "210000", "0", false, false, false,
-                "PENDING_APPLICATION", "NOT_REGISTERED", "NO_CONTRACT", true, false, -45, -60);
+                "PENDING_APPLICATION", "NOT_REGISTERED", "NO_CONTRACT", true, -45, -60);
         ensureOutboundOrder("TEST-OO-M-004", customers.get("TEST-CUST-IOTA"), machines.get("TEST-DEMO-LOCKED"), null,
                 1, "unit", "86000", "92000", "86000", "43000", false, true, true,
-                "APPLIED_WAITING_ISSUE", "REGISTRATION_INCLUDED", "E_CONTRACT", true, false, 7, -8);
+                "APPLIED_WAITING_ISSUE", "REGISTRATION_INCLUDED", "E_CONTRACT", true, 7, -8);
         ensureOutboundOrder("TEST-OO-P-003", customers.get("TEST-CUST-KAPPA"), null, parts.get("TEST-PART-FIRE-EXT"),
                 5, "set", "210", "260", "1050", "200", false, false, false,
-                null, null, null, false, false, -10, -25);
+                null, null, null, false, -10, -25);
         ensureOutboundOrder("TEST-OO-P-004", customers.get("TEST-CUST-LAMBDA"), null, parts.get("TEST-PART-COLD-SEAL"),
                 2, "kit", "420", "520", "840", "840", true, true, true,
-                "TAX_INVOICE_ISSUED", null, "PAPER_CONTRACT", false, true, 30, -20);
+                "TAX_INVOICE_ISSUED", null, "PAPER_CONTRACT", false, 30, -20);
         ensureOutboundOrder("TEST-OO-P-005", customers.get("TEST-CUST-MU"), null, parts.get("TEST-PART-IOT-ADV"),
                 1, "set", "1560", "1980", "1560", "0", false, true, false,
-                "NO_TAX_INVOICE", null, "NO_CONTRACT", false, false, 3, -3);
+                "NO_TAX_INVOICE", null, "NO_CONTRACT", false, 3, -3);
     }
 
     private void ensureOutboundOrder(String orderNo, Customer customer, MachineInventory machine, PartInventory part,
                                      int quantity, String unit, String settlement, String sale, String receivable,
                                      String received, boolean settled, boolean salesReported, boolean invoiceApplied,
                                      String invoiceStatus, String registrationStatus, String contractType,
-                                     boolean locked, boolean withFiles) {
+                                     boolean locked) {
         ensureOutboundOrder(orderNo, customer, machine, part, quantity, unit, settlement, sale, receivable, received,
                 settled, salesReported, invoiceApplied, invoiceStatus, registrationStatus, contractType, locked,
-                withFiles, 15, -12);
+                15, -12);
     }
 
     private void ensureOutboundOrder(String orderNo, Customer customer, MachineInventory machine, PartInventory part,
                                      int quantity, String unit, String settlement, String sale, String receivable,
                                      String received, boolean settled, boolean salesReported, boolean invoiceApplied,
                                      String invoiceStatus, String registrationStatus, String contractType,
-                                     boolean locked, boolean withFiles, int paymentDueOffsetDays, int salesDateOffsetDays) {
+                                     boolean locked, int paymentDueOffsetDays, int salesDateOffsetDays) {
         if (outboundOrderRepository.existsByOrderNo(orderNo)) {
             return;
         }
@@ -646,18 +646,6 @@ public class DemoDataInitializer implements CommandLineRunner {
         order.setInvoiceIssuedDate("ISSUED".equals(invoiceStatus) ? LocalDate.now().minusDays(3) : null);
         order.setRegistrationStatus(registrationStatus);
         order.setContractType(contractType);
-        if (withFiles) {
-            order.setInvoiceStoredFileName(orderNo + "-invoice.pdf");
-            order.setInvoiceOriginalName(orderNo + " invoice.pdf");
-            order.setInvoiceContentType("application/pdf");
-            order.setInvoiceFileSize(128_000L);
-            order.setInvoiceUploadedAt(LocalDateTime.now().minusDays(2));
-            order.setContractStoredFileName(orderNo + "-contract.pdf");
-            order.setContractOriginalName(orderNo + " contract.pdf");
-            order.setContractContentType("application/pdf");
-            order.setContractFileSize(256_000L);
-            order.setContractUploadedAt(LocalDateTime.now().minusDays(4));
-        }
         order.setOrderRemark(MARKER + " outbound coverage");
         order.setOperator(OPERATOR);
         order.setIsLocked(locked);

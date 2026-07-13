@@ -37,10 +37,11 @@ public class PartInventoryController {
     @GetMapping
     public Result<?> getAll(@RequestParam(defaultValue = "true") boolean paged,
                             @RequestParam(required = false) String keyword,
+                            @RequestParam(required = false) String stock,
                             @RequestParam(required = false) Integer page,
                             @RequestParam(required = false) Integer size) {
         if (paged) {
-            return Result.success(partService.findPage(keyword, page, size));
+            return Result.success(partService.findPage(keyword, stock, page, size));
         }
         return Result.success(partService.findAll().stream().map(PartInventoryVO::fromEntity).toList());
     }

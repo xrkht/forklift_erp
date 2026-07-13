@@ -20,6 +20,8 @@ public interface StockBalanceRepository extends JpaRepository<StockBalance, Long
             Long warehouseId
     );
 
+    List<StockBalance> findByResourceTypeAndResourceId(String resourceType, Long resourceId);
+
     List<StockBalance> findByWarehouseId(Long warehouseId);
 
     boolean existsByWarehouseId(Long warehouseId);
@@ -35,5 +37,17 @@ public interface StockBalanceRepository extends JpaRepository<StockBalance, Long
             @Param("resourceType") String resourceType,
             @Param("resourceId") Long resourceId,
             @Param("warehouseId") Long warehouseId
+    );
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("""
+            select b from StockBalance b
+            where b.resourceType = :resourceType
+              and b.resourceId = :resourceId
+            order by b.id asc
+            """)
+    List<StockBalance> findAllForUpdate(
+            @Param("resourceType") String resourceType,
+            @Param("resourceId") Long resourceId
     );
 }

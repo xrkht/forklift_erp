@@ -24,6 +24,33 @@ public interface OutboundOrderRepository extends JpaRepository<OutboundOrder, Lo
             select o.*
             from outbound_order o
             where (:includeLocked = true or coalesce(o.is_locked, 0) = 0)
+              and (
+                :stage is null
+                or (:stage = 'payment'
+                    and (o.payment_due_date is null or o.payment_due_date >= current_date)
+                    and coalesce(o.receivable_amount, o.settlement_price, 0) - coalesce(o.received_amount, 0) > 0)
+                or (:stage = 'overdue'
+                    and o.payment_due_date is not null and o.payment_due_date < current_date
+                    and coalesce(o.receivable_amount, o.settlement_price, 0) - coalesce(o.received_amount, 0) > 0)
+                or (:stage = 'salesReport' and coalesce(o.payment_settled, 0) = 1 and coalesce(o.sales_reported, 0) = 0)
+                or (:stage = 'invoiceApplication' and coalesce(o.payment_settled, 0) = 1 and coalesce(o.sales_reported, 0) = 1 and coalesce(o.invoice_applied, 0) = 0)
+                or (:stage = 'invoiceFile' and (
+                      coalesce(o.invoice_applied, 0) = 1 or o.invoice_issued_date is not null
+                      or lower(coalesce(o.invoice_status, '')) like '%issued%'
+                      or lower(coalesce(o.invoice_status, '')) like '%invoiced%'
+                      or coalesce(o.invoice_status, '') like '%开票完成%'
+                      or coalesce(o.invoice_status, '') like '%完成开票%'
+                      or coalesce(o.invoice_status, '') like '%已出票%'
+                    ) and coalesce(o.invoice_stored_file_name, '') = '')
+                or (:stage = 'contractFile' and o.contract_type is not null and trim(o.contract_type) <> ''
+                    and lower(trim(o.contract_type)) not like 'no%' and lower(trim(o.contract_type)) not like 'none%'
+                    and lower(trim(o.contract_type)) not like 'false%' and trim(o.contract_type) not like '否%'
+                    and trim(o.contract_type) not like '无%' and trim(o.contract_type) not like '没%'
+                    and trim(o.contract_type) not like '不%' and trim(o.contract_type) not like '%无合同%'
+                    and coalesce(o.contract_stored_file_name, '') = '')
+                or (:stage = 'closed' and coalesce(o.payment_settled, 0) = 1 and coalesce(o.sales_reported, 0) = 1
+                    and coalesce(o.invoice_applied, 0) = 1 and coalesce(o.invoice_stored_file_name, '') <> '')
+              )
               and (:keywordPrefix is null
                 or o.order_no like :keywordPrefix escape '!'
                 or o.resource_type like :keywordPrefix escape '!'
@@ -51,6 +78,33 @@ public interface OutboundOrderRepository extends JpaRepository<OutboundOrder, Lo
             select count(*)
             from outbound_order o
             where (:includeLocked = true or coalesce(o.is_locked, 0) = 0)
+              and (
+                :stage is null
+                or (:stage = 'payment'
+                    and (o.payment_due_date is null or o.payment_due_date >= current_date)
+                    and coalesce(o.receivable_amount, o.settlement_price, 0) - coalesce(o.received_amount, 0) > 0)
+                or (:stage = 'overdue'
+                    and o.payment_due_date is not null and o.payment_due_date < current_date
+                    and coalesce(o.receivable_amount, o.settlement_price, 0) - coalesce(o.received_amount, 0) > 0)
+                or (:stage = 'salesReport' and coalesce(o.payment_settled, 0) = 1 and coalesce(o.sales_reported, 0) = 0)
+                or (:stage = 'invoiceApplication' and coalesce(o.payment_settled, 0) = 1 and coalesce(o.sales_reported, 0) = 1 and coalesce(o.invoice_applied, 0) = 0)
+                or (:stage = 'invoiceFile' and (
+                      coalesce(o.invoice_applied, 0) = 1 or o.invoice_issued_date is not null
+                      or lower(coalesce(o.invoice_status, '')) like '%issued%'
+                      or lower(coalesce(o.invoice_status, '')) like '%invoiced%'
+                      or coalesce(o.invoice_status, '') like '%开票完成%'
+                      or coalesce(o.invoice_status, '') like '%完成开票%'
+                      or coalesce(o.invoice_status, '') like '%已出票%'
+                    ) and coalesce(o.invoice_stored_file_name, '') = '')
+                or (:stage = 'contractFile' and o.contract_type is not null and trim(o.contract_type) <> ''
+                    and lower(trim(o.contract_type)) not like 'no%' and lower(trim(o.contract_type)) not like 'none%'
+                    and lower(trim(o.contract_type)) not like 'false%' and trim(o.contract_type) not like '否%'
+                    and trim(o.contract_type) not like '无%' and trim(o.contract_type) not like '没%'
+                    and trim(o.contract_type) not like '不%' and trim(o.contract_type) not like '%无合同%'
+                    and coalesce(o.contract_stored_file_name, '') = '')
+                or (:stage = 'closed' and coalesce(o.payment_settled, 0) = 1 and coalesce(o.sales_reported, 0) = 1
+                    and coalesce(o.invoice_applied, 0) = 1 and coalesce(o.invoice_stored_file_name, '') <> '')
+              )
               and (:keywordPrefix is null
                 or o.order_no like :keywordPrefix escape '!'
                 or o.resource_type like :keywordPrefix escape '!'
@@ -78,6 +132,7 @@ public interface OutboundOrderRepository extends JpaRepository<OutboundOrder, Lo
             @Param("keywordPrefix") String keywordPrefix,
             @Param("fullTextKeyword") String fullTextKeyword,
             @Param("includeLocked") boolean includeLocked,
+            @Param("stage") String stage,
             Pageable pageable
     );
 

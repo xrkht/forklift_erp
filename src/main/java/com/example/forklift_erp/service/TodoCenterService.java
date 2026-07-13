@@ -141,7 +141,7 @@ public class TodoCenterService {
 
         addQueue(dashboard, "longIdleVehicles", "长期未动库存", "在库整机超过 90 天未出库且未出租", "warn",
                 dashboard.getLongIdleVehicleCount(), BigDecimal.ZERO,
-                "vehicles", filter("stock", "inStock"),
+                "vehicles", filter("stock", "longIdle"),
                 longIdleVehicles.stream().map(this::longIdleVehicleTodo).toList());
 
         addQueue(dashboard, "salesReport", "待报销售", "已收款但尚未完成销售报备", "primary",
@@ -307,7 +307,7 @@ public class TodoCenterService {
                 stockSince
         );
         item.setAgeDays(ageDays(stockSince));
-        return target(item, "vehicles", filter("stock", "inStock"));
+        return target(item, "vehicles", filter("stock", "longIdle"));
     }
 
     private TodoCenterVO.TodoItem item(

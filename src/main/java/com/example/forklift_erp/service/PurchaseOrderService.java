@@ -29,6 +29,12 @@ import java.util.Locale;
 
 @Service
 public class PurchaseOrderService {
+    private static final String STATUS_ORDERED = "ORDERED";
+    private static final String STATUS_PARTIAL = "PARTIAL";
+    private static final String STATUS_ARRIVED = "ARRIVED";
+    private static final String STATUS_RECEIVED = "RECEIVED";
+    private static final String STATUS_CANCELED = "CANCELED";
+
     @Autowired
     private PurchaseOrderRepository purchaseOrderRepository;
 
@@ -116,13 +122,17 @@ public class PurchaseOrderService {
         PurchaseOrder order = purchaseOrderRepository.findByIdForUpdate(id)
                 .orElseThrow(() -> new BusinessException(ResultCode.NOT_FOUND, "Purchase order not found"));
         collaborationService.validateWrite(order, version);
-        order.setStatus(received ? "RECEIVED" : "ORDERED");
+        if (received) {
+            markReceived(order);
+        } else {
+            restoreStatusBeforeReceived(order);
+        }
         if (order.getFreightAmount() == null) {
             order.setFreightAmount(BigDecimal.ZERO);
         }
         collaborationService.stampWrite(order);
         PurchaseOrder saved = purchaseOrderRepository.saveAndFlush(order);
-        operationAuditService.record("Purchase order", received ? "RECEIVED" : "ORDERED", "PURCHASE_ORDER", saved.getId(),
+        operationAuditService.record("Purchase order", received ? STATUS_RECEIVED : saved.getStatus(), "PURCHASE_ORDER", saved.getId(),
                 saved.getPurchaseNo(), saved.getSupplierName(), received ? "Mark purchase received" : "Mark purchase not received",
                 saved.getOperator(), saved.getRemark());
         return PurchaseOrderVO.fromEntity(saved);
@@ -190,9 +200,58 @@ public class PurchaseOrderService {
         }
         order.setOrderDate(request.getOrderDate() == null ? LocalDate.now() : request.getOrderDate());
         order.setExpectedArrivalDate(request.getExpectedArrivalDate());
-        order.setStatus(blankToNull(request.getStatus()) == null ? "ORDERED" : request.getStatus().trim());
+        applyRequestedStatus(order, request.getStatus());
         order.setOperator(blankToNull(request.getOperator()));
         order.setRemark(blankToNull(request.getRemark()));
+    }
+
+    private void applyRequestedStatus(PurchaseOrder order, String requestedStatus) {
+        String nextStatus = blankToNull(requestedStatus);
+        if (nextStatus == null) {
+            nextStatus = STATUS_ORDERED;
+        }
+        String currentStatus = blankToNull(order.getStatus());
+        if (currentStatus == null) {
+            currentStatus = STATUS_ORDERED;
+        }
+
+        if (STATUS_RECEIVED.equals(nextStatus)) {
+            if (!STATUS_RECEIVED.equals(currentStatus)) {
+                markReceived(order);
+            }
+            return;
+        }
+
+        order.setStatus(nextStatus);
+        order.setStatusBeforeReceived(null);
+    }
+
+    private void markReceived(PurchaseOrder order) {
+        String currentStatus = blankToNull(order.getStatus());
+        if (STATUS_RECEIVED.equals(currentStatus)) {
+            return;
+        }
+        if (STATUS_CANCELED.equals(currentStatus)) {
+            throw new BusinessException(ResultCode.PARAM_ERROR, "Canceled purchase order cannot be received");
+        }
+        if (!isReceivableStatus(currentStatus)) {
+            throw new BusinessException(ResultCode.PARAM_ERROR, "Purchase order status cannot be marked received: " + currentStatus);
+        }
+        order.setStatusBeforeReceived(currentStatus);
+        order.setStatus(STATUS_RECEIVED);
+    }
+
+    private void restoreStatusBeforeReceived(PurchaseOrder order) {
+        if (!STATUS_RECEIVED.equals(order.getStatus())) {
+            throw new BusinessException(ResultCode.PARAM_ERROR, "Only received purchase orders can undo receipt");
+        }
+        String previousStatus = blankToNull(order.getStatusBeforeReceived());
+        order.setStatus(isReceivableStatus(previousStatus) ? previousStatus : STATUS_ORDERED);
+        order.setStatusBeforeReceived(null);
+    }
+
+    private boolean isReceivableStatus(String status) {
+        return STATUS_ORDERED.equals(status) || STATUS_PARTIAL.equals(status) || STATUS_ARRIVED.equals(status);
     }
 
     private BigDecimal totalAmount(Integer quantity, BigDecimal unitPrice, BigDecimal requestTotal) {

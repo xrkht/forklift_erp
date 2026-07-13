@@ -49,6 +49,28 @@ export function rentalStatusBadge(status) {
   return badge(label, type);
 }
 
+export function purchaseStatusLabel(status) {
+  const labels = {
+    ORDERED: "已下单",
+    PARTIAL: "部分到货",
+    ARRIVED: "已到货",
+    RECEIVED: "已收货",
+    CANCELED: "已取消"
+  };
+  return labels[status] || status || "未设置";
+}
+
+export function purchaseStatusBadge(status) {
+  const types = {
+    ORDERED: "primary",
+    PARTIAL: "warn",
+    ARRIVED: "teal",
+    RECEIVED: "teal",
+    CANCELED: "danger"
+  };
+  return badge(purchaseStatusLabel(status), types[status] || "primary");
+}
+
 export function resourceTypeLabel(value) {
   const labels = {
     MACHINE: "整车",

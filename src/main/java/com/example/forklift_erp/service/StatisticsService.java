@@ -131,6 +131,10 @@ public class StatisticsService {
         return listSummaryService.summarize(type, keyword, resourceType);
     }
 
+    public ListSummaryVO listSummary(String type, String keyword, String resourceType, String status) {
+        return listSummaryService.summarize(type, keyword, resourceType, status);
+    }
+
     private Map<Long, MachineInventory> loadStockMachines(List<StockOperationLog> stockLogs) {
         Set<Long> ids = stockLogs.stream()
                 .filter(log -> "MACHINE".equals(log.getResourceType()))

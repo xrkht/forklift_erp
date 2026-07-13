@@ -22,6 +22,7 @@ import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -50,6 +51,9 @@ public class WarehouseService {
 
     @Autowired
     private OperationAuditService operationAuditService;
+
+    @Autowired
+    private ResourceVisibilityPolicy visibilityPolicy;
 
     @Transactional(readOnly = true)
     public List<WarehouseVO> findAll() {
@@ -145,15 +149,16 @@ public class WarehouseService {
     private void transferMachine(StockTransferDTO request) {
         MachineInventory machine = machineInventoryRepository.findByIdForUpdate(request.getResourceId())
                 .orElseThrow(() -> new BusinessException(ResultCode.VEHICLE_NOT_FOUND, "Vehicle not found"));
+        visibilityPolicy.ensureWritable(machine.getIsLocked(), "Vehicle is locked and cannot be transferred");
         collaborationService.validateWrite(machine, request.getVersion());
         if (Boolean.TRUE.equals(machine.getModelOnly())) {
             throw new BusinessException(ResultCode.PARAM_ERROR, "Model templates cannot be transferred");
         }
         int currentQuantity = machine.getInventoryCount() == null ? 0 : machine.getInventoryCount();
-        if (!Objects.equals(machine.getWarehouseId(), request.getFromWarehouseId())) {
-            throw new BusinessException(ResultCode.PARAM_ERROR, "Vehicle is not in selected source warehouse");
+        if (Objects.equals(machine.getWarehouseId(), request.getFromWarehouseId())) {
+            ensureBalanceIfMissing(StockLedgerService.RESOURCE_MACHINE, machine.getId(),
+                    request.getFromWarehouseId(), currentQuantity);
         }
-        ensureBalanceIfMissing(StockLedgerService.RESOURCE_MACHINE, machine.getId(), request.getFromWarehouseId(), currentQuantity);
         StockMovement movement = stockLedgerService.transferBalance(
                 StockLedgerService.RESOURCE_MACHINE,
                 machine.getId(),
@@ -167,10 +172,13 @@ public class WarehouseService {
                 "STOCK_TRANSFER",
                 machine.getId()
         );
-        Warehouse target = warehouseRepository.findById(request.getToWarehouseId())
-                .orElseThrow(() -> new BusinessException(ResultCode.NOT_FOUND, "Target warehouse not found"));
-        machine.setWarehouseId(target.getId());
-        machine.setWarehouseName(target.getWarehouseName());
+        if (Objects.equals(currentQuantity, request.getQuantity())) {
+            Warehouse target = warehouseRepository.findById(request.getToWarehouseId())
+                    .orElseThrow(() -> new BusinessException(ResultCode.NOT_FOUND, "Target warehouse not found"));
+            machine.setWarehouseId(target.getId());
+            machine.setWarehouseName(target.getWarehouseName());
+        }
+        machine.setUpdatedAt(LocalDateTime.now());
         collaborationService.stampWrite(machine);
         machineInventoryRepository.saveAndFlush(machine);
         operationAuditService.record("Warehouse transfer", "TRANSFER", "MACHINE", machine.getId(),
@@ -181,6 +189,7 @@ public class WarehouseService {
     private void transferPart(StockTransferDTO request) {
         PartInventory part = partInventoryRepository.findByIdForUpdate(request.getResourceId())
                 .orElseThrow(() -> new BusinessException(ResultCode.PART_NOT_FOUND, "Part not found"));
+        visibilityPolicy.ensureWritable(part.getIsLocked(), "Part is locked and cannot be transferred");
         collaborationService.validateWrite(part, request.getVersion());
         int currentQuantity = part.getQuantity() == null ? 0 : part.getQuantity();
         if (Objects.equals(part.getWarehouseId(), request.getFromWarehouseId())) {
@@ -199,19 +208,19 @@ public class WarehouseService {
                 "STOCK_TRANSFER",
                 part.getId()
         );
-        if (Objects.equals(part.getWarehouseId(), request.getFromWarehouseId())
-                && Objects.equals(currentQuantity, request.getQuantity())) {
+        if (Objects.equals(currentQuantity, request.getQuantity())) {
             part.setWarehouseId(request.getToWarehouseId());
-            collaborationService.stampWrite(part);
-            partInventoryRepository.saveAndFlush(part);
         }
+        part.setUpdatedAt(LocalDateTime.now());
+        collaborationService.stampWrite(part);
+        partInventoryRepository.saveAndFlush(part);
         operationAuditService.record("Warehouse transfer", "TRANSFER", "PART", part.getId(),
                 part.getPartCode(), part.getPartName(), "Transfer part stock", request.getOperator(),
                 request.getRemark(), "STOCK_MOVEMENT", movement.getId());
     }
 
     private void ensureBalanceIfMissing(String resourceType, Long resourceId, Long warehouseId, Integer quantity) {
-        if (stockBalanceRepository.findByResourceTypeAndResourceIdAndWarehouseId(resourceType, resourceId, warehouseId).isEmpty()) {
+        if (stockBalanceRepository.findByResourceTypeAndResourceId(resourceType, resourceId).isEmpty()) {
             stockLedgerService.syncBalance(resourceType, resourceId, warehouseId, quantity);
         }
     }

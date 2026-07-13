@@ -85,4 +85,18 @@ class DataImportFileStorageTests {
                 .isInstanceOf(BusinessException.class)
                 .hasMessage("Only Excel files are supported");
     }
+
+    @Test
+    void storeRejectsEmptyFileWithReadableMessage() {
+        MockMultipartFile file = new MockMultipartFile(
+                "file",
+                "import.xlsx",
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                new byte[0]
+        );
+
+        assertThatThrownBy(() -> storage.store(file, 12L, "vehicle-workbook"))
+                .isInstanceOf(BusinessException.class)
+                .hasMessage("请选择导入文件");
+    }
 }

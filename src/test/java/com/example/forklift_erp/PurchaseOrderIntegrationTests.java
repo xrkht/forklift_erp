@@ -22,6 +22,7 @@ import java.util.Map;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -109,6 +110,7 @@ class PurchaseOrderIntegrationTests extends TestcontainersDatabaseSupport {
 
         assertThat(partOrder.path("resourceType").asText()).isEqualTo("PART");
         assertThat(machineOrder.path("resourceType").asText()).isEqualTo("MACHINE");
+        assertThat(machineOrder.path("statusBeforeReceived").asText()).isEqualTo("ORDERED");
 
         mockMvc.perform(get("/api/purchase-orders")
                         .header("Authorization", bearer(superToken))
@@ -142,6 +144,87 @@ class PurchaseOrderIntegrationTests extends TestcontainersDatabaseSupport {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.cards[0].value").value(1))
                 .andExpect(jsonPath("$.data.cards[2].value").value(1));
+    }
+
+    @Test
+    void receiptToggleRestoresPartialStatusAndRejectsCanceledOrders() throws Exception {
+        String marker = unique("receipt");
+        Map<String, Object> partialPayload = machineOrderPayload(marker + "-partial", "PARTIAL");
+        JsonNode partialOrder = createPurchaseOrder(partialPayload);
+
+        String receivedResponse = mockMvc.perform(put("/api/purchase-orders/{id}/received", partialOrder.path("id").asLong())
+                        .header("Authorization", bearer(superToken))
+                        .param("received", "true")
+                        .param("version", partialOrder.path("version").asText()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.status").value("RECEIVED"))
+                .andExpect(jsonPath("$.data.statusBeforeReceived").value("PARTIAL"))
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+        JsonNode receivedOrder = objectMapper.readTree(receivedResponse).path("data");
+
+        String restoredResponse = mockMvc.perform(put("/api/purchase-orders/{id}/received", partialOrder.path("id").asLong())
+                        .header("Authorization", bearer(superToken))
+                        .param("received", "false")
+                        .param("version", receivedOrder.path("version").asText()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.status").value("PARTIAL"))
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+        JsonNode restoredOrder = objectMapper.readTree(restoredResponse).path("data");
+        assertThat(restoredOrder.path("statusBeforeReceived").isNull()).isTrue();
+
+        Map<String, Object> canceledPayload = machineOrderPayload(marker + "-canceled", "CANCELED");
+        JsonNode canceledOrder = createPurchaseOrder(canceledPayload);
+        mockMvc.perform(put("/api/purchase-orders/{id}/received", canceledOrder.path("id").asLong())
+                        .header("Authorization", bearer(superToken))
+                        .param("received", "true")
+                        .param("version", canceledOrder.path("version").asText()))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value(4001));
+
+        Map<String, Object> canceledUpdate = new LinkedHashMap<>(canceledPayload);
+        canceledUpdate.put("version", canceledOrder.path("version").asLong());
+        canceledUpdate.put("status", "RECEIVED");
+        mockMvc.perform(put("/api/purchase-orders/{id}", canceledOrder.path("id").asLong())
+                        .header("Authorization", bearer(superToken))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json(canceledUpdate)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value(4001));
+    }
+
+    @Test
+    void legacyReceivedOrderWithoutHistoryFallsBackToOrdered() throws Exception {
+        JsonNode created = createPurchaseOrder(machineOrderPayload(unique("legacy"), "ORDERED"));
+        var legacyOrder = purchaseOrderRepository.findById(created.path("id").asLong()).orElseThrow();
+        legacyOrder.setStatus("RECEIVED");
+        legacyOrder.setStatusBeforeReceived(null);
+        legacyOrder = purchaseOrderRepository.saveAndFlush(legacyOrder);
+
+        mockMvc.perform(put("/api/purchase-orders/{id}/received", legacyOrder.getId())
+                        .header("Authorization", bearer(superToken))
+                        .param("received", "false")
+                        .param("version", String.valueOf(legacyOrder.getVersion())))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.status").value("ORDERED"))
+                .andExpect(jsonPath("$.data.statusBeforeReceived").isEmpty());
+    }
+
+    private Map<String, Object> machineOrderPayload(String marker, String status) {
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("supplierName", "Machine supplier " + marker);
+        payload.put("resourceType", "MACHINE");
+        payload.put("resourceCode", "MACHINE-" + marker);
+        payload.put("resourceName", "Test machine " + marker);
+        payload.put("specificationModel", "CPCD30-" + marker);
+        payload.put("quantity", 1);
+        payload.put("unitPrice", "88000.00");
+        payload.put("status", status);
+        payload.put("remark", marker);
+        return payload;
     }
 
     private Long createSupplier(String supplierName) throws Exception {

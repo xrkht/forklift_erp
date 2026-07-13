@@ -58,3 +58,35 @@ export function createModalRenderer({
     renderModal
   };
 }
+
+export function setModalSubmitting(form, submitting) {
+  if (!form) return;
+  if (submitting) {
+    form.dataset.submitting = "true";
+    form.setAttribute("aria-busy", "true");
+    const card = form.closest(".modal-card");
+    const controls = [...(card || form).querySelectorAll("button, input, select, textarea")];
+    form.__submitControls = controls;
+    controls.forEach(control => {
+      control.__disabledBeforeSubmit = control.disabled;
+      control.disabled = true;
+      if (control.matches('button[type="submit"]')) {
+        control.__contentBeforeSubmit = control.innerHTML;
+        control.textContent = "提交中...";
+      }
+    });
+    return;
+  }
+
+  form.dataset.submitting = "false";
+  form.removeAttribute("aria-busy");
+  (form.__submitControls || []).forEach(control => {
+    control.disabled = Boolean(control.__disabledBeforeSubmit);
+    if (control.__contentBeforeSubmit !== undefined) {
+      control.innerHTML = control.__contentBeforeSubmit;
+      delete control.__contentBeforeSubmit;
+    }
+    delete control.__disabledBeforeSubmit;
+  });
+  delete form.__submitControls;
+}

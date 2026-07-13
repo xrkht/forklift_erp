@@ -234,3 +234,30 @@ export function createOutboundWorkflow(deps) {
     canManageOrderLock
   };
 }
+
+export function buildVehicleOutboundOrderPayload(payload, machine, customerId) {
+  return {
+    machineId: payload.machineId,
+    machineVersion: machine.version,
+    customerId,
+    salesDate: payload.salesDate,
+    settlementPrice: payload.settlementPrice,
+    salePrice: payload.salePrice,
+    receivableAmount: payload.receivableAmount,
+    receivedAmount: payload.receivedAmount,
+    paymentDueDate: payload.paymentDueDate,
+    lastPaymentDate: payload.lastPaymentDate,
+    paymentSettled: payload.paymentSettled,
+    paymentRemark: payload.paymentRemark,
+    salesReported: payload.salesReported,
+    salesReportDate: payload.salesReportDate,
+    invoiceApplied: payload.invoiceApplied,
+    invoiceApplicationDate: payload.invoiceApplicationDate,
+    invoiceStatus: payload.invoiceStatus,
+    invoiceIssuedDate: payload.invoiceIssuedDate,
+    registrationStatus: payload.registrationStatus,
+    contractType: payload.contractType,
+    operator: payload.operator,
+    orderRemark: payload.orderRemark
+  };
+}

@@ -28,6 +28,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Locale;
 
 @Service
 public class RentalRecordServiceImpl implements RentalRecordService {
@@ -59,11 +60,22 @@ public class RentalRecordServiceImpl implements RentalRecordService {
     @Override
     @Transactional(readOnly = true)
     public PageResult<RentalRecordVO> findPage(String keyword, Integer page, Integer size) {
+        return findPage(keyword, null, page, size);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public PageResult<RentalRecordVO> findPage(String keyword, String status, Integer page, Integer size) {
         int normalizedPage = ListPageSupport.page(page);
         int normalizedSize = ListPageSupport.size(size);
         String normalizedKeyword = keyword == null ? "" : keyword.trim();
+        String normalizedStatus = status == null ? "" : status.trim().toLowerCase(Locale.ROOT);
+        LocalDate today = LocalDate.now();
         Page<RentalRecord> records = rentalRecordRepository.searchPage(
                 normalizedKeyword,
+                normalizedStatus,
+                today,
+                today.plusDays(7),
                 ListPageSupport.pageRequest(page, size, Sort.by(Sort.Direction.DESC, "createdAt"))
         );
         return PageResult.of(
@@ -134,13 +146,19 @@ public class RentalRecordServiceImpl implements RentalRecordService {
         RentalRecord before = new RentalRecord();
         before.setStatus(record.getStatus());
 
+        String nextStatus = normalizeStatus(request.getStatus());
+        if (!RentalRecord.STATUS_ACTIVE.equals(record.getStatus())
+                && RentalRecord.STATUS_ACTIVE.equals(nextStatus)) {
+            validateRentalReactivation(record);
+        }
+
         copyCustomer(record, request.getCustomerId(), request.getDestination());
         BigDecimal monthlyPrice = resolveMonthlyPrice(request.getMonthlyRentalPrice(), request.getRentalPrice());
         record.setMonthlyRentalPrice(monthlyPrice);
         record.setRentalPrice(monthlyPrice);
         record.setStartDate(request.getStartDate());
         record.setEndDate(request.getEndDate());
-        record.setStatus(normalizeStatus(request.getStatus()));
+        record.setStatus(nextStatus);
         record.setOperator(blankToNull(request.getOperator()));
         record.setRemark(blankToNull(request.getRemark()));
         collaborationService.stampWrite(record);
@@ -159,6 +177,9 @@ public class RentalRecordServiceImpl implements RentalRecordService {
         RentalRecord record = rentalRecordRepository.findByIdForUpdate(id)
                 .orElseThrow(() -> new BusinessException(ResultCode.NOT_FOUND, "租赁记录不存在"));
         collaborationService.validateWrite(record, version);
+        if (RentalRecord.STATUS_ACTIVE.equals(record.getStatus())) {
+            throw new BusinessException(ResultCode.CONFLICT, "进行中的租赁记录不能删除，请先办理归还");
+        }
         rentalRecordRepository.delete(record);
         operationAuditService.record("租赁管理", "DELETE", "RENTAL_RECORD", record.getId(),
                 record.getRentalNo(), record.getVehicleNumber(),
@@ -170,6 +191,24 @@ public class RentalRecordServiceImpl implements RentalRecordService {
         record.setVehicleNumber(machine.getVehicleProductNumber());
         record.setMachineName(machine.getName());
         record.setSpecificationModel(machine.getSpecificationModel());
+    }
+
+    private void validateRentalReactivation(RentalRecord record) {
+        MachineInventory machine = machineRepository.findByIdForUpdate(record.getMachineId())
+                .orElseThrow(() -> new BusinessException(ResultCode.VEHICLE_NOT_FOUND, "Rental vehicle does not exist"));
+        if (Boolean.TRUE.equals(machine.getModelOnly())) {
+            throw new BusinessException(ResultCode.PARAM_ERROR, "Vehicle model templates cannot be rented");
+        }
+        if (Boolean.TRUE.equals(machine.getIsLocked())) {
+            throw new BusinessException(ResultCode.VEHICLE_NOT_FOUND, "Rental vehicle does not exist or is locked");
+        }
+        int inventoryCount = machine.getInventoryCount() == null ? 0 : machine.getInventoryCount();
+        if (inventoryCount < 1 || MachineStockStatus.OUTBOUND.code().equals(machine.getStockStatus())) {
+            throw new BusinessException(ResultCode.INSUFFICIENT_STOCK, "Vehicle is not in stock and cannot be rented");
+        }
+        if (rentalRecordRepository.existsByMachineIdAndStatus(machine.getId(), RentalRecord.STATUS_ACTIVE)) {
+            throw new BusinessException(ResultCode.CONFLICT, "Vehicle already has an active rental record");
+        }
     }
 
     private void copyCustomer(RentalRecord record, Long customerId, String destination) {

@@ -35,18 +35,11 @@ public class OperationAuditService {
         log.setTargetCode(targetCode);
         log.setTargetName(targetName);
         log.setSummary(summary);
-        log.setOperator(resolveOperator(operator));
+        log.setOperator(SecurityUtils.currentUsername());
         log.setRemark(truncate(remark, MAX_REMARK_LENGTH));
         log.setSourceType(sourceType);
         log.setSourceId(sourceId);
         return auditLogRepository.save(log);
-    }
-
-    private String resolveOperator(String operator) {
-        if (operator != null && !operator.isBlank()) {
-            return operator.trim();
-        }
-        return SecurityUtils.currentUsername();
     }
 
     private String truncate(String value, int maxLength) {

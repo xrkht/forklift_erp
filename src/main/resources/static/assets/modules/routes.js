@@ -63,6 +63,10 @@ export const endpoints = {
     downloadInvoice: id => `/api/outbound-orders/${id}/invoice`,
     downloadContract: id => `/api/outbound-orders/${id}/contract`
   },
+  workflow: {
+    machineInboundPurchase: "/api/workflows/machine-inbound-purchase",
+    vehicleOutboundWithCustomer: "/api/workflows/vehicle-outbound-with-customer"
+  },
   attachments: {
     list: "/api/attachments",
     byResource: "/api/attachments/resource",

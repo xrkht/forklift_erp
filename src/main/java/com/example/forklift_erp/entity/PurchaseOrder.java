@@ -73,6 +73,9 @@ public class PurchaseOrder implements CollaborativeResource {
     @Column(nullable = false, length = 30)
     private String status = "ORDERED";
 
+    @Column(name = "status_before_received", length = 30)
+    private String statusBeforeReceived;
+
     @Column(length = 50)
     private String operator;
 

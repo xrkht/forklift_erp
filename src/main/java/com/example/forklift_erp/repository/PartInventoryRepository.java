@@ -53,6 +53,9 @@ public interface PartInventoryRepository extends JpaRepository<PartInventory, Lo
             select p.*
             from part_inventory p
             where (:includeLocked = true or coalesce(p.is_locked, 0) = 0)
+              and (:stock is null
+                   or (:stock = 'available' and coalesce(p.quantity, 0) > 0)
+                   or (:stock = 'low' and coalesce(p.quantity, 0) <= :lowStockThreshold))
               and (:keywordPrefix is null
                    or p.part_code like :keywordPrefix escape '!'
                    or (:fullTextKeyword is not null
@@ -71,6 +74,9 @@ public interface PartInventoryRepository extends JpaRepository<PartInventory, Lo
             select count(*)
             from part_inventory p
             where (:includeLocked = true or coalesce(p.is_locked, 0) = 0)
+              and (:stock is null
+                   or (:stock = 'available' and coalesce(p.quantity, 0) > 0)
+                   or (:stock = 'low' and coalesce(p.quantity, 0) <= :lowStockThreshold))
               and (:keywordPrefix is null
                    or p.part_code like :keywordPrefix escape '!'
                    or (:fullTextKeyword is not null
@@ -89,6 +95,8 @@ public interface PartInventoryRepository extends JpaRepository<PartInventory, Lo
             @Param("keywordPrefix") String keywordPrefix,
             @Param("fullTextKeyword") String fullTextKeyword,
             @Param("includeLocked") boolean includeLocked,
+            @Param("stock") String stock,
+            @Param("lowStockThreshold") int lowStockThreshold,
             Pageable pageable
     );
 

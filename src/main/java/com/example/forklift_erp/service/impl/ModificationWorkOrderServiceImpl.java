@@ -28,6 +28,7 @@ import com.example.forklift_erp.service.CollaborationService;
 import com.example.forklift_erp.service.ConfigReplaceService;
 import com.example.forklift_erp.service.ModificationWorkOrderService;
 import com.example.forklift_erp.service.OperationAuditService;
+import com.example.forklift_erp.service.ResourceVisibilityPolicy;
 import com.example.forklift_erp.util.BusinessNumberGenerator;
 import com.example.forklift_erp.util.ListPageSupport;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -77,6 +78,9 @@ public class ModificationWorkOrderServiceImpl implements ModificationWorkOrderSe
     @Autowired
     private OperationAuditService operationAuditService;
 
+    @Autowired
+    private ResourceVisibilityPolicy visibilityPolicy;
+
     @Override
     @Transactional(readOnly = true)
     public List<ModificationWorkOrderVO> findAll() {
@@ -122,6 +126,7 @@ public class ModificationWorkOrderServiceImpl implements ModificationWorkOrderSe
     public ModificationWorkOrderVO create(ModificationWorkOrderCreateDTO request) {
         MachineInventory machine = machineRepository.findByIdForUpdate(request.getMachineId())
                 .orElseThrow(() -> new BusinessException(ResultCode.VEHICLE_NOT_FOUND, "Vehicle not found"));
+        visibilityPolicy.ensureWritable(machine.getIsLocked(), "Vehicle is locked and cannot create modification work order");
         collaborationService.validateWrite(machine, request.getMachineVersion());
         int machineQuantity = machine.getInventoryCount() == null ? 0 : machine.getInventoryCount();
         if (machineQuantity < 1) {
@@ -186,6 +191,7 @@ public class ModificationWorkOrderServiceImpl implements ModificationWorkOrderSe
 
         MachineInventory machine = machineRepository.findByIdForUpdate(workOrder.getMachineId())
                 .orElseThrow(() -> new BusinessException(ResultCode.VEHICLE_NOT_FOUND, "Vehicle not found"));
+        visibilityPolicy.ensureWritable(machine.getIsLocked(), "Vehicle is locked and cannot complete modification work order");
         machine.setStockStatus(MachineStockStatus.MODIFYING.code());
         collaborationService.stampWrite(machine);
         machineRepository.save(machine);
@@ -254,6 +260,9 @@ public class ModificationWorkOrderServiceImpl implements ModificationWorkOrderSe
         if (ModificationWorkOrderStatus.CANCELED.code().equals(workOrder.getStatus())) {
             return toVO(workOrder);
         }
+        MachineInventory machine = machineRepository.findByIdForUpdate(workOrder.getMachineId())
+                .orElseThrow(() -> new BusinessException(ResultCode.VEHICLE_NOT_FOUND, "Vehicle not found"));
+        visibilityPolicy.ensureWritable(machine.getIsLocked(), "Vehicle is locked and cannot cancel modification work order");
         workOrder.setStatus(ModificationWorkOrderStatus.CANCELED.code());
         workOrder.setCanceledAt(LocalDateTime.now());
         String operator = request == null ? null : request.getOperator();
@@ -318,6 +327,7 @@ public class ModificationWorkOrderServiceImpl implements ModificationWorkOrderSe
         }
         PartInventory part = partRepository.findByIdForUpdate(lineRequest.getNewPartId())
                 .orElseThrow(() -> new BusinessException(ResultCode.PART_NOT_FOUND, "New part not found"));
+        visibilityPolicy.ensureWritable(part.getIsLocked(), "Part is locked and cannot be used in modification work order");
         validateVersion(part.getVersion(), lineRequest.getNewPartVersion(), "Part inventory was updated by another user");
         ensureCompatible(config, part);
 
@@ -347,6 +357,7 @@ public class ModificationWorkOrderServiceImpl implements ModificationWorkOrderSe
     private ResolvedLine resolveLineForExecution(Long machineId, ModificationWorkOrderLine line) {
         MachineInventory machine = machineRepository.findByIdForUpdate(machineId)
                 .orElseThrow(() -> new BusinessException(ResultCode.VEHICLE_NOT_FOUND, "Vehicle not found"));
+        visibilityPolicy.ensureWritable(machine.getIsLocked(), "Vehicle is locked and cannot complete modification work order");
         MachineConfig config = machineConfigRepository.findByIdForUpdate(line.getMachineConfigId())
                 .orElseThrow(() -> new BusinessException(ResultCode.NOT_FOUND, "Machine config not found"));
         if (!config.getMachineId().equals(machineId)) {
@@ -358,6 +369,7 @@ public class ModificationWorkOrderServiceImpl implements ModificationWorkOrderSe
         }
         PartInventory part = partRepository.findByIdForUpdate(line.getNewPartId())
                 .orElseThrow(() -> new BusinessException(ResultCode.PART_NOT_FOUND, "New part not found"));
+        visibilityPolicy.ensureWritable(part.getIsLocked(), "Part is locked and cannot be used in modification work order");
         ensureCompatible(config, part);
         return new ResolvedLine(machine, config, part);
     }

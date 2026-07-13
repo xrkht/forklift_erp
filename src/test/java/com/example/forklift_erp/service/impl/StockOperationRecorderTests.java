@@ -5,7 +5,11 @@ import com.example.forklift_erp.entity.StockOperationLog;
 import com.example.forklift_erp.repository.StockOperationLogRepository;
 import com.example.forklift_erp.service.OperationAuditService;
 import com.example.forklift_erp.service.StockLedgerService;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.springframework.security.authentication.TestingAuthenticationToken;
+import org.springframework.security.core.context.SecurityContextHolder;
 
 import java.math.BigDecimal;
 
@@ -16,6 +20,18 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 class StockOperationRecorderTests {
+
+    @BeforeEach
+    void setUp() {
+        SecurityContextHolder.getContext().setAuthentication(
+                new TestingAuthenticationToken("actual-user", "password")
+        );
+    }
+
+    @AfterEach
+    void tearDown() {
+        SecurityContextHolder.clearContext();
+    }
 
     @Test
     void recordPartPersistsLogLedgerMovementAndAudit() {
@@ -41,7 +57,7 @@ class StockOperationRecorderTests {
                 9,
                 7,
                 new BigDecimal("12.50"),
-                "tester",
+                "spoofed-user",
                 "repair use"
         );
 
@@ -50,6 +66,7 @@ class StockOperationRecorderTests {
         assertThat(saved.getQuantity()).isEqualTo(2);
         assertThat(saved.getBeforeQuantity()).isEqualTo(9);
         assertThat(saved.getAfterQuantity()).isEqualTo(7);
+        assertThat(saved.getOperator()).isEqualTo("actual-user");
         verify(stockLedgerService).recordMovement(
                 eq("OUTBOUND"),
                 eq(StockLedgerService.RESOURCE_PART),
@@ -60,7 +77,7 @@ class StockOperationRecorderTests {
                 eq(9),
                 eq(7),
                 eq(new BigDecimal("12.50")),
-                eq("tester"),
+                eq("actual-user"),
                 eq("repair use"),
                 eq("STOCK_LOG"),
                 eq(17L)
@@ -73,7 +90,7 @@ class StockOperationRecorderTests {
                 eq("P-001"),
                 eq("Filter"),
                 eq("Part outbound 2"),
-                eq("tester"),
+                eq("actual-user"),
                 eq("repair use"),
                 eq("STOCK"),
                 eq(17L)
@@ -105,7 +122,7 @@ class StockOperationRecorderTests {
                 6,
                 BigDecimal.ZERO,
                 BigDecimal.ZERO,
-                "tester",
+                "spoofed-user",
                 "stocktaking",
                 "STOCKTAKING",
                 99L,
@@ -122,7 +139,7 @@ class StockOperationRecorderTests {
                 eq(2),
                 eq(6),
                 eq(BigDecimal.ZERO),
-                eq("tester"),
+                eq("actual-user"),
                 eq("stocktaking"),
                 eq("STOCKTAKING"),
                 eq(99L)

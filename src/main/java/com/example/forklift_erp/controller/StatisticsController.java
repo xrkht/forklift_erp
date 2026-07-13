@@ -29,7 +29,8 @@ public class StatisticsController {
     @PreAuthorize(PermissionCodes.HAS_LIST_SUMMARY_ACCESS)
     public Result<ListSummaryVO> listSummary(@RequestParam String type,
                                              @RequestParam(required = false) String keyword,
-                                             @RequestParam(required = false) String resourceType) {
-        return Result.success(statisticsService.listSummary(type, keyword, resourceType));
+                                             @RequestParam(required = false) String resourceType,
+                                             @RequestParam(required = false) String status) {
+        return Result.success(statisticsService.listSummary(type, keyword, resourceType, status));
     }
 }

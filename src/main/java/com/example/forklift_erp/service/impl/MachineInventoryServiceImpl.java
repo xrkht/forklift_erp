@@ -3,6 +3,7 @@ package com.example.forklift_erp.service.impl;
 import com.example.forklift_erp.common.PageResult;
 import com.example.forklift_erp.common.ResultCode;
 import com.example.forklift_erp.constant.MachineStockStatus;
+import com.example.forklift_erp.constant.RentalStatus;
 import com.example.forklift_erp.dto.InboundRequestDTO;
 import com.example.forklift_erp.dto.MachineConfigVO;
 import com.example.forklift_erp.dto.MachineInventoryCreateDTO;
@@ -44,6 +45,7 @@ import java.util.stream.Collectors;
 
 @Service
 public class MachineInventoryServiceImpl implements MachineInventoryService {
+    private static final long LONG_IDLE_DAYS = 90;
 
     @Autowired
     private MachineInventoryRepository repository;
@@ -103,12 +105,23 @@ public class MachineInventoryServiceImpl implements MachineInventoryService {
     @Override
     @Transactional(readOnly = true)
     public PageResult<VehicleModelSummaryVO> findModelPage(String keyword, Integer page, Integer size) {
+        return findModelPage(keyword, null, page, size);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public PageResult<VehicleModelSummaryVO> findModelPage(String keyword, String stock, Integer page, Integer size) {
         int normalizedPage = ListPageSupport.page(page);
         int normalizedSize = ListPageSupport.size(size);
+        boolean longIdleOnly = "longIdle".equalsIgnoreCase(normalizeModelField(stock));
         Page<MachineInventoryRepository.VehicleModelSummaryProjection> result = repository.searchModelSummaries(
                 SearchKeywordSupport.likePrefix(keyword),
                 SearchKeywordSupport.fullTextBoolean(keyword),
                 SecurityUtils.isAdminOrSuperAdmin(),
+                longIdleOnly,
+                LocalDateTime.now().minusDays(LONG_IDLE_DAYS),
+                MachineStockStatus.IN_STOCK.code(),
+                RentalStatus.ACTIVE.code(),
                 ListPageSupport.pageRequest(page, size)
         );
         return PageResult.of(
@@ -122,11 +135,22 @@ public class MachineInventoryServiceImpl implements MachineInventoryService {
     @Override
     @Transactional(readOnly = true)
     public List<MachineInventoryVO> findVehiclesByModel(String name, String specificationModel, String machineType) {
+        return findVehiclesByModel(name, specificationModel, machineType, null);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<MachineInventoryVO> findVehiclesByModel(String name, String specificationModel, String machineType, String stock) {
+        boolean longIdleOnly = "longIdle".equalsIgnoreCase(normalizeModelField(stock));
         return repository.findVehiclesByModel(
                         normalizeModelField(name),
                         normalizeModelField(specificationModel),
                         normalizeModelField(machineType),
-                        SecurityUtils.isAdminOrSuperAdmin()
+                        SecurityUtils.isAdminOrSuperAdmin(),
+                        longIdleOnly,
+                        LocalDateTime.now().minusDays(LONG_IDLE_DAYS),
+                        MachineStockStatus.IN_STOCK.code(),
+                        RentalStatus.ACTIVE.code()
                 ).stream()
                 .map(MachineInventoryVO::fromEntity)
                 .toList();
@@ -201,14 +225,12 @@ public class MachineInventoryServiceImpl implements MachineInventoryService {
 
         collaborationService.stampWrite(machineInventory);
         MachineInventory saved = repository.save(machineInventory);
-        if (!Boolean.TRUE.equals(saved.getModelOnly())) {
-            stockLedgerService.syncBalance(
-                    StockLedgerService.RESOURCE_MACHINE,
-                    saved.getId(),
-                    saved.getWarehouseId(),
-                    saved.getInventoryCount()
-            );
-        }
+        stockLedgerService.reconcileAvailableQuantity(
+                StockLedgerService.RESOURCE_MACHINE,
+                saved.getId(),
+                saved.getWarehouseId(),
+                saved.getInventoryCount()
+        );
         return saved;
     }
 
@@ -412,6 +434,7 @@ public class MachineInventoryServiceImpl implements MachineInventoryService {
         }
         MachineInventory existing = existingOpt.get();
         visibilityPolicy.ensureWritable(existing.getIsLocked(), "该记录已被锁定，您无权删除");
+        stockLedgerService.deleteEmptyBalances(StockLedgerService.RESOURCE_MACHINE, id);
         repository.deleteById(id);
     }
 

@@ -24,7 +24,7 @@ public interface RentalRecordRepository extends JpaRepository<RentalRecord, Long
 
     @Query("""
             select r from RentalRecord r
-            where :keyword is null or :keyword = ''
+            where (:keyword is null or :keyword = ''
                or lower(r.rentalNo) like lower(concat('%', :keyword, '%'))
                or lower(r.vehicleNumber) like lower(concat('%', :keyword, '%'))
                or lower(r.machineName) like lower(concat('%', :keyword, '%'))
@@ -34,13 +34,22 @@ public interface RentalRecordRepository extends JpaRepository<RentalRecord, Long
                or lower(r.destination) like lower(concat('%', :keyword, '%'))
                or lower(r.status) like lower(concat('%', :keyword, '%'))
                or lower(r.operator) like lower(concat('%', :keyword, '%'))
-               or lower(r.remark) like lower(concat('%', :keyword, '%'))
+               or lower(r.remark) like lower(concat('%', :keyword, '%')))
+              and (:status is null or :status = ''
+               or (:status = 'active' and r.status = 'ACTIVE')
+               or (:status = 'returned' and r.status = 'RETURNED')
+               or (:status = 'duesoon' and r.status = 'ACTIVE' and r.endDate is not null and r.endDate <= :dueSoonDate)
+               or (:status = 'overdue' and r.status = 'ACTIVE' and r.endDate is not null and r.endDate < :today))
             """)
-    Page<RentalRecord> searchPage(@Param("keyword") String keyword, Pageable pageable);
+    Page<RentalRecord> searchPage(@Param("keyword") String keyword,
+                                  @Param("status") String status,
+                                  @Param("today") LocalDate today,
+                                  @Param("dueSoonDate") LocalDate dueSoonDate,
+                                  Pageable pageable);
 
     @Query("""
             select r from RentalRecord r
-            where :keyword is null or :keyword = ''
+            where (:keyword is null or :keyword = ''
                or lower(r.rentalNo) like lower(concat('%', :keyword, '%'))
                or lower(r.vehicleNumber) like lower(concat('%', :keyword, '%'))
                or lower(r.machineName) like lower(concat('%', :keyword, '%'))
@@ -50,10 +59,18 @@ public interface RentalRecordRepository extends JpaRepository<RentalRecord, Long
                or lower(r.destination) like lower(concat('%', :keyword, '%'))
                or lower(r.status) like lower(concat('%', :keyword, '%'))
                or lower(r.operator) like lower(concat('%', :keyword, '%'))
-               or lower(r.remark) like lower(concat('%', :keyword, '%'))
+               or lower(r.remark) like lower(concat('%', :keyword, '%')))
+              and (:status is null or :status = ''
+               or (:status = 'active' and r.status = 'ACTIVE')
+               or (:status = 'returned' and r.status = 'RETURNED')
+               or (:status = 'duesoon' and r.status = 'ACTIVE' and r.endDate is not null and r.endDate <= :dueSoonDate)
+               or (:status = 'overdue' and r.status = 'ACTIVE' and r.endDate is not null and r.endDate < :today))
             order by r.createdAt desc
             """)
-    List<RentalRecord> searchForSummary(@Param("keyword") String keyword);
+    List<RentalRecord> searchForSummary(@Param("keyword") String keyword,
+                                        @Param("status") String status,
+                                        @Param("today") LocalDate today,
+                                        @Param("dueSoonDate") LocalDate dueSoonDate);
 
     @Query("""
             select r from RentalRecord r

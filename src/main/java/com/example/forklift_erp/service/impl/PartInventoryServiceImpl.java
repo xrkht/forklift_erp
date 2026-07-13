@@ -62,13 +62,15 @@ public class PartInventoryServiceImpl implements PartInventoryService {
 
     @Override
     @Transactional(readOnly = true)
-    public PageResult<PartInventoryVO> findPage(String keyword, Integer page, Integer size) {
+    public PageResult<PartInventoryVO> findPage(String keyword, String stock, Integer page, Integer size) {
         int normalizedPage = ListPageSupport.page(page);
         int normalizedSize = ListPageSupport.size(size);
         Page<PartInventory> result = partRepository.searchPage(
                 SearchKeywordSupport.likePrefix(keyword),
                 SearchKeywordSupport.fullTextBoolean(keyword),
                 SecurityUtils.isAdminOrSuperAdmin(),
+                stock == null || stock.isBlank() ? null : stock.trim(),
+                5,
                 ListPageSupport.pageRequest(page, size)
         );
         return PageResult.of(
@@ -149,7 +151,7 @@ public class PartInventoryServiceImpl implements PartInventoryService {
         log.info("Save part: partCode={}, name={}, quantity={}", part.getPartCode(), part.getPartName(), part.getQuantity());
         collaborationService.stampWrite(part);
         PartInventory saved = partRepository.save(part);
-        stockLedgerService.syncBalance(
+        stockLedgerService.reconcileAvailableQuantity(
                 StockLedgerService.RESOURCE_PART,
                 saved.getId(),
                 saved.getWarehouseId(),
@@ -210,6 +212,7 @@ public class PartInventoryServiceImpl implements PartInventoryService {
         }
         PartInventory existing = existingOpt.get();
         visibilityPolicy.ensureWritable(existing.getIsLocked(), "Part is locked and cannot be deleted");
+        stockLedgerService.deleteEmptyBalances(StockLedgerService.RESOURCE_PART, id);
         partRepository.deleteById(id);
         log.info("Delete part: id={}", id);
     }
@@ -263,7 +266,7 @@ public class PartInventoryServiceImpl implements PartInventoryService {
         log.info("Part inbound: partCode={}, quantity={}, currentQuantity={}", partCode, quantity, part.getQuantity());
         collaborationService.stampWrite(part);
         PartInventory saved = partRepository.save(part);
-        stockLedgerService.syncBalance(
+        stockLedgerService.reconcileAvailableQuantity(
                 StockLedgerService.RESOURCE_PART,
                 saved.getId(),
                 saved.getWarehouseId(),
@@ -289,7 +292,7 @@ public class PartInventoryServiceImpl implements PartInventoryService {
         log.info("Part outbound: partCode={}, quantity={}, currentQuantity={}", partCode, quantity, part.getQuantity());
         collaborationService.stampWrite(part);
         PartInventory saved = partRepository.save(part);
-        stockLedgerService.syncBalance(
+        stockLedgerService.reconcileAvailableQuantity(
                 StockLedgerService.RESOURCE_PART,
                 saved.getId(),
                 saved.getWarehouseId(),

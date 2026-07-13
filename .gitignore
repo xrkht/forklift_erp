@@ -1,7 +1,10 @@
 HELP.md
 target/
+dist/
 logs/
 uploads/
+/deploy/synology/.env
+/deploy/synology/data/
 codex-test-logs/
 .codebuddy/
 .codex-docker-config/

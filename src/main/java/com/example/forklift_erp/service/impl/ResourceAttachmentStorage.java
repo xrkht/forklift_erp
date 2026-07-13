@@ -7,6 +7,7 @@ import org.springframework.util.StringUtils;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.nio.file.Path;
+import java.nio.file.Files;
 import java.util.Locale;
 import java.util.Set;
 import java.util.UUID;
@@ -77,6 +78,15 @@ public class ResourceAttachmentStorage {
                 attachment.getStoredFileName(),
                 "Attachment path is invalid"
         );
+    }
+
+    boolean attachmentExists(String storageScope, String storedFileName) {
+        Path path = fileStorageSupport.resolveInRoot(
+                storageRoot(storageScope),
+                storedFileName,
+                "Attachment path is invalid"
+        );
+        return Files.isRegularFile(path);
     }
 
     void registerRollbackCleanup(Path file) {

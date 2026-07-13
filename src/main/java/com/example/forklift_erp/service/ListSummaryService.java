@@ -15,6 +15,7 @@ import com.example.forklift_erp.util.SecurityUtils;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.util.List;
 import java.util.Locale;
 import java.util.Objects;
@@ -50,10 +51,14 @@ public class ListSummaryService {
     }
 
     public ListSummaryVO summarize(String type, String keyword, String resourceType) {
+        return summarize(type, keyword, resourceType, null);
+    }
+
+    public ListSummaryVO summarize(String type, String keyword, String resourceType, String status) {
         String normalizedType = type == null ? "" : type.trim();
         return switch (normalizedType) {
             case "outboundOrders" -> outboundOrderSummary(keyword);
-            case "rentals" -> rentalSummary(keyword);
+            case "rentals" -> rentalSummary(keyword, status);
             case "suppliers" -> supplierSummary(keyword);
             case "purchases" -> purchaseSummary(keyword, resourceType);
             case "stocktakes" -> stocktakingSummary(keyword);
@@ -91,9 +96,13 @@ public class ListSummaryService {
                 .addCard("已结清车款", settledOrders, uploadedContracts + " 单已上传合同");
     }
 
-    private ListSummaryVO rentalSummary(String keyword) {
+    private ListSummaryVO rentalSummary(String keyword, String status) {
         String normalizedKeyword = normalizeKeyword(keyword);
-        List<RentalRecord> records = rentalRecordRepository.searchForSummary(normalizedKeyword);
+        String normalizedStatus = normalizeKeyword(status);
+        normalizedStatus = normalizedStatus == null ? "" : normalizedStatus.toLowerCase(Locale.ROOT);
+        LocalDate today = LocalDate.now();
+        List<RentalRecord> records = rentalRecordRepository.searchForSummary(
+                normalizedKeyword, normalizedStatus, today, today.plusDays(7));
         long totalCount = records.size();
         SummaryCount rows = new SummaryCount(totalCount);
         long activeRows = records.stream().filter(record -> RentalStatus.ACTIVE.code().equals(record.getStatus())).count();

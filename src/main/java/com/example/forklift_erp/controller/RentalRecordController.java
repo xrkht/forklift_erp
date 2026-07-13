@@ -31,10 +31,11 @@ public class RentalRecordController {
     @PreAuthorize(PermissionCodes.HAS_STOCK_ADJUST)
     public Result<?> getAll(@RequestParam(defaultValue = "true") boolean paged,
                             @RequestParam(required = false) String keyword,
+                            @RequestParam(required = false) String status,
                             @RequestParam(required = false) Integer page,
                             @RequestParam(required = false) Integer size) {
         if (paged) {
-            return Result.success(service.findPage(keyword, page, size));
+            return Result.success(service.findPage(keyword, status, page, size));
         }
         return Result.success(service.findAll());
     }

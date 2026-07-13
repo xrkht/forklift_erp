@@ -226,13 +226,15 @@ public class ResourceAttachmentServiceImpl implements ResourceAttachmentService 
     @Transactional
     public void backfillLegacyOutboundAttachments() {
         int backfilled = 0;
+        int page = 0;
         while (true) {
             List<OutboundOrder> candidates = outboundOrderRepository.findLegacyAttachmentBackfillCandidates(
-                    PageRequest.of(0, LEGACY_BACKFILL_BATCH_SIZE)
+                    PageRequest.of(page, LEGACY_BACKFILL_BATCH_SIZE)
             );
             if (candidates.isEmpty()) {
                 break;
             }
+            boolean changedInBatch = false;
             for (OutboundOrder order : candidates) {
                 boolean changed = false;
                 if (hasText(order.getInvoiceStoredFileName()) && !hasLegacyAttachment(order.getId(), "INVOICE")) {
@@ -246,11 +248,13 @@ public class ResourceAttachmentServiceImpl implements ResourceAttachmentService 
                 if (changed) {
                     outboundSnapshotService.refresh(order.getId());
                     backfilled++;
+                    changedInBatch = true;
                 }
             }
-            if (candidates.size() < LEGACY_BACKFILL_BATCH_SIZE) {
+            if (!changedInBatch && candidates.size() < LEGACY_BACKFILL_BATCH_SIZE) {
                 break;
             }
+            page = changedInBatch ? 0 : page + 1;
         }
         if (backfilled > 0) {
             log.info("Legacy outbound attachment backfill completed for {} orders", backfilled);
@@ -344,6 +348,12 @@ public class ResourceAttachmentServiceImpl implements ResourceAttachmentService 
 
     private boolean persistLegacyRow(OutboundOrder order, String category, String storedFileName, String originalName,
                                      String contentType, Long fileSize, LocalDateTime uploadedAt) {
+        String storageScope = chooseStorageScope("OUTBOUND_ORDER", category);
+        if (!attachmentStorage.attachmentExists(storageScope, storedFileName)) {
+            log.warn("Skipping legacy {} attachment backfill for order {} because file {} does not exist",
+                    category, order.getOrderNo(), storedFileName);
+            return false;
+        }
         ResourceAttachment attachment = new ResourceAttachment();
         attachment.setResourceType("OUTBOUND_ORDER");
         attachment.setResourceId(order.getId());
@@ -351,7 +361,7 @@ public class ResourceAttachmentServiceImpl implements ResourceAttachmentService 
         attachment.setResourceName(order.getCustomerName());
         attachment.setAttachmentCategory(category);
         attachment.setAttachmentLabel(defaultAttachmentLabel(category));
-        attachment.setStorageScope(chooseStorageScope("OUTBOUND_ORDER", category));
+        attachment.setStorageScope(storageScope);
         attachment.setOriginalName(firstNonBlank(originalName, storedFileName));
         attachment.setStoredFileName(storedFileName);
         attachment.setContentType(firstNonBlank(contentType, "application/octet-stream"));

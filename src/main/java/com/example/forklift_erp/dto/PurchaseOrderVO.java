@@ -28,6 +28,7 @@ public class PurchaseOrderVO {
     private LocalDate orderDate;
     private LocalDate expectedArrivalDate;
     private String status;
+    private String statusBeforeReceived;
     private String operator;
     private String remark;
     private LocalDateTime createdAt;
@@ -54,6 +55,7 @@ public class PurchaseOrderVO {
         vo.setOrderDate(entity.getOrderDate());
         vo.setExpectedArrivalDate(entity.getExpectedArrivalDate());
         vo.setStatus(entity.getStatus());
+        vo.setStatusBeforeReceived(entity.getStatusBeforeReceived());
         vo.setOperator(entity.getOperator());
         vo.setRemark(entity.getRemark());
         vo.setCreatedAt(entity.getCreatedAt());

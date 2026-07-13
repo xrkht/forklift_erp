@@ -12,7 +12,11 @@ import java.util.Optional;
 public interface PartInventoryService {
     List<PartInventory> findAll();
 
-    PageResult<PartInventoryVO> findPage(String keyword, Integer page, Integer size);
+    PageResult<PartInventoryVO> findPage(String keyword, String stock, Integer page, Integer size);
+
+    default PageResult<PartInventoryVO> findPage(String keyword, Integer page, Integer size) {
+        return findPage(keyword, null, page, size);
+    }
 
     Optional<PartInventory> findById(Long id);
 

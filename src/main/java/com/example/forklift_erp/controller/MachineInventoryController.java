@@ -57,16 +57,18 @@ public class MachineInventoryController {
 
     @GetMapping("/models")
     public Result<PageResult<VehicleModelSummaryVO>> getModelPage(@RequestParam(required = false) String keyword,
+                                                                  @RequestParam(required = false) String stock,
                                                                   @RequestParam(required = false) Integer page,
                                                                   @RequestParam(required = false) Integer size) {
-        return Result.success(service.findModelPage(keyword, page, size));
+        return Result.success(service.findModelPage(keyword, stock, page, size));
     }
 
     @GetMapping("/model-vehicles")
     public Result<List<MachineInventoryVO>> getModelVehicles(@RequestParam String name,
                                                              @RequestParam String specificationModel,
-                                                             @RequestParam(required = false) String machineType) {
-        return Result.success(service.findVehiclesByModel(name, specificationModel, machineType));
+                                                             @RequestParam(required = false) String machineType,
+                                                             @RequestParam(required = false) String stock) {
+        return Result.success(service.findVehiclesByModel(name, specificationModel, machineType, stock));
     }
 
     @GetMapping("/{id}")

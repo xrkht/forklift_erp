@@ -182,6 +182,15 @@ public interface MachineInventoryRepository extends JpaRepository<MachineInvento
               group_concat(case when coalesce(m.model_only, 0) = 0 then m.vehicle_number else null end order by m.vehicle_number separator ' ') as vehicleNumbers
             from machine_inventory m
             where (:includeLocked = true or coalesce(m.is_locked, 0) = 0)
+              and (:longIdleOnly = false or (
+                   coalesce(m.model_only, 0) = 0
+                   and coalesce(m.inventory_count, 0) > 0
+                   and (m.stock_status is null or m.stock_status = :inStockStatus)
+                   and coalesce(m.inbound_date, m.created_at) <= :idleCutoff
+                   and not exists (
+                     select 1 from rental_record r
+                     where r.machine_id = m.id and r.status = :activeRentalStatus
+                   )))
               and (:keywordPrefix is null
                    or m.vehicle_number like :keywordPrefix escape '!'
                    or (:fullTextKeyword is not null
@@ -201,6 +210,15 @@ public interface MachineInventoryRepository extends JpaRepository<MachineInvento
               select 1
               from machine_inventory m
               where (:includeLocked = true or coalesce(m.is_locked, 0) = 0)
+                and (:longIdleOnly = false or (
+                     coalesce(m.model_only, 0) = 0
+                     and coalesce(m.inventory_count, 0) > 0
+                     and (m.stock_status is null or m.stock_status = :inStockStatus)
+                     and coalesce(m.inbound_date, m.created_at) <= :idleCutoff
+                     and not exists (
+                       select 1 from rental_record r
+                       where r.machine_id = m.id and r.status = :activeRentalStatus
+                     )))
                 and (:keywordPrefix is null
                      or m.vehicle_number like :keywordPrefix escape '!'
                      or (:fullTextKeyword is not null
@@ -220,6 +238,10 @@ public interface MachineInventoryRepository extends JpaRepository<MachineInvento
             @Param("keywordPrefix") String keywordPrefix,
             @Param("fullTextKeyword") String fullTextKeyword,
             @Param("includeLocked") boolean includeLocked,
+            @Param("longIdleOnly") boolean longIdleOnly,
+            @Param("idleCutoff") LocalDateTime idleCutoff,
+            @Param("inStockStatus") String inStockStatus,
+            @Param("activeRentalStatus") String activeRentalStatus,
             Pageable pageable
     );
 
@@ -230,13 +252,25 @@ public interface MachineInventoryRepository extends JpaRepository<MachineInvento
               and coalesce(m.name, '') = :name
               and coalesce(m.specificationModel, '') = :specificationModel
               and coalesce(m.machineType, '') = :machineType
+              and (:longIdleOnly = false or (
+                   coalesce(m.inventoryCount, 0) > 0
+                   and (m.stockStatus is null or m.stockStatus = :inStockStatus)
+                   and coalesce(m.inboundDate, m.createdAt) <= :idleCutoff
+                   and not exists (
+                     select 1 from RentalRecord r
+                     where r.machineId = m.id and r.status = :activeRentalStatus
+                   )))
             order by m.vehicleProductNumber asc
             """)
     List<MachineInventory> findVehiclesByModel(
             @Param("name") String name,
             @Param("specificationModel") String specificationModel,
             @Param("machineType") String machineType,
-            @Param("includeLocked") boolean includeLocked
+            @Param("includeLocked") boolean includeLocked,
+            @Param("longIdleOnly") boolean longIdleOnly,
+            @Param("idleCutoff") LocalDateTime idleCutoff,
+            @Param("inStockStatus") String inStockStatus,
+            @Param("activeRentalStatus") String activeRentalStatus
     );
 
     interface VehicleModelSummaryProjection {
